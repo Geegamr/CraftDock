@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/icon.png" width="96" alt="CraftDock">
+//  <img src="assets/icon.png" width="96" alt="CraftDock">
   <h1>CraftDock</h1>
   <p>A lightweight, modern Minecraft launcher built with Electron.</p>
 
