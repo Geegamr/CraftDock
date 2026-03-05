@@ -7,6 +7,7 @@
   <img src="https://img.shields.io/badge/version-0.6.2-6366f1?style=flat-square">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square">
   <img src="https://img.shields.io/badge/license-Apache 2.0-22c55e?style=flat-square">
+  <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square">
 </div>
 
 ---
@@ -32,6 +33,11 @@
 - **Playtime tracking** — see hours:minutes played per instance
 - **Shared worlds** — link multiple instances to one saves folder via symlinks
 - **Export** — export instances as CurseForge .zip, Modrinth .mrpack, CF share code, or Modrinth link
+- **Skin manager** — upload, preview, and apply skins with 3D preview canvas, cape selector, and player skin downloader
+- **Microsoft login** — full Microsoft OAuth via device code flow with encrypted token storage
+- **Update checker** — check for mod and plugin updates from Modrinth with one click
+- **Playtime tracking** — see hours:minutes played per instance
+- **Shared worlds** — link multiple instances to one saves folder via symlinks
 
 ---
 
