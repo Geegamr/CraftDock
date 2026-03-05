@@ -33,11 +33,6 @@
 - **Playtime tracking** — see hours:minutes played per instance
 - **Shared worlds** — link multiple instances to one saves folder via symlinks
 - **Export** — export instances as CurseForge .zip, Modrinth .mrpack, CF share code, or Modrinth link
-- **Skin manager** — upload, preview, and apply skins with 3D preview canvas, cape selector, and player skin downloader
-- **Microsoft login** — full Microsoft OAuth via device code flow with encrypted token storage
-- **Update checker** — check for mod and plugin updates from Modrinth with one click
-- **Playtime tracking** — see hours:minutes played per instance
-- **Shared worlds** — link multiple instances to one saves folder via symlinks
 
 ---
 
