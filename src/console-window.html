@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Server Console</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0d1117; color:#e6edf3; font-family:'Consolas','Cascadia Code','Fira Mono',monospace;
+    font-size:12px; display:flex; flex-direction:column; height:100vh; overflow:hidden;
+    user-select:text;
+  }
+  #titlebar {
+    background:#161b22; border-bottom:1px solid #30363d;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 12px; height:34px; flex-shrink:0; -webkit-app-region:drag;
+  }
+  #titlebar-left { display:flex; align-items:center; gap:8px; }
+  #server-name { font-size:12px; font-weight:700; color:#e6edf3; }
+  #server-status {
+    font-size:10px; padding:2px 8px; border-radius:10px;
+    background:rgba(63,185,80,0.15); color:#3fb950; border:1px solid rgba(63,185,80,0.3);
+  }
+  #server-status.stopped { background:rgba(139,148,158,0.1); color:#8b949e; border-color:rgba(139,148,158,0.2); }
+  #server-status.error   { background:rgba(248,81,73,0.1);   color:#f85149; border-color:rgba(248,81,73,0.2); }
+  #server-status.installing { background:rgba(210,153,34,0.12); color:#d2a22a; border-color:rgba(210,153,34,0.25); }
+  .tc-btns { display:flex; gap:4px; -webkit-app-region:no-drag; }
+  .tc-btn {
+    width:12px; height:12px; border-radius:50%; border:none; cursor:pointer; opacity:0.8;
+  }
+  .tc-btn:hover { opacity:1; }
+  .tc-btn.cls { background:#ff5f57; }
+  .tc-btn.min { background:#febc2e; }
+
+  #console-wrap { flex:1; overflow:hidden; position:relative; }
+  #console {
+    width:100%; height:100%; overflow-y:auto; padding:10px 14px;
+    white-space:pre-wrap; word-break:break-all; line-height:1.55;
+    background:#0d1117;
+  }
+  /* Log level colours */
+  .log-info  { color:#e6edf3; }
+  .log-warn  { color:#d2a22a; }
+  .log-error { color:#f85149; font-weight:600; }
+  .log-craftdock { color:#79c0ff; }
+  .log-success { color:#3fb950; }
+
+  #input-bar {
+    background:#161b22; border-top:1px solid #30363d;
+    display:flex; align-items:center; gap:8px; padding:8px 12px; flex-shrink:0;
+  }
+  #prompt { color:#3fb950; font-size:13px; flex-shrink:0; }
+  #cmd-input {
+    flex:1; background:#0d1117; border:1px solid #30363d; border-radius:4px;
+    color:#e6edf3; font-family:inherit; font-size:12px; padding:5px 10px;
+    outline:none;
+  }
+  #cmd-input:focus { border-color:#388bfd; }
+  #cmd-input:disabled { opacity:0.4; cursor:not-allowed; }
+  #send-btn {
+    background:#1f6feb; color:#fff; border:none; border-radius:4px;
+    padding:5px 14px; font-size:11px; font-weight:600; cursor:pointer;
+  }
+  #send-btn:hover { background:#388bfd; }
+  #send-btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+  #clear-btn {
+    background:transparent; color:#8b949e; border:1px solid #30363d;
+    border-radius:4px; padding:5px 10px; font-size:11px; cursor:pointer;
+  }
+  #clear-btn:hover { background:rgba(139,148,158,0.1); color:#e6edf3; }
+
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:#0d1117; }
+  ::-webkit-scrollbar-thumb { background:#30363d; border-radius:3px; }
+  ::-webkit-scrollbar-thumb:hover { background:#484f58; }
+</style>
+</head>
+<body>
+<div id="titlebar">
+  <div id="titlebar-left">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" width="14" height="14">
+      <rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/>
+    </svg>
+    <span id="server-name">Console</span>
+    <span id="server-status" class="stopped">Stopped</span>
+  </div>
+  <div class="tc-btns">
+    <button class="tc-btn min" onclick="window.consoleApi?.minimize()"></button>
+    <button class="tc-btn cls" onclick="window.close()"></button>
+  </div>
+</div>
+
+<div id="console-wrap">
+  <div id="console"></div>
+</div>
+
+<div id="input-bar">
+  <span id="prompt">&gt;</span>
+  <input id="cmd-input" placeholder="Type a command and press Enter…" disabled
+    onkeydown="if(event.key==='Enter') sendCmd()">
+  <button id="clear-btn" onclick="clearConsole()">Clear</button>
+  <button id="send-btn" disabled onclick="sendCmd()">Send</button>
+</div>
+
+<script>
+  const api = window.consoleApi;
+  let serverId   = null;
+  let autoScroll = true;
+  let cmdHistory = [];
+  let histIdx    = -1;
+
+  const consoleEl  = document.getElementById('console');
+  const cmdInput   = document.getElementById('cmd-input');
+  const sendBtn    = document.getElementById('send-btn');
+  const statusEl   = document.getElementById('server-status');
+  const nameEl     = document.getElementById('server-name');
+
+  function classForLine(text) {
+    if (/^\[CraftDock\]/.test(text))      return 'log-craftdock';
+    if (/\[ERROR\]|\[FATAL\]|Exception|Error:/i.test(text)) return 'log-error';
+    if (/\[WARN\]|Warning/i.test(text))   return 'log-warn';
+    if (/Done \(|For help|joined the game|left the game/i.test(text)) return 'log-success';
+    return 'log-info';
+  }
+
+  function appendLine(text) {
+    const wasBottom = consoleEl.scrollHeight - consoleEl.scrollTop <= consoleEl.clientHeight + 40;
+    const span = document.createElement('span');
+    span.className = classForLine(text);
+    span.textContent = text + '\n';
+    consoleEl.appendChild(span);
+    if (wasBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
+  }
+
+  function clearConsole() {
+    consoleEl.innerHTML = '';
+  }
+
+  function setRunning(running) {
+    cmdInput.disabled = !running;
+    sendBtn.disabled  = !running;
+  }
+
+  function setStatus(s) {
+    statusEl.className = '';
+    if (s === 'running')      statusEl.classList.add('running');
+    else if (s === 'error')   statusEl.classList.add('error');
+    else if (s === 'installing') statusEl.classList.add('installing');
+    else                      statusEl.classList.add('stopped');
+    statusEl.textContent = s.charAt(0).toUpperCase() + s.slice(1);
+    setRunning(s === 'running');
+    if (s === 'running') cmdInput.focus();
+  }
+
+  function sendCmd() {
+    const cmd = cmdInput.value.trim();
+    if (!cmd || !serverId) return;
+    api?.sendCommand(serverId, cmd);
+    cmdHistory.unshift(cmd);
+    if (cmdHistory.length > 50) cmdHistory.pop();
+    histIdx = -1;
+    appendLine('> ' + cmd);
+    cmdInput.value = '';
+  }
+
+  // History navigation
+  cmdInput.addEventListener('keydown', e => {
+    if (e.key === 'ArrowUp') {
+      histIdx = Math.min(histIdx + 1, cmdHistory.length - 1);
+      cmdInput.value = cmdHistory[histIdx] || '';
+      e.preventDefault();
+    } else if (e.key === 'ArrowDown') {
+      histIdx = Math.max(histIdx - 1, -1);
+      cmdInput.value = histIdx >= 0 ? cmdHistory[histIdx] : '';
+      e.preventDefault();
+    }
+  });
+
+  // Receive init data from main process
+  if (api) {
+    api.onInit((id, name, status) => {
+      serverId = id;
+      nameEl.textContent = name || 'Console';
+      setStatus(status || 'stopped');
+    });
+
+    api.onLog((id, line) => {
+      if (id === serverId) appendLine(line.trimEnd());
+    });
+
+    api.onStatus((id, s) => {
+      if (id === serverId) setStatus(s);
+    });
+
+    api.onInstallProgress((id, pct, msg) => {
+      if (id === serverId) appendLine(`[Installing ${pct}%] ${msg}`);
+    });
+  }
+</script>
+</body>
+</html>

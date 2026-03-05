@@ -1,0 +1,36 @@
+# ── Dependencies ─────────────────────────────────────────────
+node_modules/
+
+# ── Build output ──────────────────────────────────────────────
+dist/
+out/
+build/
+
+# ── Environment / Secrets ─────────────────────────────────────
+.env
+# .env.example is intentionally NOT ignored (safe to commit)
+
+# ── User data ─────────────────────────────────────────────────
+# CraftDock stores instances, servers, accounts, and tokens here
+craftdock-data/
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+
+# ── OS files ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editor files ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user
+
+# ── Electron cache ────────────────────────────────────────────
+.electron-cache/
+_Make INSTALLER.bat
+main.js.bak

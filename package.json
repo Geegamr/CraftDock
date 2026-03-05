@@ -1,0 +1,79 @@
+{
+  "name": "craftdock",
+  "version": "0.6.2",
+  "description": "CraftDock \u2014 A lightweight Minecraft launcher",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "clean": "rmdir /s /q dist 2>nul & echo cleaned"
+  },
+  "build": {
+    "appId": "com.craftdock.launcher",
+    "productName": "CraftDock",
+    "copyright": "Copyright \u00a9 2025 CraftDock",
+    "asar": true,
+    "compression": "maximum",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "console-preload.js",
+      "src/**/*",
+      "assets/**/*",
+      "!**/*.map",
+      "!**/node_modules/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.games"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png",
+      "category": "Game"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "keywords": [
+    "minecraft",
+    "launcher",
+    "modpack"
+  ],
+  "author": "CraftDock Team",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^40.6.0",
+    "electron-builder": "^26.8.1"
+  }
+}
