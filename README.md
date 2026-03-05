@@ -41,7 +41,7 @@
 |-----------|--------|
 | Closed Beta (current) | Now |
 | CurseForge Browsing | TBD |
-| Being able to export | TBD |
+| Being able to export/import | TBD |
 | Everything above needs to be Fixed before Public beta is released | N/A |
 | Public Beta | **June 30, 2026** |
 | v1.0 Release | TBD |
