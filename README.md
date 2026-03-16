@@ -19,7 +19,7 @@
 
 > ⚠️ **This project is currently in Closed Beta.**
 > Public beta is planned for **June 30, 2026**. Features may change and bugs are expected.
-> Found something broken? [Open an issue](https://github.com/RealGeegamr/CraftDock/issues) or [join the Discord](https://discord.gg/pNKnKNdDc4).
+> Found something broken? [Open an issue](https://github.com/Geegamr/CraftDock/issues) or [join the Discord](https://discord.gg/pNKnKNdDc4).
 
 ---
 
@@ -60,7 +60,7 @@ During closed beta, access is limited to testers. Join the [Discord](https://dis
 
 ## Contributing
 
-Bug reports via [GitHub Issues](https://github.com/RealGeegamr/CraftDock/issues) are welcome. Please include your OS, Electron version, and steps to reproduce.
+Bug reports via [GitHub Issues](https://github.com/Geegamr/CraftDock/issues) are welcome. Please include your OS, Electron version, and steps to reproduce.
 For general feedback and discussion, join the [Discord server](https://discord.gg/pNKnKNdDc4).
 
 ---
