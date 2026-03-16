@@ -8,7 +8,6 @@
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square">
   <img src="https://img.shields.io/badge/license-Apache 2.0-22c55e?style=flat-square">
 
-  <br><br>
 
   <a href="https://discord.gg/pNKnKNdDc4">
     <img src="https://img.shields.io/badge/Join%20the%20Discord-%235865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the Discord">
