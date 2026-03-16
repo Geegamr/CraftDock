@@ -1,7 +1,7 @@
 {
   "name": "craftdock",
   "version": "0.6.3",
-  "description": "CraftDock \u2014 A lightweight Minecraft launcher",
+  "description": "CraftDock — A lightweight Minecraft launcher",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -13,7 +13,7 @@
   "build": {
     "appId": "com.craftdock.launcher",
     "productName": "CraftDock",
-    "copyright": "Copyright \u00a9 2025 CraftDock",
+    "copyright": "Copyright © 2025 CraftDock",
     "asar": true,
     "compression": "maximum",
     "directories": {
@@ -73,7 +73,7 @@
   "author": "CraftDock Team",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^40.6.0",
+    "electron": "^0.4.1",
     "electron-builder": "^26.8.1"
   }
 }
