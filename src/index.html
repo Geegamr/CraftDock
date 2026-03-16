@@ -98,7 +98,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 
 /* ── MAIN ── */
 .main-content{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg-mid)}
-.page{flex:1;overflow:hidden;display:none;flex-direction:column;min-height:0}
+.page{flex:1;overflow:hidden;display:none;flex-direction:column;min-height:0;contain:layout style}
 .page.active{display:flex;flex-direction:column}
 /* Console scrollbar */
 #appConsoleOut::-webkit-scrollbar{width:6px}
@@ -142,11 +142,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .ctab:hover{color:var(--text-secondary)}
 .ctab.active{color:var(--accent-bright);border-bottom-color:var(--accent)}
 .ctab svg{width:12px;height:12px}
-.ctab-panel{display:none}
+.ctab-panel{display:none;contain:layout style}
 .ctab-panel.active{display:block}
 
 /* ── CONTENT AREA ── */
-.content-area{flex:1;overflow-y:auto;padding:20px 24px}
+.content-area{flex:1;overflow-y:auto;padding:20px 24px;will-change:scroll-position;contain:strict}
 .content-area::-webkit-scrollbar{width:5px}
 .content-area::-webkit-scrollbar-track{background:transparent}
 .content-area::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:10px}
@@ -155,6 +155,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 #instConsole::-webkit-scrollbar-track{background:transparent}
 #instConsole::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:10px}
 #instConsole::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.22)}
+#configEditorTextarea::-webkit-scrollbar{width:6px}
+#configEditorTextarea::-webkit-scrollbar-track{background:rgba(0,0,0,0.2)}
+#configEditorTextarea::-webkit-scrollbar-thumb{background:rgba(99,102,241,0.35);border-radius:4px}
+#configEditorTextarea::-webkit-scrollbar-thumb:hover{background:rgba(99,102,241,0.6)}
 
 /* ── CARDS/FORMS ── */
 .card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
@@ -333,7 +337,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .account-actions{display:flex;gap:6px;margin-top:12px}
 
 /* ── SETTINGS ── */
-.settings-view{padding:24px;max-width:760px;overflow-y:auto;flex:1}
+.settings-view{padding:24px;max-width:760px;overflow-y:auto;flex:1;will-change:scroll-position;contain:strict}
 .settings-view::-webkit-scrollbar{width:6px}
 .settings-view::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .settings-section{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden}
@@ -625,7 +629,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
     <img src="../assets/icon.svg" width="20" height="20" style="border-radius:4px;image-rendering:pixelated;flex-shrink:0" alt="CraftDock">
     CRAFTDOCK
   </div>
-  <div class="titlebar-center">v0.6.2<span class="beta-badge">Closed Beta</span></div>
+  <div class="titlebar-center">v0.6.3<span class="beta-badge">Closed Beta</span></div>
   <div class="titlebar-controls">
     <button class="tc-btn min" onclick="winCtrl('minimize')">─</button>
     <button class="tc-btn max" onclick="winCtrl('maximize')">□</button>
@@ -673,11 +677,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
   <div class="home-view">
     <div class="home-greeting" id="homeGreeting">Welcome to CraftDock</div>
     <div class="home-sub" id="homeSub">Sign in or add an instance to get started.</div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
       <div class="stat-card"><div class="stat-label">Instances</div><div class="stat-value" id="statInstances">0</div><div class="stat-detail" id="statInstancesDetail">No instances yet</div></div>
-      <div class="stat-card"><div class="stat-label">Mods Installed</div><div class="stat-value" id="statMods">0</div><div class="stat-detail">Across all instances</div></div>
-      <div class="stat-card"><div class="stat-label">Accounts</div><div class="stat-value" id="statAccounts">0</div><div class="stat-detail" id="statAccountsDetail">Not signed in</div></div>
       <div class="stat-card"><div class="stat-label">Play Time</div><div class="stat-value" id="statPlayTime">0h</div><div class="stat-detail" id="statPlayTimeDetail">No sessions yet</div></div>
+      <div class="stat-card"><div class="stat-label">Accounts</div><div class="stat-value" id="statAccounts">0</div><div class="stat-detail" id="statAccountsDetail">Not signed in</div></div>
     </div>
     <div style="font-size:13px;font-weight:700;color:var(--text-secondary);letter-spacing:0.06em;margin-bottom:12px;text-transform:uppercase">Recently Played</div>
     <div id="recentList">
@@ -726,7 +729,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
           <div class="hero-tags" id="heroTags"></div>
         </div>
         <div class="hero-actions">
-          <button class="btn-secondary" onclick="openExport()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button>
+          <button id="heroLaunchBtn" class="btn-launch" onclick="launchGame(event)">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" style="margin-right:4px"><polygon points="5,3 19,12 5,21"/></svg>Launch
+          </button>
+          <button id="heroStopBtn" class="btn-secondary" style="display:none;background:#ef4444;border-color:#ef4444;color:white;font-size:12px;font-weight:600;gap:5px;align-items:center" onclick="stopActiveInstance()">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>Stop
+          </button>
         </div>
       </div>
     </div>
@@ -751,10 +759,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <button class="ctab active" onclick="switchCtab(this,'ct-overview')">Overview</button>
       <button class="ctab" onclick="switchCtab(this,'ct-mods');reloadActiveInstanceMods()">Mods</button>
       <button class="ctab" onclick="switchCtab(this,'ct-worlds');loadActiveInstanceWorlds()">Worlds</button>
-      <button class="ctab" onclick="switchCtab(this,'ct-screenshots')">Screenshots</button>
+      <button class="ctab" onclick="switchCtab(this,'ct-screenshots');loadScreenshots()">Screenshots</button>
       <button class="ctab" onclick="switchCtab(this,'ct-resources');reloadActiveInstanceResources()">Resources</button>
       <button class="ctab" onclick="switchCtab(this,'ct-servers');InstanceStore.getAll().then(insts=>{const inst=insts.find(i=>i.id===activeInstanceId);if(inst)renderInstanceServers(inst);})">Servers</button>
-      <button class="ctab" onclick="switchCtab(this,'ct-config')">Config</button>
+      <button class="ctab" onclick="switchCtab(this,'ct-config');loadConfigFiles()">Config</button>
       <button class="ctab" id="ctConsoleBtn" onclick="switchCtab(this,'ct-console')">Console</button>
     </div>
     <div class="content-area">
@@ -780,29 +788,51 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11" style="margin-right:4px"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>Change
             </button>
           </div>
-          <!-- World Tag (shared worlds) -->
-          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-              <div>
-                <div style="font-size:12px;font-weight:600">World Tag</div>
-                <div style="font-size:10px;color:var(--text-muted);margin-top:2px">Instances with the same tag share a <code style="font-size:9px;background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:2px">saves/</code> folder. Leave empty for private worlds.</div>
-              </div>
-            </div>
-            <div style="display:flex;gap:6px;align-items:center">
-              <div style="position:relative;flex:1">
-                <input id="ovWorldTag" class="settings-input" placeholder="e.g. survival-smp  (shared)" style="width:100%;padding-right:28px" oninput="debounceSaveWorldTag()" list="worldTagSuggestions">
+          <!-- World Tag + Server Tag + Resource Tag (side by side) -->
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+            <div>
+              <div style="font-size:11px;font-weight:600;margin-bottom:4px">World Tag</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">Shares <code style="font-size:9px;background:rgba(255,255,255,0.08);padding:1px 3px;border-radius:2px">saves/</code> with matching instances</div>
+              <div style="display:flex;gap:4px;align-items:center">
+                <input id="ovWorldTag" class="settings-input" placeholder="e.g. survival-smp" style="flex:1;min-width:0" oninput="debounceSaveWorldTag()" list="worldTagSuggestions">
                 <datalist id="worldTagSuggestions"></datalist>
+                <button id="ovWorldTagClear" onclick="clearWorldTag()" title="Clear" style="background:none;border:1px solid var(--border);border-radius:5px;padding:3px 7px;cursor:pointer;color:var(--text-muted);font-size:10px;white-space:nowrap;display:none;flex-shrink:0">✕</button>
               </div>
-              <button id="ovWorldTagClear" onclick="clearWorldTag()" title="Clear tag (private worlds)" style="background:none;border:1px solid var(--border);border-radius:5px;padding:4px 8px;cursor:pointer;color:var(--text-muted);font-size:10px;white-space:nowrap;display:none">✕ Clear</button>
+              <div id="worldTagNote" style="font-size:10px;margin-top:4px;display:none"></div>
             </div>
-            <div id="worldTagNote" style="font-size:10px;margin-top:5px;display:none"></div>
+            <div>
+              <div style="font-size:11px;font-weight:600;margin-bottom:4px">Server Tag</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">Shares <code style="font-size:9px;background:rgba(255,255,255,0.08);padding:1px 3px;border-radius:2px">servers.dat</code> with matching instances</div>
+              <div style="display:flex;gap:4px;align-items:center">
+                <input id="ovServerTag" class="settings-input" placeholder="e.g. our-smp" style="flex:1;min-width:0" oninput="debounceSaveServerTag()" list="serverTagSuggestions">
+                <datalist id="serverTagSuggestions"></datalist>
+                <button id="ovServerTagClear" onclick="clearServerTag()" title="Clear" style="background:none;border:1px solid var(--border);border-radius:5px;padding:3px 7px;cursor:pointer;color:var(--text-muted);font-size:10px;white-space:nowrap;display:none;flex-shrink:0">✕</button>
+              </div>
+              <div id="serverTagNote" style="font-size:10px;margin-top:4px;display:none"></div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:600;margin-bottom:4px">Resource Tag</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">Shares <code style="font-size:9px;background:rgba(255,255,255,0.08);padding:1px 3px;border-radius:2px">resourcepacks/</code> with matching instances</div>
+              <div style="display:flex;gap:4px;align-items:center">
+                <input id="ovResourceTag" class="settings-input" placeholder="e.g. our-pack" style="flex:1;min-width:0" oninput="debounceSaveResourceTag()" list="resourceTagSuggestions">
+                <datalist id="resourceTagSuggestions"></datalist>
+                <button id="ovResourceTagClear" onclick="clearResourceTag()" title="Clear" style="background:none;border:1px solid var(--border);border-radius:5px;padding:3px 7px;cursor:pointer;color:var(--text-muted);font-size:10px;white-space:nowrap;display:none;flex-shrink:0">✕</button>
+              </div>
+              <div id="resourceTagNote" style="font-size:10px;margin-top:4px;display:none"></div>
+            </div>
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:8px">
-          <button class="btn-launch" style="flex:1;justify-content:center" onclick="launchGame(event)">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" style="margin-right:4px"><polygon points="5,3 19,12 5,21"/></svg>Launch
+          <button id="instNewBtn" class="btn-secondary" style="padding:8px 14px;display:none;font-size:11px;font-weight:600;gap:5px;align-items:center" onclick="launchNewInstance()" title="Launch another copy">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>New Instance
           </button>
-          <button class="btn-secondary" style="padding:8px 12px" title="Reinstall — resets mods, configs and loader (keeps worlds)" onclick="reinstallActiveInstance()">
+          <button class="btn-secondary" style="padding:8px 12px" onclick="openExport()" title="Export instance">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </button>
+          <button class="btn-secondary" style="padding:8px 12px" onclick="openImportModal()" title="Import modpack (CurseForge zip / Modrinth mrpack)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </button>
+          <button class="btn-secondary" style="padding:8px 12px;color:var(--red);border-color:rgba(239,68,68,0.3)" title="Reinstall — resets mods, configs and loader (keeps worlds)" onclick="reinstallActiveInstance()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 1 0 .49-3.21"/></svg>
           </button>
           <button class="btn-secondary" style="padding:8px 12px" onclick="openActiveInstanceFolder()" title="Open folder">
@@ -816,7 +846,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <div id="ct-mods" class="ctab-panel">
         <div style="display:flex;gap:8px;margin-bottom:14px">
           <input id="modFilterInput" style="flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 12px;color:var(--text-primary);font-family:inherit;font-size:12px;outline:none" placeholder="Filter installed mods..." oninput="filterInstalledMods(this.value)">
-          <button class="btn-ghost" style="width:auto;padding:5px 10px;font-size:11px;display:flex;align-items:center;gap:4px" onclick="checkInstanceModUpdates()" title="Check for mod updates on Modrinth">
+          <button id="checkModUpdatesBtn" class="btn-ghost" style="width:auto;padding:5px 10px;font-size:11px;display:flex;align-items:center;gap:4px" onclick="checkInstanceModUpdates()" title="Check for mod updates on Modrinth">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 1 0 .49-3.21"/></svg>Updates
           </button>
           <button class="btn-add" onclick="openModBrowser()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Mod</button>
@@ -843,11 +873,18 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         </div>
       </div>
       <div id="ct-screenshots" class="ctab-panel">
-        <div style="text-align:center;padding:40px;color:var(--text-muted)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" style="margin:0 auto 10px;display:block;opacity:0.4"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
-          <div style="font-size:13px;margin-bottom:4px">No screenshots yet</div>
-          <div style="font-size:11px">Screenshots appear here after playing</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <span style="font-size:12px;color:var(--text-secondary)" id="screenshotCount">Screenshots</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px" onclick="loadScreenshots()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11" style="margin-right:3px"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>Refresh
+            </button>
+            <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px" onclick="openActiveInstanceFolder('screenshots')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11" style="margin-right:3px"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Open Folder
+            </button>
+          </div>
         </div>
+        <div id="screenshotGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px"></div>
       </div>
       <div id="ct-resources" class="ctab-panel">
         <!-- Resource Packs sub-section -->
@@ -902,14 +939,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         </div>
       </div>
       <div id="ct-config" class="ctab-panel">
-        <div class="card">
-          <div class="card-header">Config Files
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <span style="font-size:12px;color:var(--text-secondary)">Mod config files in <code style="font-size:10px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:3px">config/</code></span>
+          <div style="display:flex;gap:6px">
+            <input id="configSearchInput" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text-primary);font-family:inherit;font-size:11px;outline:none;width:160px" placeholder="Filter files..." oninput="filterConfigFiles(this.value)">
             <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px" onclick="openActiveInstanceFolder('config')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Open Config Folder
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="margin-right:3px"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Open Folder
             </button>
           </div>
-          <div style="text-align:center;padding:24px;color:var(--text-muted);font-size:12px">Launch the instance once to generate config files.</div>
         </div>
+        <div id="configFileList"></div>
       </div>
       <!-- ── Instance Console ── -->
     </div>
@@ -1495,7 +1534,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 <div class="page" id="page-settings">
   <div class="settings-view">
     <div style="font-size:18px;font-weight:800;margin-bottom:4px">Settings</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v0.6.2</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v0.6.3</div>
 
     <!-- Java Management -->
     <div class="settings-section">
@@ -1504,7 +1543,28 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         Java Management
         <button class="btn-ghost" style="width:auto;padding:3px 10px;font-size:10px;margin-left:auto" onclick="settingsScanJava()">↻ Scan</button>
       </div>
-      <div id="settingsJavaList" style="padding:4px 0">
+      <div style="padding:10px 18px 4px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">
+        CraftDock automatically picks the correct Java for each Minecraft version. If a needed version isn't installed, it downloads it privately to the launcher folder — your system Java is never modified.
+      </div>
+      <!-- MC → Java compatibility table -->
+      <div style="padding:10px 18px 6px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;font-size:11px">
+          <div style="padding:5px 0;color:var(--text-secondary);font-weight:700;border-bottom:1px solid var(--border)">Minecraft Version</div>
+          <div style="padding:5px 0;color:var(--text-secondary);font-weight:700;border-bottom:1px solid var(--border)">Java Version</div>
+          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">1.21+</div>
+          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 21</div>
+          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">1.20 – 1.20.4</div>
+          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 21</div>
+          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">1.18 – 1.19</div>
+          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 17</div>
+          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">1.17</div>
+          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 16</div>
+          <div style="padding:5px 0">1.16 and below</div>
+          <div style="padding:5px 0;color:#a5b4fc">Java 8</div>
+        </div>
+      </div>
+      <!-- Detected / downloaded Java list -->
+      <div id="settingsJavaList" style="padding:4px 0;border-top:1px solid var(--border)">
         <div style="padding:12px 18px;color:var(--text-muted);font-size:12px">Scanning for Java installations…</div>
       </div>
     </div>
@@ -1539,10 +1599,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         <div id="settingsShowConsole" class="toggle on" onclick="settingsToggle(this,'showConsoleOnLaunch')"></div>
       </div>
 
-      <div class="settings-row">
-        <div class="settings-label"><div class="settings-label-text">Check for updates on startup</div><div class="settings-label-desc">Notify when a new CraftDock version is on GitHub</div></div>
-        <div id="settingsAutoUpdate" class="toggle on" onclick="settingsToggle(this,'checkUpdatesOnStartup')"></div>
-      </div>
+
     </div>
 
     <!-- Data / Paths -->
@@ -1572,12 +1629,35 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
     <!-- About -->
     <div class="settings-section">
       <div class="settings-section-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+        Config Files
+      </div>
+      <div class="settings-row" style="border-bottom:none">
+        <div class="settings-label">
+          <div class="settings-label-text">Open config files</div>
+          <div class="settings-label-desc">How config files open when clicked in the Config tab</div>
+        </div>
+        <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;flex-shrink:0">
+          <button id="configModeApp" onclick="setConfigOpenMode('app')"
+            style="padding:5px 14px;font-size:11px;border:none;cursor:pointer;transition:background 0.15s;background:var(--accent);color:white;font-weight:600">
+            In-app editor
+          </button>
+          <button id="configModeExternal" onclick="setConfigOpenMode('external')"
+            style="padding:5px 14px;font-size:11px;border:none;cursor:pointer;transition:background 0.15s;background:var(--bg-input);color:var(--text-muted)">
+            Default editor
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         About
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Version</div></div>
-        <span style="font-size:12px;color:var(--text-muted)">CraftDock v0.6.2</span>
+        <span style="font-size:12px;color:var(--text-muted)">CraftDock v0.6.3</span>
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Electron version</div></div>
@@ -1591,6 +1671,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         <div class="settings-label"><div class="settings-label-text">Report issues</div></div>
         <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px" onclick="settingsOpenGithub()">Report Issue</button>
       </div>
+    </div>
+    <div style="text-align:center;padding:18px 0 6px;color:var(--text-muted);font-size:10px">
+      Copyright &copy; 2026 Geegamr
     </div>
   </div>
 </div>
@@ -1758,12 +1841,26 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       </div>
     </div>
 
-    <!-- World Tag -->
-    <div style="margin-bottom:14px">
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600">World Tag <span style="font-weight:400;opacity:0.6">(optional — for shared worlds)</span></div>
-      <input class="modal-input" id="niWorldTag" placeholder="e.g. survival-smp  — instances with same tag share saves/" style="margin-bottom:0;font-family:monospace;font-size:12px" list="niWorldTagSuggestions">
-      <datalist id="niWorldTagSuggestions"></datalist>
-      <div style="font-size:10px;color:var(--text-muted);margin-top:4px">Each unique tag creates a shared world pool. Instances with the same tag always see the same worlds.</div>
+    <!-- World Tag + Server Tag + Resource Tag -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600">World Tag <span style="font-weight:400;opacity:0.6">(optional)</span></div>
+        <input class="modal-input" id="niWorldTag" placeholder="e.g. survival-smp" style="margin-bottom:0;font-family:monospace;font-size:11px;width:100%" list="niWorldTagSuggestions">
+        <datalist id="niWorldTagSuggestions"></datalist>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:4px">Shares <code style="font-size:9px;background:rgba(255,255,255,0.08);padding:1px 3px;border-radius:2px">saves/</code></div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600">Server Tag <span style="font-weight:400;opacity:0.6">(optional)</span></div>
+        <input class="modal-input" id="niServerTag" placeholder="e.g. our-smp" style="margin-bottom:0;font-family:monospace;font-size:11px;width:100%" list="niServerTagSuggestions">
+        <datalist id="niServerTagSuggestions"></datalist>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:4px">Shares <code style="font-size:9px;background:rgba(255,255,255,0.08);padding:1px 3px;border-radius:2px">servers.dat</code></div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600">Resource Tag <span style="font-weight:400;opacity:0.6">(optional)</span></div>
+        <input class="modal-input" id="niResourceTag" placeholder="e.g. our-pack" style="margin-bottom:0;font-family:monospace;font-size:11px;width:100%" list="niResourceTagSuggestions">
+        <datalist id="niResourceTagSuggestions"></datalist>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:4px">Shares <code style="font-size:9px;background:rgba(255,255,255,0.08);padding:1px 3px;border-radius:2px">resourcepacks/</code></div>
+      </div>
     </div>
 
     <!-- Color theme -->
@@ -1902,6 +1999,120 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 </div>
 
 <!-- EXPORT MODAL -->
+<!-- ── Resource/Shader Version Picker ── -->
+<div id="resVersionModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9997;align-items:center;justify-content:center" onclick="if(event.target===this)closeResVersionPicker()">
+  <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:10px;width:min(520px,94vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700" id="resVersionTitle">Choose Version</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px" id="resVersionSub"></div>
+      </div>
+      <button onclick="closeResVersionPicker()" class="btn-ghost" style="width:auto;padding:4px 10px;font-size:11px">✕</button>
+    </div>
+    <div style="padding:10px 12px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:8px">
+      <label style="font-size:11px;color:var(--text-muted);white-space:nowrap">Filter:</label>
+      <input id="resVersionFilter" class="settings-input" placeholder="Search versions…" style="flex:1;padding:5px 10px;font-size:11px" oninput="filterResVersions(this.value)">
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="resVersionCompatOnly" onchange="filterResVersions(document.getElementById('resVersionFilter').value)" style="cursor:pointer"> My MC version only
+      </label>
+    </div>
+    <div id="resVersionList" style="overflow-y:auto;flex:1;padding:6px 8px"></div>
+  </div>
+</div>
+
+<!-- ── Config File Editor ── -->
+<div id="configEditorModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9998;align-items:center;justify-content:center" onclick="if(event.target===this)closeConfigEditor()">
+  <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:10px;width:min(860px,95vw);height:min(640px,90vh);display:flex;flex-direction:column;overflow:hidden">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--accent-bright);flex-shrink:0" id="configEditorDot"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="configEditorTitle">config.toml</div>
+        <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="configEditorPath"></div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button onclick="saveConfigFile()" id="configSaveBtn" class="btn-launch" style="padding:5px 14px;font-size:11px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="margin-right:4px"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg>Save
+        </button>
+        <button onclick="openConfigExternal()" class="btn-ghost" style="width:auto;padding:5px 10px;font-size:11px" title="Open in system editor">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </button>
+        <button onclick="closeConfigEditor()" class="btn-ghost" style="width:auto;padding:5px 10px;font-size:11px">✕</button>
+      </div>
+    </div>
+    <!-- Editor area -->
+    <textarea id="configEditorTextarea" spellcheck="false"
+      style="flex:1;width:100%;padding:14px 16px;background:var(--bg-darkest);color:#c9d1d9;border:none;outline:none;font-family:'Cascadia Code','Fira Mono','Consolas',monospace;font-size:12px;line-height:1.7;resize:none;tab-size:2"
+      oninput="onConfigEditorChange()"></textarea>
+    <!-- Status bar -->
+    <div style="display:flex;align-items:center;gap:12px;padding:5px 14px;border-top:1px solid var(--border);background:var(--bg-darkest);font-size:10px;color:var(--text-muted);flex-shrink:0">
+      <span id="configEditorStatus">Ready</span>
+      <span id="configEditorLines" style="margin-left:auto"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Screenshot Lightbox ── -->
+<div id="screenshotLightbox" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;align-items:center;justify-content:center;flex-direction:column" onclick="closeLightbox()">
+  <div style="position:absolute;top:16px;right:16px;display:flex;gap:8px">
+    <button onclick="event.stopPropagation();openScreenshotExternal()" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:6px 12px;color:white;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:5px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Open externally
+    </button>
+    <button onclick="closeLightbox()" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:6px 12px;color:white;font-size:11px;cursor:pointer">✕ Close</button>
+  </div>
+  <img id="lightboxImg" src="" style="max-width:90vw;max-height:85vh;border-radius:6px;object-fit:contain;box-shadow:0 8px 40px rgba(0,0,0,0.8)" onclick="event.stopPropagation()">
+  <div id="lightboxName" style="margin-top:10px;font-size:11px;color:rgba(255,255,255,0.5)"></div>
+  <!-- Prev/Next arrows -->
+  <button id="lightboxPrev" onclick="event.stopPropagation();lightboxNav(-1)" style="position:absolute;left:16px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);border-radius:50%;width:40px;height:40px;color:white;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">‹</button>
+  <button id="lightboxNext" onclick="event.stopPropagation();lightboxNav(1)" style="position:absolute;right:16px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);border-radius:50%;width:40px;height:40px;color:white;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">›</button>
+</div>
+
+<!-- ── Import Modpack Modal ── -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title">Import Modpack</div>
+    <div class="modal-sub">Import a CurseForge .zip or Modrinth .mrpack file</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div id="importOptCF" class="export-opt selected" onclick="selectImportType('cf',this)" style="cursor:pointer">
+        <div class="export-opt-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>
+        </div>
+        <div class="export-opt-name">CurseForge .zip</div>
+        <div class="export-opt-desc">Exported from CurseForge or CF launcher</div>
+      </div>
+      <div id="importOptMR" class="export-opt" onclick="selectImportType('mr',this)" style="cursor:pointer">
+        <div class="export-opt-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+        </div>
+        <div class="export-opt-name">Modrinth .mrpack</div>
+        <div class="export-opt-desc">Modrinth pack format</div>
+      </div>
+    </div>
+    <div id="importDropZone" style="border:2px dashed var(--border);border-radius:8px;padding:28px;text-align:center;cursor:pointer;transition:border-color 0.15s;margin-bottom:12px"
+      onclick="triggerImportFilePick()"
+      ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+      ondragleave="this.style.borderColor='var(--border)'"
+      ondrop="handleImportDrop(event)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" style="margin:0 auto 8px;display:block;opacity:0.4"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <div style="font-size:12px;color:var(--text-muted)" id="importDropLabel">Click to choose file or drag &amp; drop</div>
+      <div id="importFileName" style="font-size:11px;color:var(--accent-bright);margin-top:6px;font-weight:600;display:none"></div>
+    </div>
+    <input type="file" id="importFileInput" style="display:none" accept=".zip,.mrpack" onchange="handleImportFileSelect(event)">
+    <div id="importProgress" style="display:none;margin-bottom:12px">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px" id="importProgressLabel">Importing…</div>
+      <div style="height:4px;background:var(--bg-input);border-radius:4px;overflow:hidden">
+        <div id="importProgressBar" style="height:100%;background:var(--accent);width:0%;transition:width 0.3s;border-radius:4px"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeImportModal()">Cancel</button>
+      <button id="importConfirmBtn" class="btn-launch" onclick="doImport()" disabled style="opacity:0.5">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Import
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="exportModal">
   <div class="modal">
     <div class="modal-title">Export Modpack</div>
@@ -2390,10 +2601,13 @@ async function pollMsToken(deviceCode, interval) {
       if (!result.success) return; // network error, keep polling
 
       if (result.status === 200 && result.data?.access_token) {
-        // User completed sign-in!
+        // User completed sign-in — stop polling IMMEDIATELY before any async work
         clearInterval(msAuthPollTimer);
+        msAuthPollTimer = null;
         if (statusEl) statusEl.textContent = 'Sign-in detected! Getting profile...';
-        await completeMsAuth(result.data);
+        const tokenData = result.data; // capture before any state changes
+        // Small delay to let interval fully clear before proceeding
+        setTimeout(() => completeMsAuth(tokenData), 50);
       } else if (result.data?.error === 'authorization_declined') {
         clearInterval(msAuthPollTimer);
         if (statusEl) statusEl.textContent = 'Sign-in was declined.';
@@ -2412,7 +2626,10 @@ async function pollMsToken(deviceCode, interval) {
   }
 }
 
+let _completingMsAuth = false;
 async function completeMsAuth(msTokens) {
+  if (_completingMsAuth) return; // prevent double-fire from interval race
+  _completingMsAuth = true;
   const statusEl = document.getElementById('msLoginStatus');
 
   // ── Real Electron path: complete the full auth chain ──────
@@ -2438,6 +2655,7 @@ async function completeMsAuth(msTokens) {
       msAccessToken:  msTokens.access_token,
       msRefreshToken: msTokens.refresh_token || '',
       minecraftToken: mcToken,
+      mcTokenExpiry:  result.mcTokenExpiry || (Date.now() + 23 * 60 * 60 * 1000),
       type:           'microsoft',
       addedAt:        Date.now(),
       active:         false,
@@ -2463,9 +2681,16 @@ async function completeMsAuth(msTokens) {
 }
 
 async function _saveAndShowAccount(profile) {
+  _completingMsAuth = false; // allow future logins
   const allAccts = await AccountStore.getAll();
   if (!allAccts.length) profile.active = true;
   await AccountStore.save(profile);
+
+  // Immediately trigger a background refresh so the MS refresh token gets
+  // exercised right away — confirms it works and updates expiry timestamps
+  if (isCraftDock && window.craftdockInstance?.refreshTokensNow) {
+    window.craftdockInstance.refreshTokensNow().catch(() => {});
+  }
 
   // Show success screen (skip the username-entry step entirely)
   document.getElementById('msLoginStep1').style.display = 'none';
@@ -2517,6 +2742,7 @@ async function confirmMsUsername() {
 }
 
 function cancelMsLogin() {
+  _completingMsAuth = false;
   clearInterval(msAuthPollTimer);
   document.getElementById('msLoginModal').classList.remove('open');
 }
@@ -2625,7 +2851,6 @@ async function refreshHomePage() {
     : 'Browse modpacks or sign in to get started.';
 
   // Stats
-  const totalMods = instances.reduce((sum, i) => sum + (i.mods||[]).length, 0);
   const modpacks  = instances.filter(i => i.source).length;
   const custom    = instances.filter(i => !i.source).length;
 
@@ -2634,11 +2859,21 @@ async function refreshHomePage() {
   setStat('statInstancesDetail', instances.length
     ? `${modpacks} modpack${modpacks!==1?'s':''}, ${custom} custom`
     : 'No instances yet');
-  setStat('statMods', totalMods);
   setStat('statAccounts', accounts.length);
   setStat('statAccountsDetail', accounts.length
     ? accounts.length === 1 ? 'Microsoft Premium' : `${accounts.length} Microsoft accounts`
     : 'Not signed in');
+
+  // Global playtime — sum all instances
+  const totalMinsAll = instances.reduce((sum, i) => sum + (i.totalPlayMinutes || 0), 0);
+  const ptHours = Math.floor(totalMinsAll / 60);
+  const ptMins  = totalMinsAll % 60;
+  const ptStr   = totalMinsAll === 0 ? '0h' : ptHours > 0 ? `${ptHours}h ${ptMins > 0 ? ptMins + 'm' : ''}`.trim() : `${ptMins}m`;
+  const mostPlayed = instances.length ? [...instances].sort((a,b)=>(b.totalPlayMinutes||0)-(a.totalPlayMinutes||0))[0] : null;
+  setStat('statPlayTime', ptStr);
+  setStat('statPlayTimeDetail', mostPlayed && (mostPlayed.totalPlayMinutes||0) > 0
+    ? `Most: ${mostPlayed.name}`
+    : instances.length ? 'No sessions yet' : 'No instances yet');
 
   // Recently played
   const recentList = document.getElementById('recentList');
@@ -2717,11 +2952,16 @@ const CategoryStore = {
   }
 };
 
-async function renderInstanceList() {
+let _instListCache = null; // hash of last rendered list for skip-render opt
+async function renderInstanceList(force) {
   const instances  = await InstanceStore.getAll();
   const categories = await CategoryStore.getAll();
   const list = document.getElementById('instanceList');
   if (!list) return;
+  // Skip re-render if nothing changed (fast hash)
+  const hash = JSON.stringify(instances.map(i=>({id:i.id,name:i.name,color:i.color,iconUrl:i.iconUrl,mcVersion:i.mcVersion,loader:i.loader,categoryId:i.categoryId,downloadStatus:i.downloadStatus}))) + categories.map(c=>c.id+c.name+c.color).join('');
+  if (!force && hash === _instListCache) return;
+  _instListCache = hash;
 
   const noMsg = document.getElementById('noInstancesMsg');
   if (!instances.length && !categories.length) {
@@ -2915,6 +3155,9 @@ function selectInstanceEl(el, id) {
 }
 
 async function selectInstanceById(id) {
+  // Reset launch button to correct state for newly selected instance
+  const st = _instRunningStatus[id] || 'stopped';
+  setTimeout(() => updateLaunchBtn(id, st === 'running' ? 'running' : 'stopped'), 0);
   activeInstanceId = id;
   const instances = await InstanceStore.getAll();
   const inst = instances.find(i => i.id === id);
@@ -2974,15 +3217,45 @@ async function renderInstalledMods(inst) {
   const noMsg = document.getElementById('noModsMsg');
   if (!list) return;
 
-  // Try real disk mods first (Electron), fall back to JSON metadata
+  // Merge disk files with saved metadata so update badges, source, versionId all work
   let mods = [];
   if (window.craftdockInstance) {
     try {
-      const diskMods = await window.craftdockInstance.listMods(inst.id);
-      mods = (diskMods || []).map(m => ({
-        id: m.name, name: m.name.replace(/\.jar(\.disabled)?$/, ''),
-        filename: m.name, enabled: m.enabled, fromDisk: true
-      }));
+      const diskMods = await window.craftdockInstance.listMods(inst.id) || [];
+      const metaMods = inst.mods || [];
+      // Build a merged list: for each disk file, find matching metadata by fileName or slug
+      mods = diskMods.map(dm => {
+        const dname = dm.name.toLowerCase().replace(/\.disabled$/, '');
+        const meta = metaMods.find(mm =>
+          (mm.fileName && mm.fileName.toLowerCase().replace(/\.disabled$/, '') === dname) ||
+          (mm.slug && dname.startsWith(mm.slug.toLowerCase()))
+        );
+        return {
+          // identity: use Modrinth project id if we have it, else filename
+          id:          meta?.id       || dm.name,
+          name:        meta?.name     || dm.name.replace(/\.jar(\.disabled)?$/i, ''),
+          author:      meta?.author   || '',
+          iconUrl:     meta?.iconUrl  || null,
+          source:      meta?.source   || null,
+          slug:        meta?.slug     || null,
+          fileName:    dm.name,
+          versionName: meta?.versionName || meta?.version || null,
+          versionId:   meta?.versionId   || null,
+          downloadUrl: meta?.downloadUrl || null,
+          _hasUpdate:       meta?._hasUpdate       || false,
+          _latestVersion:   meta?._latestVersion   || null,
+          _latestVersionId: meta?._latestVersionId || null,
+          _latestUrl:       meta?._latestUrl       || null,
+          _latestFileName:  meta?._latestFileName  || null,
+          enabled:     dm.enabled,
+          fromDisk:    true,
+        };
+      });
+      // Also add metadata-only mods that aren't on disk yet
+      for (const mm of metaMods) {
+        const alreadyIn = mods.some(m => m.id === mm.id);
+        if (!alreadyIn) mods.push({ ...mm, fromDisk: false });
+      }
     } catch(e) { mods = inst.mods || []; }
   } else {
     mods = inst.mods || [];
@@ -3003,13 +3276,16 @@ async function renderInstalledMods(inst) {
           : `<svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-bright)" stroke-width="2" width="18" height="18"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>`}
       </div>
       <div class="pack-info" style="flex:1;min-width:0">
-        <div class="pack-name">${escHtml(m.name)}</div>
-        <div class="pack-meta">${m.author ? escHtml(m.author)+' · ' : ''}${m.version ? escHtml(m.version) : (m.filename || '')}</div>
+        <div class="pack-name">${escHtml(m.name)}${
+          m.source === 'modrinth'   ? '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,0.15);color:var(--green);margin-left:4px">MR</span>' :
+          m.source === 'curseforge' ? '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(234,179,8,0.15);color:#eab308;margin-left:4px">CF</span>' : ''
+        }${m._hasUpdate ? `<span style="font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(99,102,241,0.2);color:var(--accent-bright);margin-left:4px;cursor:pointer" onclick="updateSingleMod('${inst.id}','${m.id}')" title="Update to v${m._latestVersion||''}">&#8593; Update</span>` : ''}</div>
+        <div class="pack-meta">${m.author ? escHtml(m.author)+' · ' : ''}${m.versionName ? 'v'+escHtml(m.versionName)+' · ' : (m.version ? escHtml(m.version)+' · ' : '')}${m.fileName || m.filename || ''}</div>
       </div>
-      ${m.fromDisk ? `<button title="${m.enabled!==false?'Disable':'Enable'}" onclick="toggleInstMod('${escHtml(inst.id)}','${escHtml(m.filename||m.id)}',${!m.enabled})" style="background:none;border:1px solid var(--border);border-radius:5px;padding:4px 7px;cursor:pointer;color:var(--text-muted);font-size:10px;white-space:nowrap">
+      ${m.fromDisk ? `<button title="${m.enabled!==false?'Disable':'Enable'}" onclick="toggleInstMod('${escHtml(inst.id)}','${escHtml(m.fileName||m.filename||m.id)}',${!m.enabled})" style="background:none;border:1px solid var(--border);border-radius:5px;padding:4px 7px;cursor:pointer;color:var(--text-muted);font-size:10px;white-space:nowrap">
         ${m.enabled!==false ? 'Disable' : 'Enable'}
       </button>` : ''}
-      <button class="btn-ghost danger" style="width:auto;padding:4px 8px" onclick="removeMod('${escHtml(inst.id)}','${escHtml(m.filename||m.id)}',${!!m.fromDisk})" title="Delete mod">
+      <button class="btn-ghost danger" style="width:auto;padding:4px 8px" onclick="removeMod('${escHtml(inst.id)}','${escHtml(m.fileName||m.filename||m.id)}',${!!m.fromDisk})" title="Delete mod">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2 0 01-2,2H8a2,2 0 01-2-2L5,6"/></svg>
       </button>
     </div>`).join('');
@@ -3039,12 +3315,20 @@ async function toggleInstMod(instanceId, filename, enable) {
 async function removeMod(instanceId, modIdOrFilename, fromDisk) {
   const ok = await showConfirm('Remove mod?', `Delete "${modIdOrFilename.replace(/\.jar(\.disabled)?$/,'')}"\nfrom this instance?`, 'Delete', '#ef4444');
   if (!ok) return;
+  const instances = await InstanceStore.getAll();
+  const inst2 = instances.find(i => i.id === instanceId);
   if (fromDisk && window.craftdockInstance) {
     await window.craftdockInstance.deleteMod(instanceId, modIdOrFilename);
+    // Also remove from metadata so it doesn't ghost back
+    if (inst2) {
+      const fname = modIdOrFilename.toLowerCase().replace(/\.disabled$/, '');
+      inst2.mods = (inst2.mods||[]).filter(m =>
+        (m.fileName||'').toLowerCase().replace(/\.disabled$/,'') !== fname
+      );
+      await InstanceStore.save(inst2);
+    }
   } else {
-    const instances = await InstanceStore.getAll();
-    const inst = instances.find(i => i.id === instanceId);
-    if (inst) { inst.mods = (inst.mods||[]).filter(m => m.id !== modIdOrFilename); await InstanceStore.save(inst); }
+    if (inst2) { inst2.mods = (inst2.mods||[]).filter(m => m.id !== modIdOrFilename && m.fileName !== modIdOrFilename); await InstanceStore.save(inst2); }
   }
   const inst = (await InstanceStore.getAll()).find(i => i.id === instanceId);
   if (inst) renderInstalledMods(inst);
@@ -3174,7 +3458,7 @@ async function fetchAndShowAllFavourites() {
   try {
     const params = new URLSearchParams({ ids: JSON.stringify(ids) });
     const res = await fetch(`https://api.modrinth.com/v2/projects?${params}`, {
-      headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' }
+      headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
     });
     if (!res.ok) throw new Error(`Modrinth API ${res.status}`);
     const projects = await res.json();
@@ -3321,7 +3605,7 @@ async function fetchModrinthItems(query, version, sort, offset = 0) {
     limit: 100, offset: offset, index: sortMap[sort] || 'downloads'
   });
   const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, {
-    headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' }
+    headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
   });
   if (!res.ok) throw new Error(`Modrinth API ${res.status}`);
   const data = await res.json();
@@ -3535,6 +3819,14 @@ async function installPack(pack, btn) {
       const mrpackFile = bestVer?.files?.find(f => f.filename?.endsWith('.mrpack')) || bestVer?.files?.[0];
 
       if (mrpackFile?.url) {
+        // Save the version ID we're installing as the baseline for update checks
+        const insts0 = await InstanceStore.getAll();
+        const inst0  = insts0.find(i => i.id === instId);
+        if (inst0) {
+          inst0.sourceVersionId   = bestVer.id || '';
+          inst0.sourceVersionName = bestVer.version_number || '';
+          await InstanceStore.save(inst0);
+        }
         showNotif('Installing modpack', `Downloading ${pack.name}…`);
         // Switch to console tab to show install progress
         const consoleTabBtn = document.getElementById('ctConsoleBtn');
@@ -3657,7 +3949,7 @@ async function _itsLoadModpackVersions() {
   try {
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${_itsPackData.id}/version`,
-      { headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' } }
+      { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
     );
     const versions = res.ok ? await res.json() : [];
     if (!versions.length) { _itsShowVersionState('none'); return; }
@@ -3719,12 +4011,12 @@ async function selectItsServer(id) {
   try {
     let url = `https://api.modrinth.com/v2/project/${_itsPackData.id}/version?loaders=${JSON.stringify(loaders)}`;
     if (mcVer) url += `&game_versions=${JSON.stringify([mcVer])}`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' } });
+    const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } });
     let versions = res.ok ? await res.json() : [];
     if (!versions.length && mcVer) {
       const res2 = await fetch(
         `https://api.modrinth.com/v2/project/${_itsPackData.id}/version?loaders=${JSON.stringify(loaders)}`,
-        { headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' } }
+        { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
       );
       versions = res2.ok ? await res2.json() : [];
     }
@@ -3904,7 +4196,7 @@ async function _confirmNormalInstall() {
                     : ['bukkit','spigot','paper','purpur','folia'];
       const res = await fetch(
         `https://api.modrinth.com/v2/project/${_itsPackData.id}/version?loaders=${JSON.stringify(loaders)}&featured=true`,
-        { headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' } }
+        { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
       );
       if (res.ok) {
         const versions = await res.json();
@@ -4033,7 +4325,7 @@ async function fetchPbModrinth(q, version, offset) {
   const facets = [['project_type:plugin']];
   if (version) facets.push([`versions:${version}`]);
   const params = new URLSearchParams({ query: q, facets: JSON.stringify(facets), limit: 20, offset, index: 'downloads' });
-  const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, { headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' } });
+  const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } });
   if (!res.ok) throw new Error('Modrinth ' + res.status);
   const data = await res.json();
   return (data.hits || []).map(h => ({
@@ -4048,7 +4340,7 @@ async function fetchPbHangar(q, version, offset) {
   const params = new URLSearchParams({ q: q || '', platform: 'PAPER', limit: 20, offset });
   if (version) params.set('version', version);
   const res = await fetch(`https://hangar.papermc.io/api/v1/projects?${params}`, {
-    headers: { 'User-Agent': 'CraftDock/0.6.2' }
+    headers: { 'User-Agent': 'CraftDock/0.6.3' }
   });
   if (!res.ok) throw new Error('Hangar ' + res.status);
   const data = await res.json();
@@ -4067,7 +4359,7 @@ async function fetchPbSpiget(q, offset) {
   const url = q
     ? `https://api.spiget.org/v2/search/resources/${encodeURIComponent(q)}?${params}`
     : `https://api.spiget.org/v2/resources?${params}`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.6.2' } });
+  const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.6.3' } });
   if (!res.ok) throw new Error('SpigotMC ' + res.status);
   const data = await res.json();
   const arr = Array.isArray(data) ? data : (data.results || []);
@@ -4173,7 +4465,7 @@ async function installPluginFromBrowser(plugin, btn) {
   if (plugin.source === 'modrinth') {
     try {
       const vRes = await fetch(`https://api.modrinth.com/v2/project/${plugin.id}/version?loaders=["bukkit","spigot","paper","purpur","folia"]`,
-        { headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' } });
+        { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } });
       if (vRes.ok) { const vs = await vRes.json(); downloadUrl = vs[0]?.files?.[0]?.url; }
     } catch(e) {}
   } else if (plugin.source === 'spiget') {
@@ -4282,7 +4574,7 @@ async function resSearchItems(query) {
       index: query ? 'relevance' : 'downloads'
     });
     const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, {
-      headers: { 'User-Agent': 'CraftDock/0.6.2' }
+      headers: { 'User-Agent': 'CraftDock/0.6.3' }
     });
     if (!res.ok) throw new Error('Modrinth ' + res.status);
     const data = await res.json();
@@ -4352,35 +4644,25 @@ function renderResList(items) {
 
 async function addResPackToInstance(item, btn) {
   if (!activeInstanceId) return;
-  btn.textContent = 'Downloading…';
+  // Fetch versions first, then show picker
+  btn.textContent = 'Loading…';
   btn.disabled = true;
 
   try {
-    // Fetch the latest file for this project
+    const inst = await InstanceStore.get(activeInstanceId);
+    const mcVer = inst?.mcVersion || '';
     const res = await fetch(`https://api.modrinth.com/v2/project/${item.slug}/version`, {
-      headers: { 'User-Agent': 'CraftDock/0.6.2' }
+      headers: { 'User-Agent': 'CraftDock/0.6.3' }
     });
     if (!res.ok) throw new Error('Modrinth version fetch failed: ' + res.status);
     const versions = await res.json();
     if (!versions || !versions.length) throw new Error('No files found for this project');
 
-    const file = versions[0].files?.find(f => f.primary) || versions[0].files?.[0];
-    if (!file) throw new Error('No downloadable file found');
+    btn.textContent = 'Install';
+    btn.disabled = false;
 
-    const subdir = _resBrowserType === 'shader' ? 'shaderpacks' : 'resourcepacks';
-
-    if (window.craftdockInstance?.downloadMod) {
-      // Reuse downloadMod IPC — it downloads to mods/ by default, so we use a custom call
-      await window.craftdockInstance.downloadResPack(activeInstanceId, file.url, file.filename, subdir);
-      btn.textContent = 'Installed ✓';
-      btn.style.background = 'rgba(34,197,94,0.2)';
-      btn.style.color = '#22c55e';
-      btn.style.borderColor = 'rgba(34,197,94,0.4)';
-      showNotif(`${_resBrowserType === 'shader' ? 'Shader' : 'Resource Pack'} Installed`, `${item.name} → ${subdir}/`);
-      reloadActiveInstanceResources();
-    } else {
-      throw new Error('Desktop app required for file download');
-    }
+    // Show version picker modal
+    openResVersionPicker(item, versions, mcVer, _resBrowserType === 'shader' ? 'shaderpacks' : 'resourcepacks');
   } catch(e) {
     btn.textContent = 'Failed';
     btn.disabled = false;
@@ -4551,7 +4833,7 @@ async function searchModrinthMods(query, loader) {
   });
 
   const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, {
-    headers: { 'User-Agent': 'CraftDock/0.6.2 (craftdock@example.com)' }
+    headers: { 'User-Agent': 'CraftDock/0.6.3 (craftdock@example.com)' }
   });
   if (!res.ok) throw new Error(`Modrinth ${res.status}`);
   const data = await res.json();
@@ -4593,6 +4875,9 @@ async function searchCurseForgeMods(query, loader) {
   }));
 }
 
+// Track which mod row has its version picker open
+let _mbExpandedId = null;
+
 function renderMbList(mods) {
   const list = document.getElementById('mbList');
   if (!list) return;
@@ -4609,18 +4894,20 @@ function renderMbList(mods) {
     const dlStr = m.downloads >= 1e6 ? (m.downloads/1e6).toFixed(1)+'M' :
                   m.downloads >= 1e3 ? Math.round(m.downloads/1e3)+'K' : String(m.downloads||'');
 
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'margin-bottom:4px';
+
     const row = document.createElement('div');
     row.className = 'mb-mod-row';
+    row.style.marginBottom = '0';
 
     // Icon
     const fallback = document.createElement('div');
     fallback.className = 'mb-mod-icon-fallback';
     fallback.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-bright)" stroke-width="1.5" width="22" height="22"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>';
-
     if (m.iconUrl) {
       const img = document.createElement('img');
-      img.className = 'mb-mod-icon';
-      img.src = m.iconUrl;
+      img.className = 'mb-mod-icon'; img.src = m.iconUrl;
       img.onerror = () => { img.style.display='none'; fallback.style.display='flex'; };
       fallback.style.display = 'none';
       row.appendChild(img);
@@ -4640,76 +4927,189 @@ function renderMbList(mods) {
       + '</div>';
     row.appendChild(info);
 
-    // Button
-    const btn = document.createElement('button');
-    btn.className = 'mb-install-btn';
-    btn.textContent = 'Add';
-    btn.onclick = () => addModToInstance(m, btn);
-    row.appendChild(btn);
+    // Buttons column: Install + Version picker toggle
+    const btnWrap = document.createElement('div');
+    btnWrap.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex-shrink:0;align-items:stretch';
 
-    list.appendChild(row);
+    const installBtn = document.createElement('button');
+    installBtn.className = 'mb-install-btn';
+    installBtn.textContent = 'Add';
+    installBtn.onclick = (e) => { e.stopPropagation(); mbInstallMod(m, installBtn, wrapper); };
+
+    const verBtn = document.createElement('button');
+    verBtn.style.cssText = 'background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-muted);font-size:10px;padding:3px 8px;cursor:pointer;font-family:inherit;white-space:nowrap;text-align:center';
+    verBtn.innerHTML = '&#9776; versions';
+    verBtn.onclick = (e) => { e.stopPropagation(); mbToggleVersionPicker(m, wrapper, verBtn); };
+
+    btnWrap.appendChild(installBtn);
+    if (m.source === 'modrinth') btnWrap.appendChild(verBtn);
+    row.appendChild(btnWrap);
+    wrapper.appendChild(row);
+
+    // Version picker panel (hidden by default)
+    const picker = document.createElement('div');
+    picker.id = 'mbVerPicker_' + m.id;
+    picker.style.cssText = 'display:none;background:var(--bg-darkest);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius) var(--radius);padding:8px 12px';
+    wrapper.appendChild(picker);
+
+    list.appendChild(wrapper);
   });
 }
 
-async function addModToInstance(mod, btn) {
+async function mbToggleVersionPicker(mod, wrapper, verBtn) {
+  const picker = wrapper.querySelector('[id^="mbVerPicker_"]');
+  if (!picker) return;
+
+  if (picker.style.display !== 'none') {
+    picker.style.display = 'none';
+    verBtn.innerHTML = '&#9776; versions';
+    return;
+  }
+
+  verBtn.innerHTML = 'Loading…';
+  picker.style.display = 'block';
+  picker.innerHTML = '<div style="color:var(--text-muted);font-size:11px;padding:2px 0">Loading versions…</div>';
+
+  try {
+    const inst = (await InstanceStore.getAll()).find(i => i.id === activeInstanceId);
+    const mcVer = inst?.mcVersion || '';
+    const loader = inst?.loader || '';
+
+    const params = new URLSearchParams();
+    if (mcVer)  params.set('game_versions', JSON.stringify([mcVer]));
+    if (loader) params.set('loaders', JSON.stringify([loader]));
+    const res = await fetch(
+      `https://api.modrinth.com/v2/project/${mod.slug || mod.id}/version?${params}`,
+      { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
+    );
+    const versions = res.ok ? await res.json() : [];
+
+    if (!versions.length) {
+      picker.innerHTML = '<div style="color:var(--text-muted);font-size:11px;padding:2px 0">No compatible versions found for <b>' + escHtml(mcVer||'any') + '</b> / <b>' + escHtml(loader||'any loader') + '</b>. Try changing the loader filter.</div>';
+      verBtn.innerHTML = '&#9776; versions';
+      return;
+    }
+
+    mod._versions = versions;
+    mod._selectedVersionIdx = 0;
+
+    picker.innerHTML = '';
+
+    const label = document.createElement('div');
+    label.style.cssText = 'font-size:10px;color:var(--text-muted);margin-bottom:6px';
+    label.textContent = versions.length + ' version' + (versions.length!==1?'s':'') + ' for ' + (mcVer||'any') + (loader?' / '+loader:'');
+    picker.appendChild(label);
+
+    const sel = document.createElement('select');
+    sel.style.cssText = 'width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-family:inherit;font-size:11px;padding:5px 8px;outline:none;cursor:pointer';
+    versions.forEach((v, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      const mcTag   = (v.game_versions||[]).slice(-1)[0] || '';
+      const ldrTag  = (v.loaders||[]).join('/');
+      opt.textContent = v.version_number + '  —  ' + mcTag + (ldrTag ? '  ' + ldrTag : '') + (i===0 ? '  ★ latest' : '');
+      sel.appendChild(opt);
+    });
+    sel.onchange = () => { mod._selectedVersionIdx = parseInt(sel.value); };
+    picker.appendChild(sel);
+
+    verBtn.innerHTML = '&#9776; versions';
+  } catch(e) {
+    picker.innerHTML = '<div style="color:var(--red);font-size:11px">Failed to load versions: ' + escHtml(e.message) + '</div>';
+    verBtn.innerHTML = '&#9776; versions';
+  }
+}
+
+async function mbInstallMod(mod, btn, wrapper) {
+  const picker = wrapper?.querySelector('[id^="mbVerPicker_"]');
+  const pickerOpen = picker && picker.style.display !== 'none';
+  const chosenVersion = (pickerOpen && mod._versions?.length)
+    ? mod._versions[mod._selectedVersionIdx ?? 0]
+    : null; // null = let addModToInstance fetch latest
+  await addModToInstance(mod, btn, chosenVersion);
+}
+
+async function addModToInstance(mod, btn, chosenVersion) {
   if (!activeInstanceId) { showNotif('No Instance Selected', 'Select an instance first'); return; }
 
   const instances = await InstanceStore.getAll();
   const inst = instances.find(i => i.id === activeInstanceId);
   if (!inst) return;
 
-  // If already added (check disk first, then JSON)
-  if (window.craftdockInstance) {
-    try {
-      const diskMods = await window.craftdockInstance.listMods(inst.id);
-      const alreadyThere = (diskMods||[]).some(m => m.name.includes(mod.slug || mod.id));
-      if (alreadyThere) { btn.textContent = 'Added'; btn.classList.add('installed'); return; }
-    } catch {}
-  }
-
   btn.textContent = 'Downloading…';
   btn.disabled = true;
 
   try {
-    // Get the best download URL for this mod version
     let downloadUrl = null;
-    let fileName = null;
+    let fileName    = null;
+    let _resolvedVersionId   = null;
+    let _resolvedVersionName = null;
 
-    if (mod.source === 'modrinth' && mod.slug) {
-      // Fetch latest version compatible with instance MC version
+    if (chosenVersion) {
+      // User picked a specific version from the picker — use it directly
+      const file = chosenVersion.files?.find(f => f.primary) || chosenVersion.files?.[0];
+      if (file) { downloadUrl = file.url; fileName = file.filename; }
+      _resolvedVersionId   = chosenVersion.id;
+      _resolvedVersionName = chosenVersion.version_number;
+    } else if (mod.source === 'modrinth' && (mod.slug || mod.id)) {
+      // No version picked — fetch the best compatible version automatically
       try {
+        const params = new URLSearchParams();
+        if (inst.mcVersion) params.set('game_versions', JSON.stringify([inst.mcVersion]));
+        if (inst.loader)    params.set('loaders',       JSON.stringify([inst.loader]));
         const vRes = await fetch(
-          `https://api.modrinth.com/v2/project/${mod.slug}/version?game_versions=["${inst.mcVersion}"]&loaders=["${inst.loader||'fabric'}"]`,
-          { headers: { 'User-Agent': 'CraftDock/0.6.2' } }
+          `https://api.modrinth.com/v2/project/${mod.slug || mod.id}/version?${params}`,
+          { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
         );
-        const versions = await vRes.json();
-        if (versions && versions.length > 0) {
-          const file = versions[0].files?.find(f => f.primary) || versions[0].files?.[0];
-          if (file) { downloadUrl = file.url; fileName = file.filename; }
+        if (vRes.ok) {
+          const versions = await vRes.json();
+          if (versions?.length > 0) {
+            const best = versions[0];
+            const file = best.files?.find(f => f.primary) || best.files?.[0];
+            if (file) { downloadUrl = file.url; fileName = file.filename; }
+            _resolvedVersionId   = best.id;
+            _resolvedVersionName = best.version_number;
+          }
         }
       } catch(e) { console.warn('Modrinth version fetch failed:', e); }
     }
 
     if (window.craftdockInstance && downloadUrl && fileName) {
-      // Download to instance mods folder via main process
-      await window.craftdockInstance.downloadMod(inst.id, downloadUrl, fileName);
-      btn.textContent = 'Added';
-      btn.classList.add('installed');
-      showNotif('Mod Installed', `${mod.name} → ${inst.name}/mods/${fileName}`);
-      // Refresh mod list
-      const updatedInst = (await InstanceStore.getAll()).find(i => i.id === activeInstanceId);
-      if (updatedInst) renderInstalledMods(updatedInst);
-    } else {
-      // Fallback: save metadata only (no jar downloaded)
-      if (!inst.mods) inst.mods = [];
-      if (!inst.mods.find(m => m.id === mod.id)) {
-        inst.mods.push({ id: mod.id, name: mod.name, author: mod.author, iconUrl: mod.iconUrl, version: mod.versions?.[0]||'', source: mod.source, slug: mod.slug });
-        await InstanceStore.save(inst);
-      }
-      btn.textContent = 'Added';
-      btn.classList.add('installed');
-      showNotif('Mod Added (metadata only)', `${mod.name} — download the jar manually to the mods folder`);
+      // Download the JAR to the instance mods folder
+      const dlResult = await window.craftdockInstance.downloadMod(inst.id, downloadUrl, fileName);
+      if (!dlResult?.success) throw new Error(dlResult?.error || 'Download failed');
     }
+
+    // Always save metadata so update checks work (whether downloaded or fallback)
+    if (!inst.mods) inst.mods = [];
+    const existing = inst.mods.find(m => m.id === mod.id);
+    const modEntry = {
+      id:          mod.id,
+      name:        mod.name,
+      author:      mod.author,
+      iconUrl:     mod.iconUrl,
+      source:      mod.source,      // 'modrinth' or 'curseforge'
+      slug:        mod.slug,
+      fileName:    fileName || null,
+      downloadUrl: downloadUrl || null,
+      versionId:   _resolvedVersionId   || null,
+      versionName: _resolvedVersionName || null,
+    };
+    if (existing) {
+      Object.assign(existing, modEntry);
+    } else {
+      inst.mods.push(modEntry);
+    }
+    await InstanceStore.save(inst);
+
+    btn.textContent = 'Added';
+    btn.classList.add('installed');
+    const notifMsg = (window.craftdockInstance && downloadUrl)
+      ? `${mod.name} v${_resolvedVersionName || ''} installed`
+      : `${mod.name} added — place the jar in the mods folder manually`;
+    showNotif('Mod Installed ✓', notifMsg);
+    renderInstalledMods(inst);
+
   } catch(e) {
     btn.textContent = 'Failed';
     btn.disabled = false;
@@ -5637,7 +6037,14 @@ async function applyAndUploadSkin() {
 // ═══════════════════════════════════════════════════════════
 //  PAGE / UI NAVIGATION
 // ═══════════════════════════════════════════════════════════
+let _currentPage = 'home';
 function switchPage(name, btn) {
+  if (name === _currentPage && document.getElementById('page-' + name)?.classList.contains('active')) {
+    // Already on this page — only re-run data refresh, skip DOM thrash
+    if (name==='home') refreshHomePage();
+    return;
+  }
+  _currentPage = name;
   // Hide all pages — must override any inline styles
   document.querySelectorAll('.page').forEach(p => {
     p.classList.remove('active');
@@ -5795,14 +6202,90 @@ function _renderInstConsoleStatusBar(id, status) {
   else                         { el.innerHTML = '<span style="color:var(--text-muted)">○ Not running</span>'; }
 }
 
-async function launchGame(e, instOverride, serverIp) {
+function updateLaunchBtn(id, state) {
+  if (id !== activeInstanceId) return;
+  // Hero buttons
+  const heroBtn  = document.getElementById('heroLaunchBtn');
+  const heroStop = document.getElementById('heroStopBtn');
+  // Bottom-row new instance button
+  const newBtn   = document.getElementById('instNewBtn');
+
+  if (state === 'running') {
+    if (heroBtn) {
+      heroBtn.style.opacity = '1'; heroBtn.style.cursor = ''; heroBtn.disabled = false;
+      heroBtn.onclick = (e) => launchNewInstance();
+      heroBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12" style="margin-right:4px"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>New Instance';
+      heroBtn.style.background = 'rgba(99,102,241,0.25)';
+      heroBtn.style.boxShadow  = 'none';
+    }
+    if (heroStop){ heroStop.style.display = 'inline-flex'; }
+    if (newBtn)  { newBtn.style.display   = 'none'; }
+  } else if (state === 'starting') {
+    if (heroBtn) {
+      heroBtn.style.opacity = '0.6'; heroBtn.style.cursor = 'not-allowed'; heroBtn.disabled = true; heroBtn.onclick = null;
+      heroBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12" style="margin-right:4px"><path d="M12 2a10 10 0 0 1 10 10"/></svg>Starting…';
+    }
+    if (heroStop){ heroStop.style.display = 'none'; }
+    if (newBtn)  { newBtn.style.display   = 'none'; }
+  } else {
+    if (heroBtn) {
+      heroBtn.style.opacity = '1'; heroBtn.style.cursor = ''; heroBtn.disabled = false;
+      heroBtn.onclick = (e) => launchGame(e);
+      heroBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" style="margin-right:4px"><polygon points="5,3 19,12 5,21"/></svg>Launch';
+      heroBtn.style.background = '';
+      heroBtn.style.boxShadow  = '';
+    }
+    if (heroStop){ heroStop.style.display = 'none'; }
+    if (newBtn)  { newBtn.style.display   = 'none'; }
+  }
+}
+
+function launchNewInstance() {
+  if (!activeInstanceId) return;
+  // Launch a fresh copy — don't touch the main button state (already running)
+  launchGame(null, null, null, true);
+}
+
+function stopActiveInstance() {
+  if (!activeInstanceId) return;
+  // Send SIGTERM to the MC process via IPC
+  if (isCraftDock && window.craftdockInstance?.stopInstance) {
+    window.craftdockInstance.stopInstance(activeInstanceId);
+  } else {
+    showNotif('Stop', 'Force-stopping Minecraft…');
+    // Fallback: update UI immediately
+    updateLaunchBtn(activeInstanceId, 'stopped');
+    setInstConsoleStatus(activeInstanceId, 'stopped');
+  }
+}
+
+// Pending launch context for modpack update modal
+let _pendingLaunchInst  = null;
+let _pendingLaunchExtra = false;
+
+async function launchGame(e, instOverride, serverIp, isExtraInstance) {
   if (e) e.stopPropagation();
-  if (!activeInstanceId) { showNotif('No Instance', 'Select an instance first'); return; }
+  if (!activeInstanceId && !instOverride) { showNotif('No Instance', 'Select an instance first'); return; }
 
   const instances = await InstanceStore.getAll();
   const inst = instOverride || instances.find(i => i.id === activeInstanceId);
   if (!inst) return;
 
+  // ── Modpack update check (Modrinth only, skippable per-instance) ────────
+  if (!isExtraInstance && !inst.skipUpdateCheck && inst.sourceId && inst.source === 'modrinth') {
+    const updateInfo = await checkModpackUpdate(inst);
+    if (updateInfo) {
+      _pendingLaunchInst  = inst;
+      _pendingLaunchExtra = !!isExtraInstance;
+      showModpackUpdateModal(inst, updateInfo);
+      return; // wait for user choice in modal
+    }
+  }
+
+  await _doLaunch(inst, serverIp || null, isExtraInstance);
+}
+
+async function _doLaunch(inst, serverIp, isExtraInstance) {
   if (window.craftdockInstance) {
     const minRam = parseInt(document.getElementById('ovMinRam')?.value) || inst.ramMin || 2048;
     const maxRam = parseInt(document.getElementById('ovMaxRam')?.value) || inst.ramMax || 4096;
@@ -5810,17 +6293,20 @@ async function launchGame(e, instOverride, serverIp) {
       inst.ramMin = minRam; inst.ramMax = maxRam;
       await InstanceStore.save(inst);
     }
-    // Clear console, switch to it, and start streaming
-    clearInstConsole();
-    setInstConsoleStatus(activeInstanceId, 'starting');
-    const consoleTabBtn = document.getElementById('ctConsoleBtn');
-    if (consoleTabBtn) { switchCtab(consoleTabBtn, 'ct-console'); renderInstConsoleForActive(); }
+    if (!isExtraInstance) {
+      clearInstConsole();
+      setInstConsoleStatus(activeInstanceId, 'starting');
+      updateLaunchBtn(activeInstanceId, 'starting');
+      const consoleTabBtn = document.getElementById('ctConsoleBtn');
+      if (consoleTabBtn) { switchCtab(consoleTabBtn, 'ct-console'); renderInstConsoleForActive(); }
+    }
     try {
       const label = serverIp ? `${inst.name} → ${serverIp}` : inst.name;
-      showNotif('Launching', label + '\u2026');
+      showNotif('Launching', label + '…');
       await window.craftdockInstance.launch(inst, serverIp || null);
     } catch(err) {
       showNotif('Launch Failed', err.message || 'Could not start instance');
+      updateLaunchBtn(inst.id, 'stopped');
     }
     return;
   }
@@ -5831,13 +6317,84 @@ async function launchGame(e, instOverride, serverIp) {
   const text    = document.getElementById('launchText');
   if (!overlay) { showNotif('Launched', inst.name); return; }
   overlay.classList.add('open');
-  const steps = ['Verifying Java\u2026','Loading mods\u2026','Downloading assets\u2026','Patching\u2026','Starting Minecraft\u2026'];
+  const steps = ['Verifying Java…','Loading mods…','Downloading assets…','Patching…','Starting Minecraft…'];
   let step=0, pct=0;
   const tick = setInterval(() => {
     pct += 20; if (prog) prog.style.width = pct + '%';
     if (step < steps.length && text) text.textContent = steps[step++];
     if (pct >= 100) { clearInterval(tick); setTimeout(() => { overlay.classList.remove('open'); showNotif('Launched', inst.name + ' is starting!'); }, 500); }
   }, 600);
+}
+
+// ── Check if a modpack has a newer version on Modrinth ──────────────────────
+async function checkModpackUpdate(inst) {
+  try {
+    const res = await fetch(
+      `https://api.modrinth.com/v2/project/${inst.sourceId}/version?limit=1`,
+      { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
+    );
+    if (!res.ok) return null;
+    const versions = await res.json();
+    const latest = versions[0];
+    if (!latest) return null;
+    if (latest.id !== (inst.sourceVersionId || '')) {
+      return {
+        versionId:   latest.id,
+        versionName: latest.version_number,
+        downloadUrl: latest.files?.[0]?.url || null,
+        fileName:    latest.files?.[0]?.filename || null,
+      };
+    }
+    return null;
+  } catch { return null; }
+}
+
+function showModpackUpdateModal(inst, updateInfo) {
+  const modal = document.getElementById('modpackUpdateModal');
+  if (!modal) { _doLaunch(inst, null, false); return; }
+  document.getElementById('modpackUpdateMsg').textContent =
+    `A newer version of "${inst.name}" is available on Modrinth.`;
+  document.getElementById('modpackUpdateOldVer').textContent =
+    inst.sourceVersionName || inst.sourceVersionId || 'Unknown';
+  document.getElementById('modpackUpdateNewVer').textContent =
+    updateInfo.versionName || updateInfo.versionId;
+  document.getElementById('modpackUpdateSkipCheck').checked = false;
+  modal._updateInfo = updateInfo;
+  modal.classList.add('open');
+}
+
+async function dismissModpackUpdate(doUpdate) {
+  const modal = document.getElementById('modpackUpdateModal');
+  if (!modal) return;
+  modal.classList.remove('open');
+
+  const skipCheck = document.getElementById('modpackUpdateSkipCheck')?.checked;
+  const inst  = _pendingLaunchInst;
+  const extra = _pendingLaunchExtra;
+  _pendingLaunchInst = null;
+  if (!inst) return;
+
+  if (skipCheck) {
+    inst.skipUpdateCheck = true;
+    await InstanceStore.save(inst);
+  }
+
+  if (doUpdate && modal._updateInfo) {
+    const info = modal._updateInfo;
+    showNotif('Updating…', `Downloading ${inst.name} ${info.versionName || ''}`);
+    if (info.downloadUrl && window.craftdockInstance?.downloadMod) {
+      const result = await window.craftdockInstance.downloadMod(
+        inst.id, info.downloadUrl, info.fileName || 'modpack.mrpack'
+      ).catch(() => null);
+      if (!result?.success) showNotif('Update failed', 'Download error — launching current version');
+    }
+    inst.sourceVersionId   = info.versionId;
+    inst.sourceVersionName = info.versionName;
+    await InstanceStore.save(inst);
+    showNotif('Updated ✓', `${inst.name} → v${info.versionName || info.versionId}`);
+  }
+
+  await _doLaunch(inst, null, extra);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -5890,7 +6447,9 @@ function openNewInstanceModal() {
   if (document.getElementById('niLoader')) document.getElementById('niLoader').value = '';
   if (document.getElementById('niRamMin')) document.getElementById('niRamMin').value = '2048';
   if (document.getElementById('niRamMax')) document.getElementById('niRamMax').value = '4096';
-  if (document.getElementById('niWorldTag')) document.getElementById('niWorldTag').value = '';
+  if (document.getElementById('niWorldTag'))    document.getElementById('niWorldTag').value    = '';
+  if (document.getElementById('niServerTag'))  document.getElementById('niServerTag').value   = '';
+  if (document.getElementById('niResourceTag')) document.getElementById('niResourceTag').value = '';
   loadWorldTagSuggestions();
   const img = document.getElementById('niIconImg'), ph = document.getElementById('niIconPh');
   if (img) { img.src=''; img.style.display='none'; }
@@ -5962,17 +6521,23 @@ async function createCustomInstance() {
   const ramMin       = parseInt(document.getElementById('niRamMin').value) || 2048;
   const ramMax       = parseInt(document.getElementById('niRamMax').value) || 4096;
   const notes        = document.getElementById('niNotes')?.value.trim() || '';
-  const worldTag = (document.getElementById('niWorldTag')?.value || '').trim().toLowerCase().replace(/\s+/g,'-') || null;
+  const worldTag    = (document.getElementById('niWorldTag')?.value     || '').trim().toLowerCase().replace(/\s+/g,'-') || null;
+  const serverTag   = (document.getElementById('niServerTag')?.value    || '').trim().toLowerCase().replace(/\s+/g,'-') || null;
+  const resourceTag = (document.getElementById('niResourceTag')?.value  || '').trim().toLowerCase().replace(/\s+/g,'-') || null;
   const colorEl  = document.querySelector('.ni-color[style*="white"]');
   const color    = colorEl?.dataset.color || 'linear-gradient(135deg,#1a3a6b,#2563a0)';
 
   const instance = {
     id: 'inst_' + Date.now(), name, mcVersion: version, loader,
     iconUrl: _niIconDataUrl || null,
-    ramMin, ramMax, notes, color, worldTag,
+    ramMin, ramMax, notes, color, worldTag, serverTag, resourceTag,
     addedAt: Date.now(), downloadStatus: 'custom'
   };
   await InstanceStore.save(instance);
+  // Apply resource tag symlink immediately if set
+  if (resourceTag && isCraftDock && window.craftdockInstance?.applyResourceTag) {
+    window.craftdockInstance.applyResourceTag(instance.id, resourceTag).catch(() => {});
+  }
   closeNewInstanceModal();
   await renderInstanceList();
   showNotif('Instance Created', `${name} · ${loader || 'Vanilla'} ${version}${worldTag ? ' · Tag: '+worldTag : ''}`);
@@ -6048,6 +6613,121 @@ async function loadWorldTagSuggestions() {
   } catch {}
 }
 
+let _serverTagSaveTimer = null;
+function debounceSaveServerTag() {
+  clearTimeout(_serverTagSaveTimer);
+  _serverTagSaveTimer = setTimeout(saveServerTag, 800);
+}
+
+async function saveServerTag() {
+  if (!activeInstanceId) return;
+  const tag = (document.getElementById('ovServerTag')?.value || '').trim().toLowerCase().replace(/\s+/g, '-');
+  const instances = await InstanceStore.getAll();
+  const inst = instances.find(i => i.id === activeInstanceId);
+  if (!inst) return;
+  const oldTag = inst.serverTag || null;
+  if (tag === (oldTag || '')) return;
+
+  inst.serverTag = tag || null;
+  await InstanceStore.save(inst);
+  updateServerTagUI(tag);
+  if (tag) showNotif('Server Tag Set', `Server list shared with other "${tag}" instances`);
+  else showNotif('Server Tag Cleared', 'This instance now has its own private server list');
+}
+
+async function clearServerTag() {
+  const tagInput = document.getElementById('ovServerTag');
+  if (tagInput) tagInput.value = '';
+  await saveServerTag();
+}
+
+function updateServerTagUI(tag) {
+  const clearBtn = document.getElementById('ovServerTagClear');
+  const noteEl   = document.getElementById('serverTagNote');
+  const tagInput = document.getElementById('ovServerTag');
+  if (tagInput && tag) tagInput.value = tag;
+  if (clearBtn) clearBtn.style.display = tag ? '' : 'none';
+  if (noteEl) {
+    if (tag) {
+      noteEl.style.display = 'block';
+      noteEl.innerHTML = `✓ Sharing server list with all instances tagged <strong style="color:#a5b4fc">${escHtml(tag)}</strong>`;
+      noteEl.style.color = '#a5b4fc';
+    } else {
+      noteEl.style.display = 'none';
+    }
+  }
+}
+
+async function loadServerTagSuggestions() {
+  // Reuse instance list to suggest existing server tags
+  try {
+    const instances = await InstanceStore.getAll();
+    const tags = [...new Set(instances.map(i => i.serverTag).filter(Boolean))];
+    for (const id of ['resourceTagSuggestions','niResourceTagSuggestions']) {
+      const dl = document.getElementById(id);
+      if (dl) dl.innerHTML = [...new Set(instances.map(i => i.resourceTag).filter(Boolean))].map(t => `<option value="${escHtml(t)}">`).join('');
+    }
+    for (const id of ['serverTagSuggestions','niServerTagSuggestions']) {
+      const dl = document.getElementById(id);
+      if (dl) dl.innerHTML = tags.map(t => `<option value="${escHtml(t)}">`).join('');
+    }
+  } catch {}
+}
+
+// ── Resource Tag ──────────────────────────────────────────────────────────────
+let _resourceTagTimer = null;
+function debounceSaveResourceTag() {
+  clearTimeout(_resourceTagTimer);
+  _resourceTagTimer = setTimeout(saveResourceTag, 600);
+}
+
+async function saveResourceTag() {
+  if (!activeInstanceId) return;
+  const tag = (document.getElementById('ovResourceTag')?.value || '').trim().toLowerCase().replace(/\s+/g, '-') || null;
+  const insts = await InstanceStore.getAll();
+  const inst  = insts.find(i => i.id === activeInstanceId);
+  if (!inst) return;
+  inst.resourceTag = tag || null;
+  await InstanceStore.save(inst);
+  if (isCraftDock && window.craftdockInstance?.applyResourceTag) {
+    await window.craftdockInstance.applyResourceTag(activeInstanceId, tag);
+  }
+  updateResourceTagUI(tag);
+  loadResourceTagSuggestions();
+  if (tag) showNotif('Resource Tag Set', `Resource packs shared with other "${tag}" instances`);
+  else showNotif('Resource Tag Cleared', 'This instance now has its own private resource packs');
+}
+
+function clearResourceTag() {
+  const tagInput = document.getElementById('ovResourceTag');
+  if (tagInput) tagInput.value = '';
+  saveResourceTag();
+}
+
+function updateResourceTagUI(tag) {
+  const clearBtn = document.getElementById('ovResourceTagClear');
+  const noteEl   = document.getElementById('resourceTagNote');
+  if (clearBtn) clearBtn.style.display = tag ? 'inline-block' : 'none';
+  if (noteEl) {
+    if (tag) {
+      noteEl.style.display = 'block';
+      noteEl.style.color   = 'var(--accent-bright)';
+      noteEl.textContent   = `Shared pool: "${tag}"`;
+    } else {
+      noteEl.style.display = 'none';
+    }
+  }
+}
+
+async function loadResourceTagSuggestions() {
+  try {
+    const instances = await InstanceStore.getAll();
+    const tags = [...new Set(instances.map(i => i.resourceTag).filter(Boolean))];
+    const dl = document.getElementById('resourceTagSuggestions');
+    if (dl) dl.innerHTML = tags.map(t => `<option value="${escHtml(t)}">`).join('');
+  } catch {}
+}
+
 async function saveInstanceSettings() {
   if (!activeInstanceId) return;
   const instances = await InstanceStore.getAll();
@@ -6055,7 +6735,7 @@ async function saveInstanceSettings() {
   if (!inst) return;
   inst.ramMin = parseInt(document.getElementById('ovMinRam')?.value) || inst.ramMin;
   inst.ramMax = parseInt(document.getElementById('ovMaxRam')?.value) || inst.ramMax;
-  // worldTag is saved separately via debounceSaveWorldTag
+  // worldTag and serverTag saved separately via their debounce functions
   await InstanceStore.save(inst);
 }
 
@@ -6117,6 +6797,18 @@ async function loadInstanceOverview(inst) {
   if (ovTagInput) ovTagInput.value = inst.worldTag || '';
   updateWorldTagUI(inst.worldTag || null);
   loadWorldTagSuggestions();
+
+  // Server tag UI
+  const ovServerTagInput = document.getElementById('ovServerTag');
+  if (ovServerTagInput) ovServerTagInput.value = inst.serverTag || '';
+  updateServerTagUI(inst.serverTag || null);
+  loadServerTagSuggestions();
+
+  // Resource tag UI
+  const ovResourceTagInput = document.getElementById('ovResourceTag');
+  if (ovResourceTagInput) ovResourceTagInput.value = inst.resourceTag || '';
+  updateResourceTagUI(inst.resourceTag || null);
+  loadResourceTagSuggestions();
 
   // Disk usage (async)
   const diskEl = document.getElementById('ovDiskUsage');
@@ -7937,10 +8629,12 @@ function javaReqFor(v) {
   if (!v) return 21;
   const parts = v.split('.');
   const minor = parseInt(parts[1] || '0', 10);
-  if (minor >= 21) return 21;
-  if (minor >= 17) return 17;
-  if (minor >= 12) return 11;
-  return 8;
+  const patch = parseInt(parts[2] || '0', 10);
+  if (minor >= 21)                   return 21; // 1.21+
+  if (minor === 20 && patch <= 4)    return 21; // 1.20–1.20.4
+  if (minor >= 18)                   return 17; // 1.18–1.19
+  if (minor === 17)                  return 16; // 1.17
+  return 8;                                     // 1.16 and below
 }
 
 async function fetchMcVersions() {
@@ -9559,7 +10253,7 @@ async function confirmInstallResToInstance() {
     statusEl.textContent = 'Fetching download URL…';
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${_irtiItemData.slug||_irtiItemData.id}/version`,
-      { headers: { 'User-Agent': 'CraftDock/0.6.2' } }
+      { headers: { 'User-Agent': 'CraftDock/0.6.3' } }
     );
     if (!res.ok) throw new Error('Modrinth ' + res.status);
     const versions = await res.json();
@@ -9665,7 +10359,7 @@ async function _itiLoadVersions(instId) {
     // Always fetch ALL versions for this project (no filter) so user can pick any
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${_itiModData.slug||_itiModData.id}/version`,
-      { headers: { 'User-Agent': 'CraftDock/0.6.2' } }
+      { headers: { 'User-Agent': 'CraftDock/0.6.3' } }
     );
     _itiVersions = res.ok ? await res.json() : [];
 
@@ -9773,7 +10467,7 @@ async function confirmInstallToInstance() {
       statusEl.textContent = 'Fetching download URL…';
       const res = await fetch(
         `https://api.modrinth.com/v2/project/${_itiModData.slug||_itiModData.id}/version`,
-        { headers:{'User-Agent':'CraftDock/0.6.2'} }
+        { headers:{'User-Agent':'CraftDock/0.6.3'} }
       );
       const allVers = res.ok ? await res.json() : [];
       const fallbackFile = allVers[0]?.files?.find(f=>f.primary) || allVers[0]?.files?.[0];
@@ -9965,13 +10659,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         showNotif('Game Launched', msg || 'Minecraft is running!');
         setInstConsoleStatus(id, 'running');
         appendInstConsole(id, '[CraftDock] ✓ Minecraft is running!', 'log-success');
+        updateLaunchBtn(id, 'running');
+      } else if (status === 'stopped') {
+        setInstConsoleStatus(id, 'stopped');
+        appendInstConsole(id, '[CraftDock] Minecraft has closed.', 'log-craftdock');
+        updateLaunchBtn(id, 'stopped');
       } else if (status === 'error') {
         showNotif('Launch Failed', msg || 'Could not start Minecraft', 9000);
         setInstConsoleStatus(id, 'error');
         appendInstConsole(id, '[CraftDock] Launch failed: ' + (msg || ''), 'log-error');
+        updateLaunchBtn(id, 'stopped');
       } else if (status === 'progress') {
-        // Progress only goes to the console panel, NOT to heroSub (which shows in Overview)
         appendInstConsole(id, msg || '', 'log-craftdock');
+      } else if (status === 'auth-required') {
+        // Token refresh failed — abort launch and prompt re-login
+        updateLaunchBtn(id, 'stopped');
+        setInstConsoleStatus(id, 'stopped');
+        appendInstConsole(id, '[CraftDock] ⚠️ Session expired — please sign in again.', 'log-error');
+        // Show a prominent notification with a button to go to accounts
+        const notifEl = document.getElementById('notifBar');
+        showNotif('⚠️ Session Expired', 'Sign in again to launch.', 10000);
+        // Navigate to accounts tab after short delay so user sees the notif
+        setTimeout(() => {
+          const accountsBtn = document.querySelectorAll('.rail-btn')[5];
+          switchPage('accounts', accountsBtn);
+          renderAccountsPage();
+        }, 1200);
       }
     });
 
@@ -10011,7 +10724,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Check main.js version matches what the HTML expects ────
   if (window.craftdockServer) {
-    const EXPECTED = '0.6.2';
+    const EXPECTED = '0.6.3';
     try {
       const ver = await window.craftdockServer.getMainVersion?.();
       if (ver !== EXPECTED) {
@@ -10065,6 +10778,7 @@ loadVersions();
 const SETTINGS_KEY = 'craftdock:appSettings';
 let _settingsSaveTimer = null;
 
+let _settingsLoaded = false;
 async function loadSettings() {
   const s = (await Store.get(SETTINGS_KEY)) || {};
 
@@ -10078,10 +10792,18 @@ async function loadSettings() {
   _applyToggle('settingsShowConsole',  s.showConsoleOnLaunch  !== false); // default ON
   _applyToggle('settingsAutoUpdate',   s.checkUpdatesOnStartup !== false); // default ON
 
-  // Data path
+  // Data path — resolve once and cache
   const pathEl = document.getElementById('settingsDataPath');
-  if (pathEl && isCraftDock && window.craftdock?.getDataRoot) {
-    window.craftdock.getDataRoot().then(p => { if (pathEl) pathEl.textContent = p || '—'; }).catch(() => {});
+  if (pathEl) {
+    if (window._cachedDataRoot) {
+      pathEl.textContent = window._cachedDataRoot;
+    } else if (isCraftDock && window.craftdock?.getDataRoot) {
+      window.craftdock.getDataRoot()
+        .then(p => { window._cachedDataRoot = p || '—'; if (pathEl) pathEl.textContent = window._cachedDataRoot; })
+        .catch(() => { if (pathEl) pathEl.textContent = '—'; });
+    } else {
+      pathEl.textContent = '—';
+    }
   }
 
   // Counts
@@ -10104,8 +10826,12 @@ async function loadSettings() {
     } else { evEl.textContent = '—'; }
   }
 
+  // Config open mode
+  setConfigOpenMode(s.configOpenMode || 'app', false);
+
   // Java scan
-  settingsScanJava();
+  if (!_settingsLoaded) settingsScanJava();
+  _settingsLoaded = true;
 }
 
 function _applyToggle(id, on) {
@@ -10115,7 +10841,10 @@ function _applyToggle(id, on) {
 }
 
 async function getSettings() {
-  return (await Store.get(SETTINGS_KEY)) || {};
+  const s = (await Store.get(SETTINGS_KEY)) || {};
+  if (!window._settings) window._settings = {};
+  Object.assign(window._settings, s);
+  return s;
 }
 
 async function saveSettings() {
@@ -10126,7 +10855,26 @@ async function saveSettings() {
     ...s,
     defaultMinRam: minR,
     defaultMaxRam: maxR,
+    configOpenMode: window._settings?.configOpenMode || 'app',
   });
+}
+
+function setConfigOpenMode(mode, persist = true) {
+  if (!window._settings) window._settings = {};
+  window._settings.configOpenMode = mode;
+  const appBtn = document.getElementById('configModeApp');
+  const extBtn = document.getElementById('configModeExternal');
+  if (appBtn) {
+    appBtn.style.background    = mode === 'app' ? 'var(--accent)' : 'var(--bg-input)';
+    appBtn.style.color         = mode === 'app' ? 'white' : 'var(--text-muted)';
+    appBtn.style.fontWeight    = mode === 'app' ? '600' : '400';
+  }
+  if (extBtn) {
+    extBtn.style.background    = mode === 'external' ? 'var(--accent)' : 'var(--bg-input)';
+    extBtn.style.color         = mode === 'external' ? 'white' : 'var(--text-muted)';
+    extBtn.style.fontWeight    = mode === 'external' ? '600' : '400';
+  }
+  if (persist) saveSettingsDebounced();
 }
 
 function saveSettingsDebounced() {
@@ -10151,24 +10899,46 @@ async function settingsScanJava() {
   listEl.innerHTML = '<div style="padding:10px 18px;font-size:11px;color:var(--text-muted)">Scanning…</div>';
   try {
     const javas = await window.craftdockInstance.scanJava();
-    if (!javas?.length) {
-      listEl.innerHTML = '<div style="padding:10px 18px;font-size:11px;color:#f87171">No Java installations found. Install Java 21+ to launch Minecraft.</div>';
+    // Also check launcher-managed Java via IPC
+    let managed = [];
+    if (window.craftdockInstance?.listLauncherJava) {
+      managed = await window.craftdockInstance.listLauncherJava().catch(() => []);
+    }
+
+    const allJavas = [
+      ...managed.map(j => ({ ...j, source: 'launcher' })),
+      ...(javas || []).map(j => ({ ...j, source: 'system' })),
+    ];
+
+    if (!allJavas.length) {
+      listEl.innerHTML = '<div style="padding:10px 18px;font-size:11px;color:var(--text-muted)">No Java found — CraftDock will auto-download Java the first time you launch an instance.</div>';
       return;
     }
-    listEl.innerHTML = javas.map(j => `
-      <div style="display:flex;align-items:center;gap:10px;padding:8px 18px;border-bottom:1px solid var(--border)">
-        <div style="width:28px;height:28px;border-radius:6px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2" width="13" height="13"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+
+    const needed = [21, 17, 16, 8];
+    const found  = new Set(allJavas.map(j => j.version));
+
+    listEl.innerHTML = allJavas.map(j => {
+      const isLauncher = j.source === 'launcher';
+      const badge = isLauncher
+        ? '<span style="font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(99,102,241,0.2);color:#a5b4fc;margin-left:5px">Launcher</span>'
+        : '<span style="font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(255,255,255,0.07);color:var(--text-muted);margin-left:5px">System</span>';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:8px 18px;border-bottom:1px solid var(--border)">
+        <div style="width:28px;height:28px;border-radius:6px;background:${isLauncher?'rgba(99,102,241,0.15)':'rgba(255,255,255,0.05)'};border:1px solid ${isLauncher?'rgba(99,102,241,0.3)':'var(--border)'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="${isLauncher?'#818cf8':'#94a3b8'}" stroke-width="2" width="13" height="13"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
         </div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:12px;font-weight:700">Java ${j.version}</div>
+          <div style="font-size:12px;font-weight:700;display:flex;align-items:center">Java ${j.version}${badge}</div>
           <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:monospace">${escHtml(j.exe)}</div>
         </div>
         <span style="font-size:10px;padding:2px 8px;border-radius:10px;${j.version >= 21 ? 'background:rgba(34,197,94,0.15);color:#22c55e' : j.version >= 17 ? 'background:rgba(234,179,8,0.15);color:#eab308' : 'background:rgba(248,81,73,0.12);color:#f87171'}">
           Java ${j.version}
         </span>
-      </div>
-    `).join('') + `<div style="padding:6px 18px 10px;font-size:10px;color:var(--text-muted)">${javas.length} installation${javas.length!==1?'s':''} found</div>`;
+      </div>`;
+    }).join('')
+    + `<div style="padding:8px 18px 10px;font-size:10px;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center">
+        <span>${allJavas.length} installation${allJavas.length!==1?'s':''} found · Auto-managed by CraftDock</span>
+      </div>`;
   } catch(e) {
     listEl.innerHTML = `<div style="padding:10px 18px;font-size:11px;color:#f87171">Scan failed: ${escHtml(e.message)}</div>`;
   }
@@ -10209,7 +10979,7 @@ async function fetchModrinthLatestVersions(sourceIds, mcVersion, loader) {
     try {
       const params = new URLSearchParams({ ids: JSON.stringify(batch) });
       const res = await fetch(`https://api.modrinth.com/v2/projects?${params}`, {
-        headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' }
+        headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
       });
       if (!res.ok) continue;
       const projects = await res.json();
@@ -10227,7 +10997,7 @@ async function fetchModrinthLatestVersions(sourceIds, mcVersion, loader) {
       if (mcVersion) qs.push(`game_versions=["${mcVersion}"]`);
       if (loader)    qs.push(`loaders=["${loader}"]`);
       if (qs.length) url += '?' + qs.join('&');
-      const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.6.2' } });
+      const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.6.3' } });
       if (!res.ok) continue;
       const versions = await res.json();
       if (versions?.length) {
@@ -10240,51 +11010,101 @@ async function fetchModrinthLatestVersions(sourceIds, mcVersion, loader) {
   return results;
 }
 
-async function checkInstanceModUpdates() {
+async function updateSingleMod(instanceId, modId, overrideInfo) {
+  // overrideInfo = { latestUrl, latestFileName, latestVersion, latestVersionId }
+  // passed directly from the modal so we don't depend on _latest* surviving disk round-trips
+  const instances = await InstanceStore.getAll();
+  const inst = instances.find(i => i.id === instanceId);
+  if (!inst) return;
+  const mod = (inst.mods || []).find(m => m.id === modId);
+  if (!mod) { showNotif('Mod not found', 'Could not find mod metadata'); return; }
+
+  const latestUrl      = overrideInfo?.latestUrl      || mod._latestUrl      || '';
+  const latestFileName = overrideInfo?.latestFileName || mod._latestFileName || '';
+  const latestVersion  = overrideInfo?.latestVersion  || mod._latestVersion  || '';
+  const latestVersionId= overrideInfo?.latestVersionId|| mod._latestVersionId|| '';
+
+  if (!latestUrl) { showNotif('No update info', 'Run Check Updates first'); return; }
+
+  const newFileName = latestFileName || mod.fileName;
+  showNotif('Updating…', `${mod.name} → v${latestVersion}`);
+
+  if (window.craftdockInstance) {
+    // Delete every disk file that belongs to this mod (filename or slug match)
+    const diskMods = await window.craftdockInstance.listMods(instanceId).catch(() => []) || [];
+    const slug       = (mod.slug || '').toLowerCase();
+    const storedName = (mod.fileName || '').toLowerCase().replace(/\.disabled$/, '');
+    for (const dm of diskMods) {
+      const dname = dm.name.toLowerCase().replace(/\.disabled$/, '');
+      if ((slug && dname.startsWith(slug)) || (storedName && dname === storedName)) {
+        await window.craftdockInstance.deleteMod(instanceId, dm.name).catch(() => {});
+      }
+    }
+    // Download new version
+    const result = await window.craftdockInstance.downloadMod(instanceId, latestUrl, newFileName);
+    if (!result?.success) { showNotif('Update failed', result?.error || 'Download error'); return; }
+  }
+
+  mod.versionId    = latestVersionId;
+  mod.versionName  = latestVersion;
+  mod.downloadUrl  = latestUrl;
+  mod.fileName     = newFileName;
+  mod._hasUpdate   = false;
+  delete mod._latestVersion; delete mod._latestVersionId;
+  delete mod._latestUrl;     delete mod._latestFileName;
+
+  await InstanceStore.save(inst);
+  renderInstalledMods(inst);
+  showNotif('Updated ✓', `${mod.name} → v${latestVersion}`);
+}
+
+async function checkInstanceModUpdates(btn) {
   if (!activeInstanceId) return;
   const instances = await InstanceStore.getAll();
   const inst = instances.find(i => i.id === activeInstanceId);
   if (!inst) return;
 
-  // Get all mods with a sourceId (Modrinth ID)
-  let allMods = [];
-  if (isCraftDock && window.craftdockInstance?.listMods) {
-    allMods = await window.craftdockInstance.listMods(activeInstanceId).catch(() => []) || [];
-  } else {
-    allMods = inst.mods || [];
-  }
+  const modsWithSource = (inst.mods || []).filter(m => m.source === 'modrinth' && m.id);
+  if (!modsWithSource.length) { showNotif('No Updateable Mods', 'Install mods from Modrinth to check for updates.', 4000); return; }
 
-  const modsWithSource = allMods.filter(m => m.sourceId);
-  if (!modsWithSource.length) {
-    showNotif('No Updateable Mods', 'None of your installed mods have a Modrinth source to check against.', 4000);
-    return;
-  }
-
+  if (btn) { btn.textContent = 'Checking…'; btn.disabled = true; }
   showNotif('Checking Updates…', `Checking ${modsWithSource.length} mod${modsWithSource.length!==1?'s':''}…`, 2500);
 
-  const sourceIds = modsWithSource.map(m => m.sourceId);
-  const latestMap = await fetchModrinthLatestVersions(sourceIds, inst.mcVersion, inst.loader);
+  const latestMap = await fetchModrinthLatestVersions(
+    modsWithSource.map(m => m.id), inst.mcVersion || '', inst.loader || ''
+  );
 
-  // Compare installed version strings to latest
   const updates = [];
   for (const mod of modsWithSource) {
-    const latest = latestMap[mod.sourceId];
-    if (!latest?.latestVersion) continue;
-    // If installed version doesn't match latest, flag as updateable
-    const installedVer = mod.version || '';
-    if (installedVer && installedVer !== latest.latestVersion) {
+    const latest = latestMap[mod.id];
+    if (!latest) continue;
+    const installedId  = mod.versionId || '';
+    const installedVer = mod.versionName || mod.version || '';
+    const latestId     = latest.latestVersionId || latest.versionId || '';
+    const latestVer    = latest.latestVersion || '';
+    const isOutdated   = installedId && latestId
+      ? installedId !== latestId
+      : installedVer && latestVer ? installedVer !== latestVer : false;
+    if (isOutdated) {
+      mod._hasUpdate       = true;
+      mod._latestVersion   = latestVer;
+      mod._latestVersionId = latestId;
+      mod._latestUrl       = latest.files?.[0]?.url || '';
+      mod._latestFileName  = latest.files?.[0]?.filename || '';
       updates.push({ mod, latest });
-    } else if (!installedVer && latest.latestVersion) {
-      updates.push({ mod, latest }); // no version info — show latest anyway
+    } else {
+      mod._hasUpdate = false;
     }
   }
+
+  await InstanceStore.save(inst);
+  renderInstalledMods(inst);
+  if (btn) { btn.textContent = 'Updates'; btn.disabled = false; }
 
   if (!updates.length) {
     showNotif('All Up to Date ✓', `All ${modsWithSource.length} checked mods are on the latest version.`, 4000);
     return;
   }
-
-  // Show update dialog
   await showModUpdateModal(updates, activeInstanceId, inst);
 }
 
@@ -10344,7 +11164,7 @@ function showModUpdateModal(updates, instId, inst) {
                 </div>
               </div>
               <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);cursor:pointer">
-                <input type="checkbox" checked data-mod-id="${mod.id}" data-source-id="${mod.sourceId}" data-file-url="${latest.files?.[0]?.url||''}" data-file-name="${latest.files?.[0]?.filename||''}" data-new-ver="${latest.latestVersion}" style="accent-color:#6366f1">
+                <input type="checkbox" checked data-mod-id="${mod.id}" data-source-id="${mod.sourceId}" data-file-url="${latest.files?.[0]?.url||''}" data-file-name="${latest.files?.[0]?.filename||''}" data-new-ver="${latest.latestVersion}" data-new-ver-id="${latest.latestVersionId||''}" style="accent-color:#6366f1">
                 Update
               </label>
             </div>
@@ -10361,31 +11181,17 @@ function showModUpdateModal(updates, instId, inst) {
       const checked = [...overlay.querySelectorAll('input[type=checkbox]:checked')];
       overlay.remove();
       if (!checked.length) { resolve(false); return; }
-      let done = 0;
+      // Delegate each update to updateSingleMod so delete+download logic is identical
+      // to clicking the ↑ badge directly
       for (const cb of checked) {
-        const fileUrl  = cb.dataset.fileUrl;
-        const fileName = cb.dataset.fileName;
-        const newVer   = cb.dataset.newVer;
-        const sourceId = cb.dataset.sourceId;
-        if (fileUrl && fileName && isCraftDock && window.craftdockInstance?.downloadMod) {
-          try {
-            await window.craftdockInstance.downloadMod(instId, fileUrl, fileName);
-            // Update version in instance meta
-            const insts2 = await InstanceStore.getAll();
-            const inst2 = insts2.find(i => i.id === instId);
-            if (inst2) {
-              const mods2 = inst2.mods || [];
-              const mi = mods2.findIndex(m => m.sourceId === sourceId);
-              if (mi >= 0) mods2[mi].version = newVer;
-              inst2.mods = mods2;
-              await InstanceStore.save(inst2);
-            }
-            done++;
-          } catch(e) { showNotif('Update failed', e.message, 5000); }
-        }
+        const modId = cb.dataset.modId;
+        if (modId) await updateSingleMod(instId, modId, {
+          latestUrl:       cb.dataset.fileUrl,
+          latestFileName:  cb.dataset.fileName,
+          latestVersion:   cb.dataset.newVer,
+          latestVersionId: cb.dataset.newVerId,
+        });
       }
-      if (done) showNotif(`Updated ${done} mod${done!==1?'s':''}`, 'Restart the instance to apply.', 4000);
-      if (activeInstanceId === instId) renderModList(instId);
       resolve(true);
     };
   });
@@ -10466,6 +11272,487 @@ function selectExport(el) {
   el.classList.add('selected');
 }
 function openExport() { document.getElementById('exportModal').classList.add('open'); }
+
+// ═══════════════════════════════════════════════════════════
+//  RESOURCE/SHADER VERSION PICKER
+// ═══════════════════════════════════════════════════════════
+let _resVersionAll   = [];
+let _resVersionItem  = null;
+let _resVersionSubdir = '';
+let _resVersionMcVer = '';
+
+function openResVersionPicker(item, versions, mcVer, subdir) {
+  _resVersionItem   = item;
+  _resVersionAll    = versions;
+  _resVersionSubdir = subdir;
+  _resVersionMcVer  = mcVer;
+
+  document.getElementById('resVersionTitle').textContent = item.name;
+  document.getElementById('resVersionSub').textContent   = `${versions.length} version${versions.length===1?'':'s'} available${mcVer ? ' · Instance: '+mcVer : ''}`;
+  document.getElementById('resVersionFilter').value      = '';
+  document.getElementById('resVersionCompatOnly').checked = !!mcVer;
+  document.getElementById('resVersionModal').style.display = 'flex';
+  renderResVersionList(_resVersionAll, mcVer, !!mcVer);
+}
+
+function closeResVersionPicker() {
+  document.getElementById('resVersionModal').style.display = 'none';
+}
+
+function filterResVersions(query) {
+  const compatOnly = document.getElementById('resVersionCompatOnly')?.checked;
+  const q = query.toLowerCase();
+  let list = _resVersionAll;
+  if (compatOnly && _resVersionMcVer) {
+    list = list.filter(v => v.game_versions?.includes(_resVersionMcVer));
+  }
+  if (q) {
+    list = list.filter(v => v.name?.toLowerCase().includes(q) || v.version_number?.toLowerCase().includes(q));
+  }
+  renderResVersionList(list, _resVersionMcVer, compatOnly);
+}
+
+function renderResVersionList(versions, mcVer, compatOnly) {
+  const el = document.getElementById('resVersionList');
+  if (!el) return;
+  if (!versions.length) {
+    el.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:12px">${compatOnly && mcVer ? `No versions for MC ${mcVer}. Try unchecking the filter.` : 'No versions found.'}</div>`;
+    return;
+  }
+  el.innerHTML = versions.map((v, i) => {
+    const file   = v.files?.find(f => f.primary) || v.files?.[0];
+    const isCompat = mcVer && v.game_versions?.includes(mcVer);
+    const gameVers = (v.game_versions || []).slice(0, 4).join(', ') + (v.game_versions?.length > 4 ? '…' : '');
+    const chanType = v.version_type === 'release' ? '' : v.version_type === 'beta' ? ' · <span style="color:#f59e0b">Beta</span>' : ' · <span style="color:#ef4444">Alpha</span>';
+    const size     = file?.size ? ` · ${(file.size/1024).toFixed(0)}KB` : '';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:6px;border:1px solid ${isCompat?'rgba(99,102,241,0.25)':'var(--border)'};margin-bottom:4px;background:${isCompat?'rgba(99,102,241,0.06)':'transparent'}">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px">
+          ${escHtml(v.name||v.version_number||'Version')}
+          ${isCompat ? '<span style="font-size:9px;background:rgba(99,102,241,0.25);color:#a5b4fc;border-radius:3px;padding:1px 5px">✓ Compatible</span>' : ''}
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${escHtml(v.version_number||'')}${chanType}${size}${gameVers ? ' · MC: '+escHtml(gameVers) : ''}</div>
+      </div>
+      <button id="rvbtn-${i}" class="mb-install-btn" onclick="installResVersion(${i})" style="flex-shrink:0;font-size:11px;padding:5px 12px">Install</button>
+    </div>`;
+  }).join('');
+  // Wire buttons with index-based lookup (no path-in-onclick)
+  versions.forEach((v, i) => {
+    const btn = document.getElementById(`rvbtn-${i}`);
+    if (btn) btn.addEventListener('click', () => installResVersion(i, versions));
+  });
+}
+
+async function installResVersion(idx, versions) {
+  const list   = versions || _resVersionAll;
+  const v      = list[idx];
+  if (!v) return;
+  const file   = v.files?.find(f => f.primary) || v.files?.[0];
+  if (!file) { showNotif('No file', 'This version has no downloadable file'); return; }
+
+  const btn = document.getElementById(`rvbtn-${idx}`);
+  if (btn) { btn.textContent = 'Downloading…'; btn.disabled = true; }
+
+  try {
+    if (!window.craftdockInstance?.downloadResPack) throw new Error('Desktop app required');
+    await window.craftdockInstance.downloadResPack(activeInstanceId, file.url, file.filename, _resVersionSubdir);
+    if (btn) { btn.textContent = 'Installed ✓'; btn.style.background='rgba(34,197,94,0.2)'; btn.style.color='#22c55e'; btn.style.borderColor='rgba(34,197,94,0.4)'; }
+    showNotif('Installed', `${_resVersionItem?.name} → ${_resVersionSubdir}/`);
+    reloadActiveInstanceResources();
+  } catch(e) {
+    if (btn) { btn.textContent = 'Failed'; btn.disabled = false; }
+    showNotif('Install Failed', e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SCREENSHOTS
+// ═══════════════════════════════════════════════════════════
+let _screenshotFiles  = [];
+let _lightboxIdx      = 0;
+let _lightboxFilePath = null;
+
+async function loadScreenshots() {
+  const grid    = document.getElementById('screenshotGrid');
+  const countEl = document.getElementById('screenshotCount');
+  if (!grid) return;
+
+  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px">Loading…</div>';
+
+  if (!isCraftDock || !window.craftdockInstance?.listScreenshots) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px">Screenshots only available in the desktop app.</div>';
+    return;
+  }
+
+  try {
+    const files = await window.craftdockInstance.listScreenshots(activeInstanceId);
+    _screenshotFiles = files || [];
+    if (countEl) countEl.textContent = _screenshotFiles.length ? `${_screenshotFiles.length} screenshot${_screenshotFiles.length === 1 ? '' : 's'}` : 'Screenshots';
+    if (!_screenshotFiles.length) {
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" style="margin:0 auto 10px;display:block;opacity:0.3"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg><div style="font-size:12px">No screenshots yet — take some in-game with F2!</div></div>';
+      return;
+    }
+    // Render placeholder tiles first — load images lazily
+    grid.innerHTML = _screenshotFiles.map((f, i) => `
+      <div id="sstile-${i}" style="aspect-ratio:16/9;background:var(--bg-input);border-radius:6px;overflow:hidden;cursor:pointer;position:relative;border:1px solid var(--border);transition:transform 0.15s,border-color 0.15s"
+        onmouseenter="this.style.transform='scale(1.03)';this.style.borderColor='var(--accent)'"
+        onmouseleave="this.style.transform='';this.style.borderColor='var(--border)'"
+        onclick="openLightbox(${i})" title="${escHtml(f.name)}">
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" style="opacity:0.3"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+        </div>
+        <img id="ssimg-${i}" style="width:100%;height:100%;object-fit:cover;display:none;position:absolute;inset:0" loading="lazy">
+        <div style="position:absolute;bottom:0;left:0;right:0;padding:4px 6px;background:linear-gradient(transparent,rgba(0,0,0,0.7));font-size:9px;color:rgba(255,255,255,0.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(f.name)}</div>
+      </div>`).join('');
+
+    // Load images progressively
+    for (let i = 0; i < _screenshotFiles.length; i++) {
+      loadScreenshotThumb(i);
+    }
+  } catch(e) {
+    grid.innerHTML = `<div style="grid-column:1/-1;padding:20px;text-align:center;color:var(--text-muted);font-size:12px">Error loading screenshots: ${escHtml(e.message)}</div>`;
+  }
+}
+
+async function loadScreenshotThumb(idx) {
+  const f    = _screenshotFiles[idx];
+  const img  = document.getElementById(`ssimg-${idx}`);
+  if (!img || !f) return;
+  try {
+    const res = await window.craftdockInstance.readScreenshot(f.path);
+    if (res?.dataUrl) {
+      img.src = res.dataUrl;
+      img.style.display = 'block';
+    }
+  } catch {}
+}
+
+async function openLightbox(idx) {
+  const f = _screenshotFiles[idx];
+  if (!f) return;
+  _lightboxIdx      = idx;
+  _lightboxFilePath = f.path;
+
+  const lb     = document.getElementById('screenshotLightbox');
+  const lbImg  = document.getElementById('lightboxImg');
+  const lbName = document.getElementById('lightboxName');
+
+  // Try to reuse already-loaded thumb, else fetch
+  const cachedImg = document.getElementById(`ssimg-${idx}`);
+  if (cachedImg?.src && cachedImg.src !== window.location.href) {
+    lbImg.src = cachedImg.src;
+  } else {
+    lbImg.src = '';
+    try {
+      const res = await window.craftdockInstance.readScreenshot(f.path);
+      if (res?.dataUrl) lbImg.src = res.dataUrl;
+    } catch {}
+  }
+
+  if (lbName) lbName.textContent = f.name;
+  lb.style.display = 'flex';
+  // Arrow visibility
+  document.getElementById('lightboxPrev').style.opacity = idx > 0 ? '1' : '0.2';
+  document.getElementById('lightboxNext').style.opacity = idx < _screenshotFiles.length - 1 ? '1' : '0.2';
+}
+
+function closeLightbox() {
+  const lb = document.getElementById('screenshotLightbox');
+  if (lb) lb.style.display = 'none';
+  document.getElementById('lightboxImg').src = '';
+}
+
+async function lightboxNav(dir) {
+  const next = _lightboxIdx + dir;
+  if (next < 0 || next >= _screenshotFiles.length) return;
+  await openLightbox(next);
+}
+
+function openScreenshotExternal() {
+  if (_lightboxFilePath && isCraftDock && window.craftdock?.openFolder) {
+    window.craftdock.openFolder(_lightboxFilePath);
+  }
+}
+
+// Keyboard nav for lightbox
+document.addEventListener('keydown', e => {
+  const lb = document.getElementById('screenshotLightbox');
+  if (!lb || lb.style.display === 'none') return;
+  if (e.key === 'ArrowLeft')  lightboxNav(-1);
+  if (e.key === 'ArrowRight') lightboxNav(1);
+  if (e.key === 'Escape')     closeLightbox();
+});
+
+// ═══════════════════════════════════════════════════════════
+//  IMPORT MODAL
+// ═══════════════════════════════════════════════════════════
+let _importType = 'cf';
+let _importFilePath = null;
+
+function openImportModal() {
+  _importType = 'cf';
+  _importFilePath = null;
+  document.getElementById('importModal').classList.add('open');
+  document.getElementById('importFileName').style.display = 'none';
+  document.getElementById('importFileName').textContent = '';
+  document.getElementById('importDropLabel').textContent = 'Click to choose file or drag & drop';
+  document.getElementById('importProgress').style.display = 'none';
+  document.getElementById('importProgressBar').style.width = '0%';
+  const confirmBtn = document.getElementById('importConfirmBtn');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.style.opacity = '0.5'; }
+  // reset selection
+  document.getElementById('importOptCF').classList.add('selected');
+  document.getElementById('importOptMR').classList.remove('selected');
+}
+
+function closeImportModal() {
+  document.getElementById('importModal').classList.remove('open');
+  _importFilePath = null;
+  const fi = document.getElementById('importFileInput');
+  if (fi) fi.value = '';
+}
+
+function selectImportType(type, el) {
+  _importType = type;
+  document.querySelectorAll('#importModal .export-opt').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+  // Update accepted file type hint
+  const label = document.getElementById('importDropLabel');
+  if (label) label.textContent = type === 'cf' ? 'Click to choose .zip file or drag & drop' : 'Click to choose .mrpack file or drag & drop';
+  const fi = document.getElementById('importFileInput');
+  if (fi) fi.accept = type === 'cf' ? '.zip' : '.mrpack,.zip';
+}
+
+function triggerImportFilePick() {
+  document.getElementById('importFileInput').click();
+}
+
+function handleImportFileSelect(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  _importFilePath = file.path || file.name; // Electron gives file.path
+  _setImportFile(file.name, file.path);
+}
+
+function handleImportDrop(e) {
+  e.preventDefault();
+  document.getElementById('importDropZone').style.borderColor = 'var(--border)';
+  const file = e.dataTransfer.files?.[0];
+  if (!file) return;
+  // Auto-detect type from extension
+  if (file.name.endsWith('.mrpack')) selectImportType('mr', document.getElementById('importOptMR'));
+  else if (file.name.endsWith('.zip')) selectImportType('cf', document.getElementById('importOptCF'));
+  _importFilePath = file.path || file.name;
+  _setImportFile(file.name, file.path);
+}
+
+function _setImportFile(name, filePath) {
+  _importFilePath = filePath || name;
+  const label = document.getElementById('importDropLabel');
+  const fileEl = document.getElementById('importFileName');
+  if (label) label.textContent = 'File selected:';
+  if (fileEl) { fileEl.textContent = name; fileEl.style.display = 'block'; }
+  const confirmBtn = document.getElementById('importConfirmBtn');
+  if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = '1'; }
+}
+
+async function doImport() {
+  if (!_importFilePath) return;
+  if (!isCraftDock || !window.craftdockInstance?.importPack) {
+    showNotif('Import', 'Import is only available in the desktop app');
+    return;
+  }
+  const confirmBtn = document.getElementById('importConfirmBtn');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.style.opacity = '0.5'; }
+  document.getElementById('importProgress').style.display = 'block';
+
+  const setProgress = (pct, msg) => {
+    document.getElementById('importProgressBar').style.width = pct + '%';
+    document.getElementById('importProgressLabel').textContent = msg;
+  };
+
+  try {
+    setProgress(10, 'Reading pack file…');
+    const result = await window.craftdockInstance.importPack(_importFilePath, _importType);
+    if (!result.success) throw new Error(result.error || 'Import failed');
+    setProgress(100, 'Import complete!');
+    await renderInstanceList(true);
+    setTimeout(() => {
+      closeImportModal();
+      showNotif('Imported!', result.name ? `"${result.name}" added as a new instance` : 'Modpack imported successfully');
+    }, 600);
+  } catch(err) {
+    setProgress(0, '');
+    document.getElementById('importProgress').style.display = 'none';
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = '1'; }
+    showNotif('Import Failed', err.message || 'Could not import pack', 8000);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CONFIG FILES TAB
+// ═══════════════════════════════════════════════════════════
+let _configFileCache = [];
+
+async function loadConfigFiles() {
+  if (!activeInstanceId) return;
+  const el = document.getElementById('configFileList');
+  if (!el) return;
+  el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">Loading config files…</div>';
+
+  if (!isCraftDock || !window.craftdockInstance?.listConfigFiles) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">Config browsing is only available in the desktop app.</div>';
+    return;
+  }
+
+  try {
+    const files = await window.craftdockInstance.listConfigFiles(activeInstanceId);
+    _configFileCache = files || [];
+    renderConfigFiles(_configFileCache);
+  } catch(e) {
+    el.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">Could not read config folder.<br><span style="font-size:10px;opacity:0.6">${escHtml(e.message)}</span></div>`;
+  }
+}
+
+// Lookup table — avoids path-in-onclick corruption (backslashes, spaces, quotes)
+let _configRenderPaths = [];
+
+function renderConfigFiles(files) {
+  const el = document.getElementById('configFileList');
+  if (!el) return;
+  if (!files.length) {
+    el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:12px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" style="margin:0 auto 8px;display:block;opacity:0.3"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>No config files found. Launch the instance once to generate configs.</div>';
+    return;
+  }
+  // Store paths in a safe JS array — reference by index in onclick
+  _configRenderPaths = files.map(f => f.path);
+  el.innerHTML = files.map((f, i) => {
+    const ext  = f.name.split('.').pop().toLowerCase();
+    const icon = ext === 'json' ? '#f6c90e' : ext === 'toml' ? '#e07b39' : ext === 'yaml' || ext === 'yml' ? '#38bdf8' : ext === 'cfg' || ext === 'conf' || ext === 'ini' ? '#a78bfa' : '#94a3b8';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background 0.1s"
+        onmouseenter="this.style.background='var(--hover)'" onmouseleave="this.style.background=''"
+        onclick="openConfigFile(_configRenderPaths[${i}])" title="${escHtml(f.name)} — ${escHtml(f.subdir||'')}">
+      <div style="width:8px;height:8px;border-radius:50%;background:${icon};flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(f.name)}</div>
+        ${f.subdir ? `<div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(f.subdir)}</div>` : ''}
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);flex-shrink:0;font-family:monospace;opacity:0.7">.${ext}</div>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="opacity:0.4;flex-shrink:0"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+    </div>`;
+  }).join('');
+  // Attach click listeners via JS (100% safe, no string escaping needed)
+  el.querySelectorAll('[onclick]').forEach((row, i) => {
+    row.removeAttribute('onclick');
+    row.addEventListener('click', () => openConfigFile(_configRenderPaths[i]));
+  });
+}
+
+function filterConfigFiles(query) {
+  if (!query) { renderConfigFiles(_configFileCache); return; }
+  const q = query.toLowerCase();
+  renderConfigFiles(_configFileCache.filter(f => f.name.toLowerCase().includes(q) || (f.subdir||'').toLowerCase().includes(q)));
+}
+
+let _configEditorPath = null;
+let _configEditorDirty = false;
+
+async function openConfigFile(filePath) {
+  if (!filePath) return;
+  // Check user preference from settings
+  const openMode = window._settings?.configOpenMode || 'app';
+  if (openMode === 'external') {
+    if (isCraftDock && window.craftdockInstance?.openConfigFile)
+      window.craftdockInstance.openConfigFile(filePath);
+    return;
+  }
+  if (!isCraftDock || !window.craftdockInstance?.readConfigFile) {
+    if (isCraftDock && window.craftdockInstance?.openConfigFile)
+      window.craftdockInstance.openConfigFile(filePath);
+    return;
+  }
+  const res = await window.craftdockInstance.readConfigFile(filePath);
+  if (!res.success) {
+    showNotif('Cannot open file', res.error, 6000);
+    return;
+  }
+  _configEditorPath  = filePath;
+  _configEditorDirty = false;
+
+  const fileName = filePath.split(/[\\/]/).pop();
+  const ext      = fileName.split('.').pop().toLowerCase();
+  const dotColor = ext === 'json' ? '#f6c90e' : ext === 'toml' ? '#e07b39' : ext === 'yaml' || ext === 'yml' ? '#38bdf8' : '#a78bfa';
+
+  document.getElementById('configEditorTitle').textContent   = fileName;
+  document.getElementById('configEditorPath').textContent    = filePath;
+  document.getElementById('configEditorDot').style.background = dotColor;
+  document.getElementById('configEditorTextarea').value      = res.text;
+  document.getElementById('configEditorStatus').textContent  = 'Ready';
+  updateConfigEditorLines(res.text);
+  document.getElementById('configEditorModal').style.display = 'flex';
+  document.getElementById('configEditorTextarea').focus();
+}
+
+function onConfigEditorChange() {
+  _configEditorDirty = true;
+  const text = document.getElementById('configEditorTextarea').value;
+  document.getElementById('configEditorStatus').textContent = '● Unsaved changes';
+  document.getElementById('configEditorStatus').style.color = 'var(--accent-bright)';
+  updateConfigEditorLines(text);
+}
+
+function updateConfigEditorLines(text) {
+  const lines = (text.match(/\n/g) || []).length + 1;
+  const chars  = text.length;
+  const el = document.getElementById('configEditorLines');
+  if (el) el.textContent = `${lines} lines · ${chars} chars`;
+}
+
+async function saveConfigFile() {
+  if (!_configEditorPath || !isCraftDock || !window.craftdockInstance?.writeConfigFile) return;
+  const text = document.getElementById('configEditorTextarea').value;
+  const btn  = document.getElementById('configSaveBtn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+  const res = await window.craftdockInstance.writeConfigFile(_configEditorPath, text);
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+  if (res.success) {
+    _configEditorDirty = false;
+    document.getElementById('configEditorStatus').textContent = 'Saved ✓';
+    document.getElementById('configEditorStatus').style.color = 'var(--green)';
+    setTimeout(() => {
+      const el = document.getElementById('configEditorStatus');
+      if (el) { el.textContent = 'Ready'; el.style.color = ''; }
+    }, 2000);
+  } else {
+    showNotif('Save failed', res.error, 6000);
+  }
+}
+
+function closeConfigEditor() {
+  if (_configEditorDirty) {
+    if (!confirm('You have unsaved changes. Close anyway?')) return;
+  }
+  document.getElementById('configEditorModal').style.display = 'none';
+  _configEditorPath  = null;
+  _configEditorDirty = false;
+}
+
+function openConfigExternal() {
+  if (_configEditorPath && isCraftDock && window.craftdockInstance?.openConfigFile) {
+    window.craftdockInstance.openConfigFile(_configEditorPath);
+  }
+}
+
+// Ctrl+S to save inside editor
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    const modal = document.getElementById('configEditorModal');
+    if (modal && modal.style.display !== 'none') {
+      e.preventDefault();
+      saveConfigFile();
+    }
+  }
+});
 function closeExport() {
   document.getElementById('exportModal').classList.remove('open');
   const res = document.getElementById('exportResultPanel');
@@ -10595,12 +11882,7 @@ async function _runUpdateCheck(showResult) {
   }
 }
 
-// Run on startup if toggled on
-(async () => {
-  await new Promise(res => setTimeout(res, 3000));
-  const s = (await Store.get('craftdock:appSettings')) || {};
-  if (s.checkUpdatesOnStartup !== false) _runUpdateCheck(false);
-})();
+// Update check only runs when the "Check Now" button is clicked (settingsCheckUpdate)
 
 </script>
 
@@ -10671,6 +11953,37 @@ async function _runUpdateCheck(showResult) {
         <div class="launch-spinner" style="width:24px;height:24px;margin:0 auto 10px"></div>
         <div style="font-size:12px">Searching Modrinth...</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODPACK UPDATE MODAL ══ -->
+<div class="modal-overlay" id="modpackUpdateModal" style="z-index:3100">
+  <div class="modal" style="width:440px;max-width:95vw">
+    <div class="modal-title" style="display:flex;align-items:center;gap:10px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--accent-bright)"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 1 0 .49-3.21"/></svg>
+      Modpack Update Available
+    </div>
+    <div style="margin-bottom:16px">
+      <div id="modpackUpdateMsg" style="font-size:13px;color:var(--text-secondary);margin-bottom:12px"></div>
+      <div style="background:var(--bg-darkest);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="color:var(--text-muted)">Installed</span>
+        <span id="modpackUpdateOldVer" style="font-family:monospace;color:var(--text-secondary)">—</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-bright)" stroke-width="2.5" width="14" height="14"><polyline points="9,18 15,12 9,6"/></svg>
+        <span id="modpackUpdateNewVer" style="font-family:monospace;color:var(--accent-bright);font-weight:700">—</span>
+        <span style="color:var(--text-muted)">Latest</span>
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:18px;cursor:pointer;font-size:11px;color:var(--text-muted);user-select:none">
+      <input type="checkbox" id="modpackUpdateSkipCheck" style="accent-color:var(--accent);width:13px;height:13px;cursor:pointer">
+      Don't check for updates on launch for this instance
+    </label>
+    <div style="display:flex;gap:8px">
+      <button class="btn-secondary" style="flex:1" onclick="dismissModpackUpdate(false)">Launch Anyway</button>
+      <button class="btn-launch" style="flex:1;justify-content:center" onclick="dismissModpackUpdate(true)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="margin-right:5px"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 1 0 .49-3.21"/></svg>
+        Update &amp; Launch
+      </button>
     </div>
   </div>
 </div>

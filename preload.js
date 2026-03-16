@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld('craftdock', {
   getMinecraftVersions: () =>
     ipcRenderer.invoke('cf-get-mc-versions'),
   },
+
+  // File system helpers
+  openFolder:  (p)  => ipcRenderer.invoke('open-folder',    p),
+  getDataRoot: ()   => ipcRenderer.invoke('get-data-root'),
 });
 
 // Also expose as window.ipc for backwards compatibility
@@ -107,12 +111,22 @@ contextBridge.exposeInMainWorld('craftdockInstance', {
   list:           ()          => ipcRenderer.invoke('instance-list'),
   get:            (id)        => ipcRenderer.invoke('instance-get',             id),
   launch:         (inst, serverIp) => ipcRenderer.invoke('instance-launch', inst, serverIp || null),
+  stopInstance:   (id)        => ipcRenderer.invoke('stop-instance', id),
   listWorlds:     (id)        => ipcRenderer.invoke('instance-list-worlds',     id),
   listMods:       (id)        => ipcRenderer.invoke('instance-list-mods',       id),
   toggleMod:      (id,f,en)   => ipcRenderer.invoke('instance-toggle-mod',      id, f, en),
   deleteMod:      (id,f)      => ipcRenderer.invoke('instance-delete-mod',      id, f),
   listScreenshots:(id)        => ipcRenderer.invoke('instance-list-screenshots', id),
   openFolder:     (id,sub)        => ipcRenderer.invoke('instance-open-folder',        id, sub),
+  applyResourceTag:   (id, tag)  => ipcRenderer.invoke('instance-apply-resource-tag',  id, tag),
+  listConfigFiles:    (id)       => ipcRenderer.invoke('instance-list-config-files',    id),
+  readScreenshot:     (p)        => ipcRenderer.invoke('instance-read-screenshot',       p),
+  listLauncherJava:   ()         => ipcRenderer.invoke('list-launcher-java'),
+  refreshTokensNow:   ()         => ipcRenderer.invoke('refresh-tokens-now'),
+  openConfigFile:     (p)        => ipcRenderer.invoke('instance-open-config-file',     p),
+  readConfigFile:     (p)        => ipcRenderer.invoke('instance-read-config-file',      p),
+  writeConfigFile:    (p, text)  => ipcRenderer.invoke('instance-write-config-file',     p, text),
+  importPack:         (p, type)  => ipcRenderer.invoke('instance-import-pack',          p, type),
   getDiskSize:    (id)            => ipcRenderer.invoke('instance-get-disk-size',       id),
   downloadMod:    (id,url,fn)     => ipcRenderer.invoke('instance-download-mod',        id, url, fn),
   listFolder:     (id,sub)        => ipcRenderer.invoke('instance-list-folder',         id, sub),

@@ -15,8 +15,10 @@ const skinsDir = path.join(dataRoot, 'skins');
 const dataDir  = path.join(dataRoot, 'data');
 const serversBase = path.join(dataRoot, 'servers');
 const instancesBase = path.join(dataRoot, 'instances');
-const sharedWorldsDir = path.join(dataRoot, 'shared-worlds');
-[skinsDir, dataDir, serversBase, instancesBase, sharedWorldsDir].forEach(d => {
+const sharedWorldsDir  = path.join(dataRoot, 'shared-worlds');
+const sharedServersDir    = path.join(dataRoot, 'shared-servers');
+const sharedResourcesDir  = path.join(dataRoot, 'shared-resources');
+[skinsDir, dataDir, serversBase, instancesBase, sharedWorldsDir, sharedServersDir].forEach(d => {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
 
@@ -216,8 +218,12 @@ function decryptToken(stored) {
 }
 
 // Microsoft OAuth - loaded from .env (falls back to public Minecraft client ID)
-const MS_CLIENT_ID = process.env.MS_CLIENT_ID || '00000000402b5328';
-const MS_SCOPE     = 'service::user.auth.xboxlive.com::MBI_SSL';
+// Xbox/Minecraft auth client ID options (in order of reliability):
+// '00000000402b5328' — original Xbox client (being deprecated by MS)
+// 'XboxLive.signin' scope requires a client registered for consumers tenant
+// Prism Launcher's registered client ID — works for device code flow with personal MS accounts
+const MS_CLIENT_ID = process.env.MS_CLIENT_ID || 'c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb';
+const MS_SCOPE     = 'XboxLive.signin offline_access';
 
 let mainWindow;
 let tray = null;
@@ -245,8 +251,8 @@ const get  = (h,p,hdrs)   => httpsRequest('GET', h,p,hdrs);
 
 // ── Microsoft auth chain ───────────────────────────────────
 async function doRequestDeviceCode() {
-  const body = `client_id=${MS_CLIENT_ID}&scope=${encodeURIComponent(MS_SCOPE)}&response_type=device_code`;
-  const r = await post('login.live.com', '/oauth20_connect.srf',
+  const body = `client_id=${MS_CLIENT_ID}&scope=${encodeURIComponent(MS_SCOPE)}`;
+  const r = await post('login.microsoftonline.com', '/consumers/oauth2/v2.0/devicecode',
     { 'Content-Type': 'application/x-www-form-urlencoded' }, body);
   if (r.status !== 200) throw new Error(`Device code failed ${r.status}: ${JSON.stringify(r.body)}`);
   return r.body; // { user_code, device_code, verification_uri, interval, expires_in }
@@ -254,16 +260,96 @@ async function doRequestDeviceCode() {
 
 async function doPollToken(deviceCode) {
   const body = `client_id=${MS_CLIENT_ID}&device_code=${encodeURIComponent(deviceCode)}&grant_type=urn:ietf:params:oauth:grant-type:device_code`;
-  const r = await post('login.live.com', '/oauth20_token.srf',
+  const r = await post('login.microsoftonline.com', '/consumers/oauth2/v2.0/token',
     { 'Content-Type': 'application/x-www-form-urlencoded' }, body);
   return { status: r.status, data: r.body };
 }
 
+// Silently refresh the MC access token using the stored MS refresh token
+async function refreshMcToken(msRefreshToken) {
+  // Step 1: Exchange MS refresh token for new MS access token
+  const body = `client_id=${MS_CLIENT_ID}&refresh_token=${encodeURIComponent(msRefreshToken)}&grant_type=refresh_token&scope=${encodeURIComponent(MS_SCOPE)}`;
+  const r = await post('login.microsoftonline.com', '/consumers/oauth2/v2.0/token',
+    { 'Content-Type': 'application/x-www-form-urlencoded' }, body);
+  if (r.status !== 200) throw new Error(`MS refresh failed: ${r.status} — ${JSON.stringify(r.body)}`);
+  const newMsToken      = r.body.access_token;
+  const newRefreshToken = r.body.refresh_token || msRefreshToken; // Live may rotate it
+  // Step 2: Full MC auth chain with fresh MS token
+  const result = await doCompleteLogin(newMsToken);
+  return { ...result, newMsToken, newRefreshToken };
+}
+
+// ── Background token refresh — runs every 23h, keeps tokens perpetually fresh ──
+let _bgRefreshTimer = null;
+
+async function backgroundRefreshAllAccounts() {
+  const accountsFile = path.join(dataDir, 'craftdock_accounts.json');
+  if (!fs.existsSync(accountsFile)) return;
+  let accounts;
+  try { accounts = JSON.parse(fs.readFileSync(accountsFile, 'utf8')); }
+  catch(e) { return; }
+  if (!Array.isArray(accounts) || !accounts.length) return;
+
+  let anyChanged = false;
+  for (let i = 0; i < accounts.length; i++) {
+    const acct = accounts[i];
+    const encRefresh = acct._msRefreshToken;
+    if (!encRefresh) continue; // nothing we can do without a refresh token
+
+    const msRefresh = decryptToken(encRefresh);
+    if (!msRefresh) continue; // undecryptable (safe: legacy) — skip
+
+    // Refresh if expired or expiring within the next 2 hours
+    const expiry     = acct.mcTokenExpiry || 0;
+    const twoHours   = 2 * 60 * 60 * 1000;
+    const needsRefresh = Date.now() >= (expiry - twoHours);
+    if (!needsRefresh) continue;
+
+    try {
+      console.log(`[CraftDock] Background-refreshing token for ${acct.minecraftUsername || acct.name || 'account ' + i}…`);
+      const refreshed = await refreshMcToken(msRefresh);
+      accounts[i] = {
+        ...acct,
+        _minecraftToken:   encryptToken(refreshed.mcToken),
+        _msRefreshToken:   encryptToken(refreshed.newRefreshToken),
+        mcTokenExpiry:     refreshed.mcTokenExpiry,
+        minecraftUsername: refreshed.profile?.name || acct.minecraftUsername,
+        minecraftUuid:     refreshed.profile?.id   || acct.minecraftUuid,
+        _tokensBroken:     false,
+        _lastRefreshFailure: undefined,
+      };
+      delete accounts[i].minecraftToken;
+      delete accounts[i].msRefreshToken;
+      delete accounts[i]._lastRefreshFailure;
+      anyChanged = true;
+      console.log(`[CraftDock] Token refreshed successfully for ${accounts[i].minecraftUsername || 'account ' + i}`);
+    } catch(e) {
+      console.warn(`[CraftDock] Background token refresh failed for account ${i}: ${e.message}`);
+      // Don't mark broken here — it may be a transient network error.
+      // We'll retry next cycle.
+    }
+  }
+  if (anyChanged) {
+    try { fs.writeFileSync(accountsFile, JSON.stringify(accounts, null, 2)); }
+    catch(e) { console.warn('[CraftDock] Failed to save refreshed tokens:', e.message); }
+  }
+}
+
+function startBackgroundTokenRefresh() {
+  // Run immediately on startup, then every 30 minutes (checks expiry internally)
+  backgroundRefreshAllAccounts().catch(e => console.warn('[CraftDock] Initial token refresh error:', e.message));
+  _bgRefreshTimer = setInterval(() => {
+    backgroundRefreshAllAccounts().catch(e => console.warn('[CraftDock] BG token refresh error:', e.message));
+  }, 30 * 60 * 1000); // 30 minutes
+}
+
 async function doCompleteLogin(msAccessToken) {
   // XBL
+  // With XboxLive.signin scope, RpsTicket must be prefixed with 'd='
+  const rpsTicket = msAccessToken.startsWith('d=') ? msAccessToken : `d=${msAccessToken}`;
   const xblR = await post('user.auth.xboxlive.com', '/user/authenticate',
     { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    { Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: msAccessToken },
+    { Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: rpsTicket },
       RelyingParty: 'http://auth.xboxlive.com', TokenType: 'JWT' });
   if (xblR.status !== 200) throw new Error(`Xbox auth failed: ${xblR.status}`);
   const xblToken = xblR.body.Token;
@@ -295,7 +381,8 @@ async function doCompleteLogin(msAccessToken) {
   if (profR.status === 404) throw new Error('This account does not own Minecraft Java Edition.');
   if (profR.status !== 200) throw new Error(`Profile failed: ${profR.status}`);
 
-  return { profile: profR.body, mcToken }; // profile = { id, name, skins, capes }
+  const mcTokenExpiry = Date.now() + 23 * 60 * 60 * 1000; // MC tokens valid ~24h; refresh 1h early
+  return { profile: profR.body, mcToken, mcTokenExpiry }; // profile = { id, name, skins, capes }
 }
 
 // ── Window ─────────────────────────────────────────────────
@@ -351,7 +438,7 @@ function createWindow() {
 
 // Register all IPC handlers first, BEFORE creating the window
 // Bump this whenever new IPC handlers are added — renderer checks on startup
-const MAIN_JS_VERSION = '0.6.2';
+const MAIN_JS_VERSION = '0.6.3';
 
 // ── Simple ZIP writer (no external deps) ────────────────────
 function writeZipToFile(destPath, entries) {
@@ -634,7 +721,7 @@ async function resolvePaperUrl(version, build) {
       : `/v2/projects/paper/versions/${version}`;
     const req = require('https').get(
       { hostname:'api.papermc.io', path: path_,
-        headers:{'User-Agent':'CraftDock/0.6.2 (contact@craftdock.app)'} }, res => {
+        headers:{'User-Agent':'CraftDock/0.6.3 (contact@craftdock.app)'} }, res => {
       if ([301,302,307,308].includes(res.statusCode)) {
         res.resume();
         return resolvePaperUrl(version, build).then(resolve).catch(reject);
@@ -662,7 +749,7 @@ async function resolveVanillaUrl(version) {
   // Fetch the version manifest with a timeout + User-Agent to avoid Windows SSL issues
   const fetchJson = (url) => new Promise((resolve, reject) => {
     const req = require('https').get(url, {
-      headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' }
+      headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
     }, res => {
       // Follow redirects
       if ([301,302,307,308].includes(res.statusCode)) {
@@ -779,9 +866,13 @@ function downloadFile(url, dest, onProgress, timeoutMs = 120000) {
 
     const go = (u, redirects = 0) => {
       if (redirects > 10) { done(reject, new Error('Too many redirects: ' + u)); return; }
-      const proto = u.startsWith('https') ? require('https') : require('http');
+      const isHttps = u.startsWith('https');
+      const proto = isHttps ? require('https') : require('http');
+      // Use a fresh agent per request to avoid BoringSSL session-resumption BAD_DECRYPT errors
+      const agent = new proto.Agent({ keepAlive: false });
       const req = proto.get(u, {
-        headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' }
+        agent,
+        headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
       }, res => {
         if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
           res.resume(); // drain response
@@ -920,6 +1011,110 @@ function applySharedWorlds(id, tag) {
   }
 }
 
+function sharedServersDirForTag(tag) {
+  const safeName = tag.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+  return path.join(sharedServersDir, safeName);
+}
+
+function applySharedServers(id, tag) {
+  // tag = string → link servers.dat to shared-servers/<tag>/servers.dat
+  // tag = null/'' → restore to real file in instance folder
+  const instPath    = instDir(id);
+  const serversFile = path.join(instPath, 'servers.dat');
+  const isWin       = process.platform === 'win32';
+
+  let currentlyLinked = false;
+  try {
+    const stat = fs.lstatSync(serversFile);
+    currentlyLinked = stat.isSymbolicLink();
+  } catch {}
+
+  if (!tag) {
+    // Remove symlink, ensure a real (possibly empty) servers.dat exists
+    if (currentlyLinked) {
+      try { fs.unlinkSync(serversFile); } catch {}
+    }
+    return;
+  }
+
+  const tagDir = sharedServersDirForTag(tag);
+  if (!fs.existsSync(tagDir)) fs.mkdirSync(tagDir, { recursive: true });
+  const sharedFile = path.join(tagDir, 'servers.dat');
+
+  // Remove existing symlink
+  if (currentlyLinked) {
+    try { fs.unlinkSync(serversFile); } catch {}
+  } else if (fs.existsSync(serversFile)) {
+    // Move real servers.dat into the shared folder if shared file doesn't exist yet
+    try {
+      if (!fs.existsSync(sharedFile)) fs.renameSync(serversFile, sharedFile);
+      else fs.unlinkSync(serversFile);
+    } catch {}
+  }
+
+  // Create symlink to shared servers.dat
+  try {
+    if (isWin) {
+      const { execSync } = require('child_process');
+      execSync(`mklink "${serversFile}" "${sharedFile}"`, { windowsHide: true });
+    } else {
+      fs.symlinkSync(sharedFile, serversFile);
+    }
+  } catch(e) {
+    console.warn('[CraftDock] Could not create servers.dat symlink:', e.message);
+  }
+}
+
+function applySharedResources(id, tag) {
+  const instPath       = instDir(id);
+  const resourcesDir   = path.join(instPath, 'resourcepacks');
+  const isWin          = process.platform === 'win32';
+
+  let currentlyLinked = false;
+  try {
+    const stat = fs.lstatSync(resourcesDir);
+    currentlyLinked = stat.isSymbolicLink();
+  } catch {}
+
+  if (!tag) {
+    if (currentlyLinked) {
+      try { fs.unlinkSync(resourcesDir); } catch {}
+    }
+    if (!fs.existsSync(resourcesDir)) {
+      try { fs.mkdirSync(resourcesDir, { recursive: true }); } catch {}
+    }
+    return;
+  }
+
+  const tagDir = path.join(sharedResourcesDir, tag.replace(/[^a-z0-9_-]/gi, '-'));
+  if (!fs.existsSync(tagDir)) fs.mkdirSync(tagDir, { recursive: true });
+
+  if (currentlyLinked) {
+    try { fs.unlinkSync(resourcesDir); } catch {}
+  } else if (fs.existsSync(resourcesDir)) {
+    try {
+      if (!fs.existsSync(tagDir) || fs.readdirSync(tagDir).length === 0) {
+        // Move existing resource packs into shared folder
+        fs.readdirSync(resourcesDir).forEach(f => {
+          try { fs.renameSync(path.join(resourcesDir, f), path.join(tagDir, f)); } catch {}
+        });
+      }
+      fs.rmdirSync(resourcesDir);
+    } catch {}
+  }
+
+  try {
+    if (isWin) {
+      const { execSync } = require('child_process');
+      execSync(`mklink /D "${resourcesDir}" "${tagDir}"`, { windowsHide: true });
+    } else {
+      fs.symlinkSync(tagDir, resourcesDir);
+    }
+  } catch(e) {
+    console.warn('[CraftDock] Could not create resourcepacks symlink:', e.message);
+  }
+}
+
 // List all instance IDs that have a folder
 function listInstanceIds() {
   if (!fs.existsSync(instancesBase)) return [];
@@ -937,18 +1132,160 @@ ipcMain.handle('instance-create', (_, meta) => {
   registerSlug(id, meta.name || id, instancesBase);
   ensureInstance(id);
   writeInstMeta(id, meta);
-  if (meta.worldTag) applySharedWorlds(id, meta.worldTag);
+  if (meta.worldTag)    applySharedWorlds(id,    meta.worldTag);
+  if (meta.serverTag)   applySharedServers(id,   meta.serverTag);
+  if (meta.resourceTag) applySharedResources(id, meta.resourceTag);
   return { success: true, id, dir: instDir(id) };
+});
+
+// ── Config file listing ────────────────────────────────────────────────────
+ipcMain.handle('instance-list-config-files', (_, id) => {
+  const configDir = path.join(instDir(id), 'config');
+  if (!fs.existsSync(configDir)) return [];
+  const CONFIG_EXTS = new Set(['.toml','.json','.yaml','.yml','.cfg','.conf','.ini','.properties','.txt']);
+  const results = [];
+  function walk(dir, subdir) {
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath, subdir ? subdir + '/' + entry.name : entry.name);
+        } else if (CONFIG_EXTS.has(path.extname(entry.name).toLowerCase())) {
+          results.push({ name: entry.name, path: fullPath, subdir: subdir || '' });
+        }
+      }
+    } catch {}
+  }
+  walk(configDir, '');
+  return results.sort((a, b) => a.name.localeCompare(b.name));
+});
+
+ipcMain.handle('instance-open-config-file', (_, filePath) => {
+  // Open in system default editor (fallback/external)
+  try { shell.openPath(filePath); return { success: true }; }
+  catch(e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('instance-read-config-file', (_, filePath) => {
+  try {
+    const text = fs.readFileSync(filePath, 'utf8');
+    return { success: true, text };
+  } catch(e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('instance-write-config-file', (_, filePath, text) => {
+  try {
+    fs.writeFileSync(filePath, text, 'utf8');
+    return { success: true };
+  } catch(e) { return { success: false, error: e.message }; }
+});
+
+// ── Pack import (CurseForge .zip / Modrinth .mrpack) ───────────────────────
+ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
+  const AdmZip = (() => { try { return require('adm-zip'); } catch { return null; } })();
+  if (!AdmZip) return { success: false, error: 'adm-zip not available. Run: npm install adm-zip' };
+
+  try {
+    const zip = new AdmZip(filePath);
+    let packName = path.basename(filePath, path.extname(filePath));
+    let mcVersion = '1.21.4', loader = '', loaderVersion = '';
+    let mods = [];
+
+    if (type === 'mr') {
+      // Modrinth .mrpack — parse modrinth.index.json
+      const indexEntry = zip.getEntry('modrinth.index.json');
+      if (!indexEntry) return { success: false, error: 'Invalid .mrpack: missing modrinth.index.json' };
+      const idx = JSON.parse(indexEntry.getData().toString('utf8'));
+      packName    = idx.name || packName;
+      mcVersion   = idx.dependencies?.minecraft || mcVersion;
+      const loaderKey = Object.keys(idx.dependencies || {}).find(k => k !== 'minecraft');
+      if (loaderKey) { loader = loaderKey; loaderVersion = idx.dependencies[loaderKey]; }
+      mods = (idx.files || []).map(f => ({ url: f.downloads?.[0], path: f.path, sha512: f.hashes?.sha512 })).filter(m => m.url);
+    } else {
+      // CurseForge .zip — parse manifest.json
+      const manifestEntry = zip.getEntry('manifest.json');
+      if (!manifestEntry) return { success: false, error: 'Invalid CurseForge zip: missing manifest.json' };
+      const manifest = JSON.parse(manifestEntry.getData().toString('utf8'));
+      packName    = manifest.name || packName;
+      mcVersion   = manifest.minecraft?.version || mcVersion;
+      const loaderInfo = manifest.minecraft?.modLoaders?.find(l => l.primary);
+      if (loaderInfo) {
+        const lid = loaderInfo.id || '';
+        if (lid.startsWith('forge-'))    { loader = 'forge';    loaderVersion = lid.replace('forge-',''); }
+        else if (lid.startsWith('fabric-')) { loader = 'fabric';  loaderVersion = lid.replace('fabric-',''); }
+        else if (lid.startsWith('neoforge-')) { loader = 'neoforge'; loaderVersion = lid.replace('neoforge-',''); }
+        else if (lid.startsWith('quilt-')) { loader = 'quilt';   loaderVersion = lid.replace('quilt-',''); }
+      }
+      // CF mods need CF API to resolve — store projectId/fileId for later
+      mods = (manifest.files || []).map(f => ({ projectId: f.projectID, fileId: f.fileID, required: f.required !== false }));
+    }
+
+    // Create new instance
+    const id = 'inst_' + Date.now();
+    const instPath = path.join(instancesBase, id);
+    fs.mkdirSync(instPath, { recursive: true });
+    const modsDir = path.join(instPath, 'mods');
+    fs.mkdirSync(modsDir, { recursive: true });
+
+    const meta = {
+      id, name: packName, mcVersion, loader: loader || '',
+      loaderVersion: loaderVersion || '',
+      source: type === 'mr' ? 'modrinth' : 'curseforge',
+      importedAt: Date.now(), addedAt: Date.now(),
+      downloadStatus: 'imported',
+      color: 'linear-gradient(135deg,#1a3a6b,#2563a0)',
+      _pendingMods: type === 'cf' ? mods : [],
+      mods: [],
+    };
+    writeInstMeta(id, meta);
+
+    // For .mrpack — extract overrides folder
+    if (type === 'mr') {
+      for (const entry of zip.getEntries()) {
+        if (entry.entryName.startsWith('overrides/') && !entry.isDirectory) {
+          const rel = entry.entryName.replace(/^overrides\//, '');
+          const dest = path.join(instPath, rel);
+          fs.mkdirSync(path.dirname(dest), { recursive: true });
+          fs.writeFileSync(dest, entry.getData());
+        }
+      }
+    } else {
+      // CF — extract overrides folder
+      for (const entry of zip.getEntries()) {
+        if (entry.entryName.startsWith('overrides/') && !entry.isDirectory) {
+          const rel = entry.entryName.replace(/^overrides\//, '');
+          const dest = path.join(instPath, rel);
+          fs.mkdirSync(path.dirname(dest), { recursive: true });
+          fs.writeFileSync(dest, entry.getData());
+        }
+      }
+    }
+
+    return { success: true, id, name: packName, mcVersion, loader, modCount: mods.length };
+  } catch(e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('instance-apply-resource-tag', (_, id, tag) => {
+  try { applySharedResources(id, tag || null); return { success: true }; }
+  catch(e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('instance-update', (_, meta) => {
   const id = meta.id;
   if (!id) return { success: false, error: 'No id' };
   const existing = readInstMeta(id) || {};
-  const wasTag = existing.worldTag || null;
-  const nowTag = meta.worldTag || null;
+  const wasTag       = existing.worldTag  || null;
+  const nowTag       = meta.worldTag     || null;
+  const wasServerTag = existing.serverTag || null;
+  const nowServerTag = meta.serverTag    || null;
   writeInstMeta(id, { ...existing, ...meta });
-  if (wasTag !== nowTag) applySharedWorlds(id, nowTag);
+  if (wasTag       !== nowTag)         applySharedWorlds(id,    nowTag);
+  if (wasServerTag !== nowServerTag)   applySharedServers(id,   nowServerTag);
+  const wasResourceTag = (existing.resourceTag || null);
+  const nowResourceTag = (meta.resourceTag    || null);
+  if (wasResourceTag !== nowResourceTag) applySharedResources(id, nowResourceTag);
   return { success: true };
 });
 
@@ -1046,12 +1383,56 @@ ipcMain.handle('instance-list-screenshots', (_, id) => {
   } catch { return []; }
 });
 
+// Trigger a foreground token refresh (called after login or when renderer detects stale state)
+ipcMain.handle('refresh-tokens-now', async () => {
+  try {
+    await backgroundRefreshAllAccounts();
+    return { success: true };
+  } catch(e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// List launcher-managed Java installs (for settings display)
+ipcMain.handle('list-launcher-java', async () => {
+  const isWin   = process.platform === 'win32';
+  const exeName = isWin ? 'java.exe' : 'java';
+  const results = [];
+  if (!fs.existsSync(launcherJavaDir)) return results;
+  for (const subdir of fs.readdirSync(launcherJavaDir)) {
+    const exePath = path.join(launcherJavaDir, subdir, 'bin', exeName);
+    if (!fs.existsSync(exePath)) continue;
+    try {
+      const ver = await probeJava(exePath);
+      if (ver > 0) results.push({ exe: exePath, version: ver });
+    } catch(_) {}
+  }
+  return results;
+});
+
+ipcMain.handle('instance-read-screenshot', (_, filePath) => {
+  try {
+    const data = fs.readFileSync(filePath);
+    const ext  = path.extname(filePath).toLowerCase().replace('.', '');
+    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+    return { success: true, dataUrl: `data:${mime};base64,${data.toString('base64')}` };
+  } catch(e) { return { success: false, error: e.message }; }
+});
+
 ipcMain.handle('instance-download-mod', async (_, id, url, filename) => {
   const modsDir = path.join(instDir(id), 'mods');
   if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
   const dest = path.join(modsDir, filename);
-  await downloadFile(url, dest, null, 120000);
-  return { success: true, path: dest };
+  // Remove any existing/partial file before downloading
+  try { if (fs.existsSync(dest)) fs.unlinkSync(dest); } catch {}
+  try {
+    await downloadFile(url, dest, null, 120000);
+    return { success: true, path: dest };
+  } catch (e) {
+    // Clean up partial download
+    try { if (fs.existsSync(dest)) fs.unlinkSync(dest); } catch {}
+    return { success: false, error: e.message };
+  }
 });
 
 ipcMain.handle('instance-open-folder', (_, id, sub) => {
@@ -1089,7 +1470,7 @@ if (!fs.existsSync(clientsDir)) fs.mkdirSync(clientsDir, { recursive: true });
 function fetchJsonHttp(url) {
   return new Promise((resolve, reject) => {
     const req = require('https').get(url, {
-      headers: { 'User-Agent': 'CraftDock/0.6.2 (contact@craftdock.app)' }
+      headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
     }, res => {
       if ([301,302,307,308].includes(res.statusCode)) {
         res.resume(); return fetchJsonHttp(res.headers.location).then(resolve).catch(reject);
@@ -1110,6 +1491,26 @@ async function downloadIfMissing(url, dest) {
   await downloadFile(url, dest, null, 120000);
 }
 
+// Track running MC processes so we can stop them (multiple per instance supported)
+const runningMcProcs = new Map(); // instId → ChildProcess[] (array — multiple instances allowed)
+
+ipcMain.handle('stop-instance', (_, instId) => {
+  const procs = runningMcProcs.get(instId) || [];
+  const alive = procs.filter(p => !p.killed);
+  if (alive.length === 0) {
+    runningMcProcs.delete(instId);
+    return { success: false, error: 'Not running' };
+  }
+  // Kill all running copies
+  for (const proc of alive) {
+    try {
+      proc.kill('SIGTERM');
+      setTimeout(() => { try { if (!proc.killed) proc.kill('SIGKILL'); } catch {} }, 2000);
+    } catch {}
+  }
+  return { success: true, killed: alive.length };
+});
+
 ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
   const send = (status, msg) => event.sender.send('instance-launch-status', inst.id, status, msg);
   const dir = ensureInstance(inst.id);
@@ -1123,23 +1524,70 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
   const ramMin    = meta.ramMin || inst.ramMin || 2048;
   const ramMax    = meta.ramMax || inst.ramMax || 4096;
 
-  // ── Get active account ────────────────────────────────────
+  // ── Get active account — refresh MC token if expired ────────
   let playerName = 'Player', accessToken = '0', playerUuid = '00000000-0000-0000-0000-000000000000';
   try {
-    const accountsFile = path.join(dataDir, 'craftdock_accounts_.json');
+    const accountsFile = path.join(dataDir, 'craftdock_accounts.json');
     if (fs.existsSync(accountsFile)) {
-      const accounts = JSON.parse(fs.readFileSync(accountsFile, 'utf8'));
-      const active = Array.isArray(accounts) ? accounts.find(a => a.active) || accounts[0] : null;
+      let accounts = JSON.parse(fs.readFileSync(accountsFile, 'utf8'));
+      const activeIdx = Array.isArray(accounts) ? (accounts.findIndex(a => a.active) >= 0 ? accounts.findIndex(a => a.active) : 0) : -1;
+      const active = activeIdx >= 0 ? accounts[activeIdx] : null;
       if (active) {
-        playerName  = active.minecraftUsername || active.username || playerName;
-        playerUuid  = active.minecraftUuid     || active.uuid     || playerUuid;
-        // Decrypt token if encrypted
+        // profile is saved as { id: mcUuid, name: mcUsername } by the renderer
+        playerName = active.minecraftUsername || active.username || active.name || playerName;
+        playerUuid = active.minecraftUuid     || active.uuid     || active.id   || playerUuid;
+
+        // Decrypt stored MC token
         const encToken = active._minecraftToken || active._mcToken;
-        if (encToken) {
-          try { accessToken = decryptToken(encToken) || '0'; } catch {}
-        } else {
-          accessToken = active.minecraftToken || active.mcToken || '0';
+        let mcToken = encToken ? (decryptToken(encToken) || '0') : (active.minecraftToken || active.mcToken || '0');
+
+        // Check expiry — refresh if expired or expiry not set
+        const expiry = active.mcTokenExpiry || 0;
+        const needsRefresh = Date.now() >= expiry;
+
+        if (needsRefresh) {
+          const encRefresh = active._msRefreshToken;
+          const msRefresh  = encRefresh ? (decryptToken(encRefresh) || '') : (active.msRefreshToken || '');
+
+          if (msRefresh) {
+            send('progress', 'Refreshing Minecraft session…');
+            try {
+              const refreshed = await refreshMcToken(msRefresh);
+              mcToken = refreshed.mcToken;
+              // Save updated tokens back to disk
+              accounts[activeIdx] = {
+                ...active,
+                _minecraftToken:   encryptToken(refreshed.mcToken),
+                _msRefreshToken:   encryptToken(refreshed.newRefreshToken),
+                mcTokenExpiry:     refreshed.mcTokenExpiry,
+                minecraftUsername: refreshed.profile?.name || active.minecraftUsername,
+                minecraftUuid:     refreshed.profile?.id   || active.minecraftUuid,
+              };
+              delete accounts[activeIdx].minecraftToken;
+              delete accounts[activeIdx].msRefreshToken;
+              // Mark account as no longer broken
+              delete accounts[activeIdx]._tokensBroken;
+              fs.writeFileSync(accountsFile, JSON.stringify(accounts, null, 2));
+              send('progress', 'Session refreshed ✓');
+            } catch(refreshErr) {
+              console.warn('[CraftDock] Token refresh failed:', refreshErr.message);
+              // Don't block launch — use the last known token (MC servers accept stale tokens briefly,
+              // and offline mode or cracked servers won't check at all). Show a soft warning only.
+              send('progress', `⚠ Session refresh failed — launching with cached token (${refreshErr.message})`);
+              // Keep old mcToken and note the account might need re-auth eventually
+              accounts[activeIdx] = { ...active, _tokensBroken: false, _lastRefreshFailure: Date.now() };
+              try { fs.writeFileSync(accountsFile, JSON.stringify(accounts, null, 2)); } catch(_) {}
+              // accessToken stays as the old mcToken — already set above
+            }
+          } else {
+            // No refresh token — this only happens if the user has never logged in,
+            // or if a legacy safe: token was purged on startup. The token we have
+            // might still work (MC tokens last ~24h from login). Continue launch
+            // and let Minecraft itself report if auth fails.
+            console.warn('[CraftDock] No MS refresh token available for account — using existing MC token as-is');
+          }
         }
+        accessToken = mcToken;
       }
     }
   } catch(e) { console.warn('[CraftDock] Account read error:', e.message); }
@@ -1198,7 +1646,8 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
     }
 
     // ── Step 5: find java ─────────────────────────────────────
-    const javaInfo = await findBestJava(8, meta.javaPath || null);
+    const javaInfo = await findBestJava(8, meta.javaPath || null, mcVersion, (msg) => send('progress', msg));
+    if (javaInfo.warning) send('progress', `⚠ ${javaInfo.warning}`);
     const java = javaInfo.exe;
 
     // ── Step 5b: Install mod loader (Fabric / Quilt / Forge / NeoForge) ─────
@@ -1278,7 +1727,7 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
           if (installerUrl) {
             const installerJar = path.join(forgeCacheDir, 'installer.jar');
             await downloadFile(installerUrl, installerJar, null, 120000);
-            const javaInfo2 = await findBestJava(17, meta.javaPath || null);
+            const javaInfo2 = await findBestJava(17, meta.javaPath || null, mcVersion, (msg) => send('progress', msg));
             const { execFileSync } = require('child_process');
             execFileSync(javaInfo2.exe, ['-jar', installerJar, '--installClient', forgeCacheDir],
               { timeout: 180000, windowsHide: true, stdio: 'pipe' });
@@ -1333,8 +1782,17 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
       const objectsDir = path.join(assetsDir, 'objects');
       const objects = Object.values(assetData.objects);
       const total = objects.length;
-      let done = 0, errors = 0;
-      send('progress', `Downloading assets (0 / ${total})…`);
+      let done = 0, errors = 0, downloaded = 0;
+      // Check how many actually need downloading before spamming progress
+      const needsDownload = objects.filter(obj => {
+        const hash = obj.hash; const prefix = hash.substring(0, 2);
+        const dest = path.join(objectsDir, prefix, hash);
+        if (!fs.existsSync(dest)) return true;
+        if (obj.size > 0) { try { return fs.statSync(dest).size !== obj.size; } catch { return true; } }
+        return false;
+      });
+      if (needsDownload.length > 0) send('progress', `Downloading assets (0 / ${needsDownload.length} missing)…`);
+      else send('progress', '4/5 Assets cached — skipping download…');
 
       // Download in batches of 20 concurrent
       const BATCH = 20;
@@ -1502,6 +1960,8 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
+    // Add proc to array so multiple copies can run simultaneously
+    { const procs = runningMcProcs.get(inst.id) || []; procs.push(proc); runningMcProcs.set(inst.id, procs); }
 
     // Monitor first 8 seconds — if MC crashes right away, report the error
     let launched = false;
@@ -1529,11 +1989,9 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
       const timer = setTimeout(() => {
         // Still alive after 8s → MC launched successfully
         launched = true;
-        // Stop listening but DON'T destroy streams — that would kill the process
+        // Stop forwarding output — don't destroy streams as that would kill the process
         proc.stdout.removeAllListeners('data');
         proc.stderr.removeAllListeners('data');
-        proc.removeAllListeners('exit');
-        proc.removeAllListeners('error');
         proc.unref();
         send('launched', 'Minecraft is running!');
         resolve();
@@ -1541,6 +1999,10 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
 
       proc.on('exit', (code) => {
         clearTimeout(timer);
+        // Remove this specific proc from the array; keep others if still running
+        { const procs = (runningMcProcs.get(inst.id) || []).filter(p => p !== proc);
+          if (procs.length > 0) runningMcProcs.set(inst.id, procs);
+          else runningMcProcs.delete(inst.id); }
         // Track playtime
         const sessionMinutes = Math.round((Date.now() - playStartTime) / 60000);
         try {
@@ -1548,8 +2010,16 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
           writeInstMeta(inst.id, { ...m, totalPlayMinutes: (m.totalPlayMinutes || 0) + Math.max(sessionMinutes, 0) });
         } catch {}
         if (!launched) {
+          // Crashed before 8s — report error
           const errSnippet = errOutput.slice(-600).trim();
           send('error', `Minecraft exited immediately (code ${code}). ${errSnippet ? 'Error: ' + errSnippet.split('\n').find(l => l.includes('Exception') || l.includes('Error:')) || '' : 'Check App Console for details.'}`);
+        } else {
+          // Notify renderer — but only reset to stopped when ALL copies have closed
+          const remaining = (runningMcProcs.get(inst.id) || []).length;
+          if (!event.sender.isDestroyed()) {
+            if (remaining === 0) send('stopped', 'Minecraft has closed.');
+            else send('progress', `Minecraft instance closed (${remaining} still running)`);
+          }
         }
         resolve();
       });
@@ -2098,49 +2568,138 @@ async function probeJava(javaExe) {
   });
 }
 
+// ── Java version required by MC version (from official Java compatibility table) ──
+function javaVersionForMc(mcVersion) {
+  if (!mcVersion) return 21;
+  const parts  = mcVersion.split('.');
+  const minor  = parseInt(parts[1] || '0', 10);
+  const patch  = parseInt(parts[2] || '0', 10);
+  if (minor >= 21)                             return 21; // 1.21+
+  if (minor === 20 && patch <= 4)              return 21; // 1.20–1.20.4
+  if (minor >= 18)                             return 17; // 1.18–1.19
+  if (minor === 17)                            return 16; // 1.17
+  return 8;                                               // 1.16 and below
+}
+
+// ── Launcher-local Java directory: <dataDir>/java/java{8|16|17|21}/ ──────
+const launcherJavaDir = path.join(dataDir, 'java');
+
+function launcherJavaExe(majorVersion) {
+  const isWin = process.platform === 'win32';
+  const subdir = `java${majorVersion}`;
+  // Temurin layout: <launcherJavaDir>/java21/bin/java[.exe]
+  return path.join(launcherJavaDir, subdir, 'bin', isWin ? 'java.exe' : 'java');
+}
+
+// Download and extract Temurin JRE into <launcherJavaDir>/java{ver}/
+async function ensureLauncherJava(majorVersion, onProgress) {
+  const exe = launcherJavaExe(majorVersion);
+  if (fs.existsSync(exe)) return exe; // already installed
+
+  log(`[Java] Auto-installing Java ${majorVersion} for the launcher…`);
+  if (onProgress) onProgress(`Installing Java ${majorVersion}…`);
+
+  const isWin  = process.platform === 'win32';
+  const isMac  = process.platform === 'darwin';
+  const arch   = process.arch === 'arm64' ? 'aarch64' : 'x64';
+  const os     = isWin ? 'windows' : isMac ? 'mac' : 'linux';
+  // Map major version to Temurin feature version
+  const featureMap = { 8: 8, 16: 16, 17: 17, 21: 21 };
+  const feature    = featureMap[majorVersion] || majorVersion;
+
+  const apiUrl = `https://api.adoptium.net/v3/assets/feature_releases/${feature}/ga?image_type=jre&os=${os}&architecture=${arch}&jvm_impl=hotspot&page_size=1`;
+  const apiRes = await fetchJsonHttp(apiUrl);
+  if (!apiRes || !apiRes.length) throw new Error(`No Temurin JRE found for Java ${majorVersion} ${os}/${arch}`);
+
+  const binary = apiRes[0].binaries?.[0];
+  if (!binary) throw new Error(`No binary in Temurin response for Java ${majorVersion}`);
+
+  const pkg      = binary.package;
+  const dlUrl    = pkg.link;
+  const fileName = pkg.name;
+  const destDir  = path.join(launcherJavaDir, `java${majorVersion}`);
+  const tmpFile  = path.join(launcherJavaDir, fileName);
+
+  fs.mkdirSync(launcherJavaDir, { recursive: true });
+
+  if (onProgress) onProgress(`Downloading Java ${majorVersion} (~${Math.round((pkg.size||0)/1024/1024)}MB)…`);
+  await downloadFile(dlUrl, tmpFile, null, 300000);
+
+  if (onProgress) onProgress(`Extracting Java ${majorVersion}…`);
+  fs.mkdirSync(destDir, { recursive: true });
+
+  if (isWin) {
+    // .zip on Windows
+    const AdmZip = (() => { try { return require('adm-zip'); } catch { return null; } })();
+    if (AdmZip) {
+      const zip  = new AdmZip(tmpFile);
+      const entries = zip.getEntries();
+      // Temurin zips have a single top-level dir like jdk-21.0.3+9-jre — strip it
+      const topDir = entries[0]?.entryName.split('/')[0] || '';
+      zip.getEntries().forEach(e => {
+        if (e.isDirectory) return;
+        const rel  = topDir ? e.entryName.replace(topDir + '/', '') : e.entryName;
+        const dest = path.join(destDir, rel);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, e.getData());
+      });
+    } else {
+      // Fallback: PowerShell unzip
+      const { execFileSync } = require('child_process');
+      execFileSync('powershell', ['-Command', `Expand-Archive -Path "${tmpFile}" -DestinationPath "${destDir}" -Force`]);
+      // Move contents up if nested
+      const inner = fs.readdirSync(destDir).find(d => fs.statSync(path.join(destDir,d)).isDirectory());
+      if (inner) {
+        const innerPath = path.join(destDir, inner);
+        fs.readdirSync(innerPath).forEach(f => fs.renameSync(path.join(innerPath,f), path.join(destDir,f)));
+        fs.rmdirSync(innerPath);
+      }
+    }
+  } else {
+    // .tar.gz on macOS/Linux
+    const { execFileSync } = require('child_process');
+    execFileSync('tar', ['-xzf', tmpFile, '-C', destDir, '--strip-components=1']);
+    try { fs.chmodSync(exe, 0o755); } catch(_) {}
+  }
+
+  try { fs.unlinkSync(tmpFile); } catch(_) {}
+
+  if (!fs.existsSync(exe)) throw new Error(`Java ${majorVersion} install failed — executable not found at ${exe}`);
+  log(`[Java] Java ${majorVersion} installed at ${exe}`);
+  return exe;
+}
+
 // Scan common install locations and return the best java executable
 // preferredExe: optional path from per-server override — used first if valid
-async function findBestJava(minVersion, preferredExe) {
+async function findBestJava(minVersion, preferredExe, mcVersion, onProgress) {
   const isWin = process.platform === 'win32';
   const exe   = isWin ? 'java.exe' : 'java';
 
-  // 0a. Per-server preferred exe (highest priority)
+  // Compute the exact required version from MC version if given
+  const requiredVersion = mcVersion ? javaVersionForMc(mcVersion) : minVersion;
+
+  // 0a. Per-instance preferred exe (highest priority, user explicit override)
   if (preferredExe && typeof preferredExe === 'string') {
     try {
       const pExists = preferredExe === 'java' || fs.existsSync(preferredExe);
       if (pExists) {
         const ver = await probeJava(preferredExe);
-        if (ver > 0) {
-          if (ver < minVersion) {
-            console.warn(`[CraftDock] Server Java override (${preferredExe} v${ver}) is below required ${minVersion} — using anyway per user choice`);
-          }
-          return { exe: preferredExe, version: ver, source: 'server-override' };
-        }
+        if (ver > 0) return { exe: preferredExe, version: ver, source: 'user-override' };
       }
     } catch(_) {}
   }
 
-  // 0b. Global user override stored in data
-  try {
-    const overrideFile = path.join(dataDir, 'craftdock_java_override.json');
-    if (fs.existsSync(overrideFile)) {
-      const override = JSON.parse(fs.readFileSync(overrideFile, 'utf8'));
-      if (override && override.path && fs.existsSync(override.path)) {
-        const ver = await probeJava(override.path);
-        if (ver > 0) return { exe: override.path, version: ver, source: 'global-override' };
-      }
-    }
-  } catch(_) {}
-
-  // Build candidate list
-  const candidates = [];
-
-  // 1. JAVA_HOME
-  if (process.env.JAVA_HOME) {
-    candidates.push(path.join(process.env.JAVA_HOME, 'bin', exe));
+  // 0b. Launcher-local java dir (our own managed Java) — check exact required version first
+  const launcherExe = launcherJavaExe(requiredVersion);
+  if (fs.existsSync(launcherExe)) {
+    const ver = await probeJava(launcherExe);
+    if (ver >= requiredVersion) return { exe: launcherExe, version: ver, source: 'launcher-bundled' };
   }
 
-  // 2. Common Windows install roots
+  // Build system candidate list
+  const candidates = [];
+  if (process.env.JAVA_HOME) candidates.push(path.join(process.env.JAVA_HOME, 'bin', exe));
+
   if (isWin) {
     const roots = [
       'C:\\Program Files\\Eclipse Adoptium',
@@ -2151,51 +2710,44 @@ async function findBestJava(minVersion, preferredExe) {
       'C:\\Program Files\\Zulu',
       process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Eclipse Adoptium') : '',
     ].filter(Boolean);
-
     for (const root of roots) {
       if (!fs.existsSync(root)) continue;
-      const entries = fs.readdirSync(root).sort().reverse(); // newest first (higher version)
-      for (const entry of entries) {
+      for (const entry of fs.readdirSync(root).sort().reverse()) {
         candidates.push(path.join(root, entry, 'bin', exe));
       }
     }
-  }
-
-  // 3. Common macOS / Linux paths
-  if (!isWin) {
-    const roots = [
-      '/usr/lib/jvm',
-      '/Library/Java/JavaVirtualMachines',
-      '/opt/homebrew/opt',
-    ];
+  } else {
+    const roots = ['/usr/lib/jvm', '/Library/Java/JavaVirtualMachines', '/opt/homebrew/opt'];
     for (const root of roots) {
       if (!fs.existsSync(root)) continue;
-      const entries = fs.readdirSync(root).sort().reverse();
-      for (const entry of entries) {
-        // macOS: /Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java
+      for (const entry of fs.readdirSync(root).sort().reverse()) {
         candidates.push(path.join(root, entry, 'Contents', 'Home', 'bin', exe));
         candidates.push(path.join(root, entry, 'bin', exe));
       }
     }
     candidates.push('/usr/bin/java');
   }
-
-  // 4. Always try plain 'java' (PATH) as last resort
   candidates.push('java');
 
-  // Probe each — pick first that meets minVersion, or best we find
   let bestExe = null;
   let bestVer = 0;
 
   for (const cand of candidates) {
     if (typeof cand === 'string' && cand !== 'java' && !fs.existsSync(cand)) continue;
     const ver = await probeJava(cand);
-    if (ver >= minVersion) return { exe: cand, version: ver }; // good enough — use it
+    if (ver >= requiredVersion) return { exe: cand, version: ver, source: 'system' };
     if (ver > bestVer) { bestVer = ver; bestExe = cand; }
   }
 
-  if (bestExe) return { exe: bestExe, version: bestVer, warning: `Java ${bestVer} found but MC needs ${minVersion}+` };
-  return { exe: 'java', version: 0, warning: 'Java not found — install from https://adoptium.net' };
+  // Nothing suitable found — auto-download the correct version into launcher dir
+  try {
+    const downloaded = await ensureLauncherJava(requiredVersion, onProgress);
+    return { exe: downloaded, version: requiredVersion, source: 'auto-downloaded' };
+  } catch(dlErr) {
+    log(`[Java] Auto-install failed: ${dlErr.message}`);
+    if (bestExe) return { exe: bestExe, version: bestVer, warning: `Java ${bestVer} found but MC needs ${requiredVersion}+` };
+    return { exe: 'java', version: 0, warning: `Java not found — auto-install failed: ${dlErr.message}` };
+  }
 }
 
 // ── Start ──────────────────────────────────────────────────
@@ -2967,14 +3519,14 @@ ipcMain.handle('server-download-to-folder', async (_, id, url, fileName, subfold
     await new Promise((resolve, reject) => {
       const client = url.startsWith('https') ? https : http;
       const file = fs.createWriteStream(dest);
-      client.get(url, { headers: { 'User-Agent': 'CraftDock/0.6.2' } }, res => {
+      client.get(url, { headers: { 'User-Agent': 'CraftDock/0.6.3' } }, res => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           // follow one redirect
           const redir = res.headers.location;
           file.close();
           const c2 = redir.startsWith('https') ? https : http;
           const file2 = fs.createWriteStream(dest);
-          c2.get(redir, { headers: { 'User-Agent': 'CraftDock/0.6.2' } }, r2 => {
+          c2.get(redir, { headers: { 'User-Agent': 'CraftDock/0.6.3' } }, r2 => {
             r2.pipe(file2);
             file2.on('finish', () => file2.close(resolve));
           }).on('error', reject);
@@ -3217,6 +3769,9 @@ app.whenReady().then(() => {
   migrateToSlugFolders();
 
   createWindow();
+
+  // Start background token refresh — silently keeps all MS tokens perpetually fresh
+  startBackgroundTokenRefresh();
 });
 app.on('window-all-closed', () => {
   // Only quit if mainWindow is destroyed — console popouts closing must NOT quit the app.
