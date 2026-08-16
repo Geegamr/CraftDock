@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Server Console</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -86,8 +87,8 @@
     <span id="server-status" class="stopped">Stopped</span>
   </div>
   <div class="tc-btns">
-    <button class="tc-btn min" onclick="window.consoleApi?.minimize()"></button>
-    <button class="tc-btn cls" onclick="window.close()"></button>
+    <button class="tc-btn min" onclick="window.consoleApi?.minimize()" aria-label="Minimize" title="Minimize"></button>
+    <button class="tc-btn cls" onclick="window.close()" aria-label="Close" title="Close"></button>
   </div>
 </div>
 
