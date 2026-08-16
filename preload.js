@@ -48,12 +48,6 @@ contextBridge.exposeInMainWorld('craftdock', {
   getDataRoot: ()   => ipcRenderer.invoke('get-data-root'),
 });
 
-// Also expose as window.ipc for backwards compatibility
-contextBridge.exposeInMainWorld('ipc', {
-  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
-});
-
-// Server manager bridge
 contextBridge.exposeInMainWorld('craftdockServer', {
   getMainVersion:      ()              => ipcRenderer.invoke('get-main-version'),
   openConsoleWindow:   (id, name, st) => ipcRenderer.invoke('open-console-window', id, name, st),
@@ -101,7 +95,6 @@ contextBridge.exposeInMainWorld('craftdockServer', {
   downloadToFolder:  (id, url, fn, sub) => ipcRenderer.invoke('server-download-to-folder', id, url, fn, sub),
   listMods:          (id)            => ipcRenderer.invoke('server-list-mods',            id),
   writeMcIcon:       (id, data)    => ipcRenderer.invoke('server-write-mc-icon',       id, data),
-  pickJar:           ()            => ipcRenderer.invoke('pick-jar'),
 });
 
 contextBridge.exposeInMainWorld('craftdockInstance', {

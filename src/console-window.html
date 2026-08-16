@@ -130,6 +130,8 @@
     span.className = classForLine(text);
     span.textContent = text + '\n';
     consoleEl.appendChild(span);
+    // Cap console DOM so long-running servers don't slow this window down
+    if (consoleEl.childElementCount > 3000) consoleEl.removeChild(consoleEl.firstChild);
     if (wasBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
   }
 

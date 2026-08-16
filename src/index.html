@@ -1053,54 +1053,18 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 
       <div style="height:1px;background:var(--border);margin:2px 0"></div>
 
-      <!-- MC Version -->
+      <!-- MC Version — populated dynamically from manifest -->
       <div class="browse-filter-group">
-        <div class="browse-filter-label">MC Version</div>
+        <div class="browse-filter-label" style="display:flex;justify-content:space-between;align-items:center">
+          MC Version
+          <label style="font-size:10px;font-weight:400;color:var(--text-muted);display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="browseShowSnapshots" onchange="populateVersionFilters(true);triggerBrowse()" style="cursor:pointer">
+            Snapshots
+          </label>
+        </div>
         <select class="browse-filter-select" id="browseVersionFilter" onchange="triggerBrowse()">
           <option value="">All Versions</option>
-          <optgroup label="1.21.x">
-            <option value="1.21.4">1.21.4</option>
-            <option value="1.21.3">1.21.3</option>
-            <option value="1.21.1">1.21.1</option>
-            <option value="1.21">1.21</option>
-          </optgroup>
-          <optgroup label="1.20.x">
-            <option value="1.20.6">1.20.6</option>
-            <option value="1.20.4">1.20.4</option>
-            <option value="1.20.2">1.20.2</option>
-            <option value="1.20.1">1.20.1</option>
-            <option value="1.20">1.20</option>
-          </optgroup>
-          <optgroup label="1.19.x">
-            <option value="1.19.4">1.19.4</option>
-            <option value="1.19.3">1.19.3</option>
-            <option value="1.19.2">1.19.2</option>
-            <option value="1.19">1.19</option>
-          </optgroup>
-          <optgroup label="1.18.x">
-            <option value="1.18.2">1.18.2</option>
-            <option value="1.18.1">1.18.1</option>
-            <option value="1.18">1.18</option>
-          </optgroup>
-          <optgroup label="1.17.x">
-            <option value="1.17.1">1.17.1</option>
-            <option value="1.17">1.17</option>
-          </optgroup>
-          <optgroup label="1.16.x">
-            <option value="1.16.5">1.16.5</option>
-            <option value="1.16.4">1.16.4</option>
-            <option value="1.16.1">1.16.1</option>
-          </optgroup>
-          <optgroup label="1.15 and older">
-            <option value="1.15.2">1.15.2</option>
-            <option value="1.14.4">1.14.4</option>
-            <option value="1.12.2">1.12.2</option>
-            <option value="1.8.9">1.8.9</option>
-            <option value="1.7.10">1.7.10</option>
-          </optgroup>
-          <optgroup label="Snapshots">
-            <option value="snapshot">Snapshots</option>
-          </optgroup>
+          <option value="_loading" disabled>Loading versions…</option>
         </select>
       </div>
 
@@ -2422,6 +2386,18 @@ const InstanceStore = {
     return (await Store.get('craftdock:instances')) || [];
   },
 
+  async get(id) {
+    // Single-instance lookup for search/install flows that only need one instance
+    if (this._api) {
+      try {
+        const inst = await this._api.get(id);
+        if (inst) return inst;
+      } catch(e) { console.warn('instance-get failed:', e); }
+    }
+    const all = (await Store.get('craftdock:instances')) || [];
+    return all.find(i => i.id === id) || null;
+  },
+
   async save(inst) {
     if (this._api) {
       try {
@@ -3223,13 +3199,18 @@ async function renderInstalledMods(inst) {
     try {
       const diskMods = await window.craftdockInstance.listMods(inst.id) || [];
       const metaMods = inst.mods || [];
-      // Build a merged list: for each disk file, find matching metadata by fileName or slug
+      // Index metadata once so the per-file lookup is O(1)/cheap instead of a find per file
+      const metaByFile = new Map();
+      const metaBySlug = [];
+      for (const mm of metaMods) {
+        const fk = (mm.fileName || '').toLowerCase().replace(/\.disabled$/, '');
+        if (fk && !metaByFile.has(fk)) metaByFile.set(fk, mm);
+        if (mm.slug) metaBySlug.push({ slug: mm.slug.toLowerCase(), mod: mm });
+      }
       mods = diskMods.map(dm => {
         const dname = dm.name.toLowerCase().replace(/\.disabled$/, '');
-        const meta = metaMods.find(mm =>
-          (mm.fileName && mm.fileName.toLowerCase().replace(/\.disabled$/, '') === dname) ||
-          (mm.slug && dname.startsWith(mm.slug.toLowerCase()))
-        );
+        const meta = metaByFile.get(dname) ||
+          (metaBySlug.find(s => dname.startsWith(s.slug))?.mod || null);
         return {
           // identity: use Modrinth project id if we have it, else filename
           id:          meta?.id       || dm.name,
@@ -4500,9 +4481,13 @@ async function fetchCurseForgeModpacks(q,v,l) { return fetchCurseForgeItems(q,v,
 async function installModpack(p,b) { return installPack(p,b); }
 
 // ── MOD BROWSER (Add Mod panel)
-let mbSource   = 'modrinth';
-let mbLoader   = '';
-let mbDebounce = null;
+let mbSource      = 'modrinth';
+let mbLoader      = '';
+let mbDebounce    = null;
+let mbOffset      = 0;
+let mbTotalHits   = 0;
+let mbCurrentQuery = '';
+const MB_PAGE_SIZE = 20;
 
 // ═══════════════════════════════════════════════════════════
 //  RESOURCE PACKS & SHADERS BROWSER
@@ -4756,17 +4741,93 @@ async function deleteResFile(instanceId, subdir, filename) {
   reloadActiveInstanceResources();
 }
 
+// ── Populate MC version dropdowns in both mod browser and browse tab ──────
+let _versionFilterCache = null;
+
+async function _getMcVersionList() {
+  if (_versionFilterCache) return _versionFilterCache;
+  try {
+    const data = await fetchMcVersions();
+    _versionFilterCache = {
+      releases:  data.releases  || [],
+      snapshots: data.snapshots || [],
+    };
+  } catch {
+    _versionFilterCache = { releases: [], snapshots: [] };
+  }
+  return _versionFilterCache;
+}
+
+function _buildVersionOptgroups(releases, snapshots, showSnapshots) {
+  // Group releases by major.minor
+  const groups = {};
+  for (const v of releases) {
+    const parts  = v.split('.');
+    const group  = parts[0] + '.' + (parts[1] || '0');
+    if (!groups[group]) groups[group] = [];
+    groups[group].push(v);
+  }
+  let html = '<option value="">All Versions</option>';
+  for (const [grp, vers] of Object.entries(groups)) {
+    html += `<optgroup label="${escHtml(grp)}.x">`;
+    for (const v of vers) html += `<option value="${escHtml(v)}">${escHtml(v)}</option>`;
+    html += '</optgroup>';
+  }
+  if (showSnapshots && snapshots.length) {
+    html += '<optgroup label="Snapshots">';
+    for (const v of snapshots.slice(0, 40)) html += `<option value="${escHtml(v)}">${escHtml(v)}</option>`;
+    html += '</optgroup>';
+  }
+  return html;
+}
+
+async function populateMbVersionFilter() {
+  const sel = document.getElementById('mbVersionFilter');
+  if (!sel || sel.dataset.populated === '1') return;
+  const { releases, snapshots } = await _getMcVersionList();
+  const cur = sel.value;
+  sel.innerHTML = _buildVersionOptgroups(releases, snapshots, false);
+  if (cur && sel.querySelector(`option[value="${CSS.escape(cur)}"]`)) sel.value = cur;
+  sel.dataset.populated = '1';
+}
+
+async function populateVersionFilters(force = false) {
+  const browseEl = document.getElementById('browseVersionFilter');
+  if (browseEl && (force || browseEl.dataset.populated !== '1')) {
+    const { releases, snapshots } = await _getMcVersionList();
+    const cur     = browseEl.value;
+    const showSnaps = document.getElementById('browseShowSnapshots')?.checked || false;
+    browseEl.innerHTML = _buildVersionOptgroups(releases, snapshots, showSnaps);
+    if (cur && browseEl.querySelector(`option[value="${CSS.escape(cur)}"]`)) browseEl.value = cur;
+    browseEl.dataset.populated = '1';
+  }
+}
+
 function openModBrowser() {
   const overlay = document.getElementById('modBrowserOverlay');
   if (!overlay) return;
   overlay.classList.add('open');
-  // Set target label
+  // Set target label and pre-select instance MC version in filter
   if (activeInstanceId) {
     InstanceStore.getAll().then(insts => {
       const inst = insts.find(i => i.id === activeInstanceId);
       const lbl = document.getElementById('mbTargetLabel');
       if (lbl && inst) lbl.textContent = `→ ${inst.name}`;
+      // Pre-select the instance's MC version if available
+      if (inst?.mcVersion) {
+        const sel = document.getElementById('mbVersionFilter');
+        if (sel) {
+          // Populate first if empty, then select
+          populateMbVersionFilter().then(() => {
+            if (sel.querySelector(`option[value="${inst.mcVersion}"]`)) sel.value = inst.mcVersion;
+          });
+        }
+      } else {
+        populateMbVersionFilter();
+      }
     });
+  } else {
+    populateMbVersionFilter();
   }
   // Auto-search popular mods
   mbSearchMods('');
@@ -4778,14 +4839,14 @@ function closeModBrowser(e) {
 }
 
 function setMbSource(src, btn) {
-  mbSource = src;
+  mbSource = src; mbOffset = 0;
   document.querySelectorAll('#mbSrcMR,#mbSrcCF').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   mbSearchMods(document.getElementById('mbSearchInput')?.value || '');
 }
 
 function setMbLoader(loader, btn) {
-  mbLoader = loader;
+  mbLoader = loader; mbOffset = 0;
   document.querySelectorAll('#mbLoaderFilters .mb-filter-chip').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   mbSearchMods(document.getElementById('mbSearchInput')?.value || '');
@@ -4796,39 +4857,86 @@ function debounceMbSearch(q) {
   mbDebounce = setTimeout(() => mbSearchMods(q), 350);
 }
 
-async function mbSearchMods(query) {
+async function mbSearchMods(query, append = false) {
   const list = document.getElementById('mbList');
   if (!list) return;
 
-  list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted)">
-    <div class="launch-spinner" style="width:24px;height:24px;margin:0 auto 10px"></div>
-    <div style="font-size:12px">Searching...</div>
-  </div>`;
+  if (!append) {
+    mbOffset = 0;
+    mbCurrentQuery = query;
+    list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted)">
+      <div class="launch-spinner" style="width:24px;height:24px;margin:0 auto 10px"></div>
+      <div style="font-size:12px">Searching...</div>
+    </div>`;
+  } else {
+    // Show spinner at bottom while appending
+    const sp = document.createElement('div');
+    sp.id = 'mbAppendSpinner';
+    sp.style.cssText = 'text-align:center;padding:12px;color:var(--text-muted)';
+    sp.innerHTML = '<div class="launch-spinner" style="width:18px;height:18px;margin:0 auto"></div>';
+    // Remove old load-more bar before appending spinner
+    document.getElementById('mbLoadMoreBar')?.remove();
+    list.appendChild(sp);
+  }
 
   try {
-    let mods;
+    let result;
     if (mbSource === 'modrinth') {
-      mods = await searchModrinthMods(query, mbLoader);
+      result = await searchModrinthMods(mbCurrentQuery, mbLoader, mbOffset);
     } else {
-      mods = await searchCurseForgeMods(query, mbLoader);
+      result = await searchCurseForgeMods(mbCurrentQuery, mbLoader, mbOffset);
     }
-    renderMbList(mods);
+    document.getElementById('mbAppendSpinner')?.remove();
+
+    if (append) {
+      renderMbList(result.mods, true);
+    } else {
+      renderMbList(result.mods, false);
+    }
+    mbTotalHits = result.total;
+    mbOffset   += result.mods.length;
+    _mbUpdateLoadMore();
   } catch(err) {
-    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted)">
-      <div style="font-size:12px;margin-bottom:8px">Search failed</div>
-      <div style="font-size:11px">${err.message}</div>
-    </div>`;
+    document.getElementById('mbAppendSpinner')?.remove();
+    if (!append) {
+      list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted)">
+        <div style="font-size:12px;margin-bottom:8px">Search failed</div>
+        <div style="font-size:11px">${escHtml(err.message)}</div>
+      </div>`;
+    }
   }
 }
 
-async function searchModrinthMods(query, loader) {
+function _mbUpdateLoadMore() {
+  document.getElementById('mbLoadMoreBar')?.remove();
+  const list = document.getElementById('mbList');
+  if (!list) return;
+  if (mbOffset < mbTotalHits) {
+    const bar = document.createElement('div');
+    bar.id = 'mbLoadMoreBar';
+    bar.style.cssText = 'text-align:center;padding:12px 0 4px';
+    bar.innerHTML = `<button class="btn-secondary" style="padding:7px 28px;font-size:12px" onclick="mbSearchMods(mbCurrentQuery,true)">
+      Load More <span style="font-size:10px;opacity:0.6">(${mbOffset} of ${mbTotalHits})</span>
+    </button>`;
+    list.appendChild(bar);
+  }
+}
+
+async function searchModrinthMods(query, loader, offset = 0) {
+  // mbVersionFilter = '' means All versions; otherwise use the selected version
+  const mbVerSel = document.getElementById('mbVersionFilter')?.value || '';
+  const inst = activeInstanceId ? (await InstanceStore.get(activeInstanceId)) : null;
+  // Use the explicit filter if set, otherwise fall back to instance's MC version
+  const mcVer = mbVerSel || inst?.mcVersion || '';
   const facets = [['project_type:mod']];
   if (loader) facets.push([`categories:${loader}`]);
+  if (mcVer)  facets.push([`versions:${mcVer}`]);
 
   const params = new URLSearchParams({
     query: query || '',
     facets: JSON.stringify(facets),
-    limit: 30,
+    limit: MB_PAGE_SIZE,
+    offset: offset,
     index: query ? 'relevance' : 'downloads'
   });
 
@@ -4838,58 +4946,63 @@ async function searchModrinthMods(query, loader) {
   if (!res.ok) throw new Error(`Modrinth ${res.status}`);
   const data = await res.json();
 
-  return (data.hits || []).map(h => ({
-    id:          h.project_id,
-    name:        h.title,
-    author:      h.author,
-    description: h.description,
-    iconUrl:     h.icon_url,
-    downloads:   h.downloads,
-    follows:     h.follows,
-    versions:    h.versions || [],
-    loaders:     h.loaders || [],
-    source:      'modrinth',
-    slug:        h.slug
-  }));
+  return {
+    total: data.total_hits || 0,
+    mods: (data.hits || []).map(h => ({
+      id:          h.project_id,
+      name:        h.title,
+      author:      h.author,
+      description: h.description,
+      iconUrl:     h.icon_url,
+      downloads:   h.downloads,
+      follows:     h.follows,
+      versions:    h.versions || [],
+      loaders:     h.loaders || [],
+      source:      'modrinth',
+      slug:        h.slug
+    }))
+  };
 }
 
-async function searchCurseForgeMods(query, loader) {
+async function searchCurseForgeMods(query, loader, offset = 0) {
   const api = window.craftdock?.api;
   if (!api?.curseforgeSearch) {
     throw new Error('CurseForge requires the Electron app');
   }
-  // Map loader name to CurseForge modLoaderType number
   const loaderMap = { forge: '1', fabric: '4', neoforge: '6', quilt: '5' };
   const loaderType = loaderMap[loader] || '';
-  const result = await api.curseforgeSearch(query || '', '', loaderType);
+  const result = await api.curseforgeSearch(query || '', '', loaderType, offset, MB_PAGE_SIZE);
   if (!result.success) throw new Error(result.error || 'CurseForge API error');
-  return (result.data || []).map(m => ({
-    id:          String(m.id),
-    name:        m.name,
-    author:      m.authors?.[0]?.name || '',
-    description: m.summary || '',
-    iconUrl:     m.logo?.thumbnailUrl || m.logo?.url,
-    downloads:   m.downloadCount || 0,
-    source:      'curseforge',
-    slug:        m.slug
-  }));
+  return {
+    total: result.pagination?.totalCount || (result.data?.length || 0),
+    mods: (result.data || []).map(m => ({
+      id:          String(m.id),
+      name:        m.name,
+      author:      m.authors?.[0]?.name || '',
+      description: m.summary || '',
+      iconUrl:     m.logo?.thumbnailUrl || m.logo?.url,
+      downloads:   m.downloadCount || 0,
+      source:      'curseforge',
+      slug:        m.slug
+    }))
+  };
 }
 
 // Track which mod row has its version picker open
 let _mbExpandedId = null;
 
-function renderMbList(mods) {
+function renderMbList(mods, append = false) {
   const list = document.getElementById('mbList');
   if (!list) return;
 
-  if (!mods.length) {
+  if (!mods.length && !append) {
     list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">'
       + '<div style="font-size:13px">No mods found</div>'
-      + '<div style="font-size:11px;margin-top:4px">Try a different search</div></div>';
+      + '<div style="font-size:11px;margin-top:4px">Try a different search or loader filter</div></div>';
     return;
   }
 
-  list.innerHTML = '';
+  if (!append) list.innerHTML = '';
   mods.forEach(m => {
     const dlStr = m.downloads >= 1e6 ? (m.downloads/1e6).toFixed(1)+'M' :
                   m.downloads >= 1e3 ? Math.round(m.downloads/1e3)+'K' : String(m.downloads||'');
@@ -6059,7 +6172,7 @@ function switchPage(name, btn) {
   }
   if (btn) btn.classList.add('active');
   if (name==='skins'&&!mainRenderer) initSkinManager();
-  if (name==='browse') triggerBrowse();
+  if (name==='browse') { populateVersionFilters(); triggerBrowse(); }
   if (name==='servers') renderSrvList();
   if (name==='accounts') renderAccountsPage();
   if (name==='home') refreshHomePage();
@@ -6327,26 +6440,36 @@ async function _doLaunch(inst, serverIp, isExtraInstance) {
 }
 
 // ── Check if a modpack has a newer version on Modrinth ──────────────────────
+// TTL-cached (5 min) so repeat launches don't pay a network round-trip every time.
+const _modpackUpdateCache = new Map(); // sourceId -> { at, result }
+const MODPACK_UPDATE_TTL  = 5 * 60 * 1000;
+
 async function checkModpackUpdate(inst) {
+  const cached = _modpackUpdateCache.get(inst.sourceId);
+  if (cached && Date.now() - cached.at < MODPACK_UPDATE_TTL) return cached.result;
+  let result  = null;
+  let checked = false;
   try {
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${inst.sourceId}/version?limit=1`,
       { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
     );
-    if (!res.ok) return null;
-    const versions = await res.json();
-    const latest = versions[0];
-    if (!latest) return null;
-    if (latest.id !== (inst.sourceVersionId || '')) {
-      return {
-        versionId:   latest.id,
-        versionName: latest.version_number,
-        downloadUrl: latest.files?.[0]?.url || null,
-        fileName:    latest.files?.[0]?.filename || null,
-      };
+    if (res.ok) {
+      checked = true;
+      const versions = await res.json();
+      const latest = versions[0];
+      if (latest && latest.id !== (inst.sourceVersionId || '')) {
+        result = {
+          versionId:   latest.id,
+          versionName: latest.version_number,
+          downloadUrl: latest.files?.[0]?.url || null,
+          fileName:    latest.files?.[0]?.filename || null,
+        };
+      }
     }
-    return null;
-  } catch { return null; }
+  } catch { /* network failure — don't cache, so the next launch retries */ }
+  if (checked) _modpackUpdateCache.set(inst.sourceId, { at: Date.now(), result });
+  return result;
 }
 
 function showModpackUpdateModal(inst, updateInfo) {
@@ -8576,6 +8699,8 @@ function appendConsoleLog(id, text) {
   else if (/Done \(|joined the game|left the game/i.test(t)) line.style.color = '#3fb950';
   line.textContent = t + '\n';
   el.appendChild(line);
+  // Cap console DOM so long-running servers don't slow the renderer down
+  if (el.childElementCount > 3000) el.removeChild(el.firstChild);
   if (wasBottom) el.scrollTop = el.scrollHeight;
 }
 
@@ -10106,7 +10231,15 @@ async function reinstallActiveInstance() {
         const result = await window.craftdockInstance.installModpack(activeInstanceId, mrpackFile.url);
         if (result.success) {
           showNotif('Reinstalled', `${inst.name} — ${result.modsInstalled} mods reinstalled`);
-          selectInstanceById(activeInstanceId);
+          // Force-clear the instance list cache so renderInstanceList re-reads from disk
+          _instListCache = null;
+          await renderInstanceList(true);
+          // Re-fetch fresh inst object from disk before populating UI
+          const freshInst = (await InstanceStore.getAll()).find(i => i.id === activeInstanceId);
+          if (freshInst) {
+            renderInstalledMods(freshInst);
+            loadInstanceOverview(freshInst);
+          }
         } else {
           showNotif('Reinstall Failed', result.error || 'Unknown error', 7000);
         }
@@ -10953,7 +11086,7 @@ function settingsOpenDataFolder() {
 }
 
 function settingsOpenGithub() {
-  const url = 'https://github.com/RealGeegamr/CraftDock/issues';
+  const url = 'https://github.com/Geegamr/CraftDock/issues';
   if (isCraftDock && window.craftdock?.openExternal) {
     window.craftdock.openExternal(url);
   } else {
@@ -11863,7 +11996,7 @@ async function _runUpdateCheck(showResult) {
         const banner = document.createElement('div');
         banner.id = 'appUpdateBanner';
         banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:#4f46e5;color:#fff;font-size:12px;font-weight:600;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px';
-        const safeUrl = escHtml(r.url || 'https://github.com/RealGeegamr/CraftDock/releases');
+        const safeUrl = escHtml(r.url || 'https://github.com/Geegamr/CraftDock/releases');
         banner.innerHTML = `<span>&#127881; CraftDock v${escHtml(r.latest)} is available! (current: v${escHtml(r.current)})</span>
           <div style="display:flex;gap:8px;flex-shrink:0">
             <button onclick="if(window.craftdock?.openExternal)window.craftdock.openExternal('${safeUrl}');else window.open('${safeUrl}','_blank')"
@@ -11941,12 +12074,18 @@ async function _runUpdateCheck(showResult) {
         <button class="mb-filter-chip" id="mbSrcCF" onclick="setMbSource('curseforge',this)">CF</button>
       </div>
     </div>
-    <div class="mb-filters" id="mbLoaderFilters">
-      <button class="mb-filter-chip active" onclick="setMbLoader('',this)">All</button>
-      <button class="mb-filter-chip" onclick="setMbLoader('forge',this)">Forge</button>
-      <button class="mb-filter-chip" onclick="setMbLoader('fabric',this)">Fabric</button>
-      <button class="mb-filter-chip" onclick="setMbLoader('neoforge',this)">NeoForge</button>
-      <button class="mb-filter-chip" onclick="setMbLoader('quilt',this)">Quilt</button>
+    <div class="mb-filters" id="mbLoaderFilters" style="justify-content:space-between">
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="mb-filter-chip active" onclick="setMbLoader('',this)">All</button>
+        <button class="mb-filter-chip" onclick="setMbLoader('forge',this)">Forge</button>
+        <button class="mb-filter-chip" onclick="setMbLoader('fabric',this)">Fabric</button>
+        <button class="mb-filter-chip" onclick="setMbLoader('neoforge',this)">NeoForge</button>
+        <button class="mb-filter-chip" onclick="setMbLoader('quilt',this)">Quilt</button>
+      </div>
+      <select id="mbVersionFilter" onchange="mbSearchMods(document.getElementById('mbSearchInput')?.value||'')"
+        style="background:var(--bg-input);border:1px solid var(--border);border-radius:5px;padding:3px 8px;color:var(--text-primary);font-size:11px;font-family:inherit;cursor:pointer;max-width:110px">
+        <option value="">All versions</option>
+      </select>
     </div>
     <div class="mb-list" id="mbList">
       <div id="mbLoading" style="text-align:center;padding:40px;color:var(--text-muted)">

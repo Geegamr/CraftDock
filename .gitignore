@@ -32,5 +32,5 @@ desktop.ini
 
 # ── Electron cache ────────────────────────────────────────────
 .electron-cache/
-_Make INSTALLER.bat
+*.bat
 main.js.bak

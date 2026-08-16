@@ -25,21 +25,22 @@
 
 ## Features
 
-- **Modpack browser** — search and install modpacks from Modrinth and CurseForge in one click
-- **Instance manager** — each modpack gets its own isolated folder with mods, saves, configs, and resource packs
-- **Mod browser & version picker** — browse mods from Modrinth, choose any specific version with compatibility badges for your MC version and loader
-- **Mod update checker** — check for mod updates per-instance with one click; update individually or in bulk
-- **Direct Java launch** — launches Minecraft directly (no external launcher needed), with Fabric, Forge, NeoForge, and Quilt support
-- **Server manager** — spin up Paper, Purpur, Vanilla, Fabric, or Forge servers with live console, player management, backups, and auto-shutdown
-- **Join server from launcher** — click Join on any saved multiplayer server to launch the instance and connect automatically
-- **Shared worlds** — link multiple instances to one `saves/` folder via symlinks using a World Tag
-- **Shared server lists** — link multiple instances to one `servers.dat` via symlinks using a Server Tag
-- **Resource pack / shader / data pack browser** — browse Modrinth and install directly to any instance
-- **Skin manager** — upload, preview, and apply skins with 3D preview canvas, cape selector, and player skin downloader
-- **Microsoft login** — full Microsoft OAuth via device code flow with encrypted token storage
-- **Update checker** — checks GitHub releases on startup (toggleable) with in-app banner
-- **Playtime tracking** — see hours played per instance on the home dashboard
-- **Export** — export instances as CurseForge .zip, Modrinth .mrpack, CF share code, or Modrinth link
+- **Modpack browser** — search and install from Modrinth and CurseForge
+- **Import / Export** — import CurseForge `.zip` or Modrinth `.mrpack`; export as zip, mrpack, CF code, or Modrinth link
+- **Instance manager** — isolated folder per instance with mods, saves, configs, screenshots, and resource packs
+- **Mod browser & version picker** — browse Modrinth with version compatibility badges for your MC version and loader
+- **Mod update checker** — check and update mods per-instance individually or in bulk
+- **Direct Java launch** — no external launcher needed; supports Fabric, Forge, NeoForge, and Quilt
+- **Auto Java management** — picks the right Java per MC version; auto-downloads it privately if missing — system Java never touched
+- **Server manager** — Paper, Purpur, Vanilla, Fabric, or Forge servers with live console, backups, and auto-shutdown
+- **Join server from launcher** — launch an instance and connect to a server in one click
+- **World / Server / Resource Tags** — symlink `saves/`, `servers.dat`, or `resourcepacks/` across multiple instances
+- **Resource pack, shader & data pack browser** — Modrinth browser with version picker, installs directly to any instance
+- **Config file editor** — edit `.toml`, `.json`, `.yaml`, `.cfg` and more directly in the launcher; system editor optional via Settings
+- **Screenshots viewer** — in-app lightbox with prev/next navigation and keyboard shortcuts
+- **Skin manager** — 3D preview, cape selector, and player skin downloader
+- **Microsoft login** — device code OAuth with AES-256-GCM encrypted token storage and silent background refresh
+- **Playtime tracking** — hours played per instance shown on the home dashboard
 
 ---
 

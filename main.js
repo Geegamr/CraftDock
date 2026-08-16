@@ -279,7 +279,7 @@ async function refreshMcToken(msRefreshToken) {
   return { ...result, newMsToken, newRefreshToken };
 }
 
-// ── Background token refresh — runs every 23h, keeps tokens perpetually fresh ──
+// ── Background token refresh — checks every 30 min, refreshes tokens nearing expiry ──
 let _bgRefreshTimer = null;
 
 async function backgroundRefreshAllAccounts() {
@@ -438,7 +438,7 @@ function createWindow() {
 
 // Register all IPC handlers first, BEFORE creating the window
 // Bump this whenever new IPC handlers are added — renderer checks on startup
-const MAIN_JS_VERSION = '0.6.3';
+const MAIN_JS_VERSION = require('./package.json').version;
 
 // ── Simple ZIP writer (no external deps) ────────────────────
 function writeZipToFile(destPath, entries) {
@@ -1182,20 +1182,18 @@ ipcMain.handle('instance-write-config-file', (_, filePath, text) => {
 
 // ── Pack import (CurseForge .zip / Modrinth .mrpack) ───────────────────────
 ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
-  const AdmZip = (() => { try { return require('adm-zip'); } catch { return null; } })();
-  if (!AdmZip) return { success: false, error: 'adm-zip not available. Run: npm install adm-zip' };
-
   try {
-    const zip = new AdmZip(filePath);
+    const zipEntries = readZipEntries(filePath); // Map<name, Buffer> (built-in, no deps)
+    const getData = (name) => { const b = zipEntries.get(name); return b ? b.toString('utf8') : null; };
     let packName = path.basename(filePath, path.extname(filePath));
     let mcVersion = '1.21.4', loader = '', loaderVersion = '';
     let mods = [];
 
     if (type === 'mr') {
       // Modrinth .mrpack — parse modrinth.index.json
-      const indexEntry = zip.getEntry('modrinth.index.json');
+      const indexEntry = zipEntries.get('modrinth.index.json');
       if (!indexEntry) return { success: false, error: 'Invalid .mrpack: missing modrinth.index.json' };
-      const idx = JSON.parse(indexEntry.getData().toString('utf8'));
+      const idx = JSON.parse(indexEntry.toString('utf8'));
       packName    = idx.name || packName;
       mcVersion   = idx.dependencies?.minecraft || mcVersion;
       const loaderKey = Object.keys(idx.dependencies || {}).find(k => k !== 'minecraft');
@@ -1203,9 +1201,9 @@ ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
       mods = (idx.files || []).map(f => ({ url: f.downloads?.[0], path: f.path, sha512: f.hashes?.sha512 })).filter(m => m.url);
     } else {
       // CurseForge .zip — parse manifest.json
-      const manifestEntry = zip.getEntry('manifest.json');
+      const manifestEntry = zipEntries.get('manifest.json');
       if (!manifestEntry) return { success: false, error: 'Invalid CurseForge zip: missing manifest.json' };
-      const manifest = JSON.parse(manifestEntry.getData().toString('utf8'));
+      const manifest = JSON.parse(manifestEntry.toString('utf8'));
       packName    = manifest.name || packName;
       mcVersion   = manifest.minecraft?.version || mcVersion;
       const loaderInfo = manifest.minecraft?.modLoaders?.find(l => l.primary);
@@ -1239,25 +1237,13 @@ ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
     };
     writeInstMeta(id, meta);
 
-    // For .mrpack — extract overrides folder
-    if (type === 'mr') {
-      for (const entry of zip.getEntries()) {
-        if (entry.entryName.startsWith('overrides/') && !entry.isDirectory) {
-          const rel = entry.entryName.replace(/^overrides\//, '');
-          const dest = path.join(instPath, rel);
-          fs.mkdirSync(path.dirname(dest), { recursive: true });
-          fs.writeFileSync(dest, entry.getData());
-        }
-      }
-    } else {
-      // CF — extract overrides folder
-      for (const entry of zip.getEntries()) {
-        if (entry.entryName.startsWith('overrides/') && !entry.isDirectory) {
-          const rel = entry.entryName.replace(/^overrides\//, '');
-          const dest = path.join(instPath, rel);
-          fs.mkdirSync(path.dirname(dest), { recursive: true });
-          fs.writeFileSync(dest, entry.getData());
-        }
+    // For .mrpack / CurseForge zip — extract overrides folder
+    for (const [name, buf] of zipEntries) {
+      if (name.startsWith('overrides/') && !name.endsWith('/')) {
+        const rel = name.replace(/^overrides\//, '');
+        const dest = path.join(instPath, rel);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, buf);
       }
     }
 
@@ -1443,23 +1429,33 @@ ipcMain.handle('instance-open-folder', (_, id, sub) => {
   return { success: true };
 });
 
+// Disk size is shown every time an instance/overview is opened — cache a short result so
+// tab & instance switching doesn't re-walk large modpack folders, and use async reads so a
+// big instance (e.g. thousands of map-cache files) never blocks the whole main process.
+const diskSizeCache = new Map(); // instId -> { size, at }
+const DISK_SIZE_TTL = 30 * 1000;
+
 ipcMain.handle('instance-get-disk-size', async (_, id) => {
+  const now = Date.now();
+  const hit = diskSizeCache.get(id);
+  if (hit && now - hit.at < DISK_SIZE_TTL) return hit.size;
   const base = instDir(id);
   if (!fs.existsSync(base)) return 0;
   let total = 0;
-  const walk = (dir) => {
-    try {
-      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+  const walk = async (dir) => {
+    let entries;
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      try {
+        if (e.isSymbolicLink()) continue; // don't double-count shared worlds
         const p = path.join(dir, e.name);
-        try {
-          if (e.isSymbolicLink()) return; // don't double-count shared worlds
-          if (e.isDirectory()) walk(p);
-          else total += fs.statSync(p).size;
-        } catch {}
-      }
-    } catch {}
+        if (e.isDirectory()) await walk(p);
+        else total += (await fs.promises.stat(p)).size;
+      } catch {}
+    }
   };
-  walk(base);
+  await walk(base);
+  diskSizeCache.set(id, { size: total, at: Date.now() });
   return total;
 });
 
@@ -3159,14 +3155,7 @@ function createZipFromDir(sourceDir, destZipPath) {
     const data       = fs.readFileSync(full);
     const compressed = zlib.deflateRawSync(data, { level: 6 });
     const nameBytes  = Buffer.from(rel, 'utf8');
-    const crc = (() => {
-      let c = 0xFFFFFFFF;
-      for (const b of data) {
-        c ^= b;
-        for (let i = 0; i < 8; i++) c = (c >>> 1) ^ (c & 1 ? 0xEDB88320 : 0);
-      }
-      return (c ^ 0xFFFFFFFF) >>> 0;
-    })();
+    const crc = zlib.crc32(data) >>> 0;
 
     const lh = Buffer.alloc(30 + nameBytes.length);
     lh.writeUInt32LE(0x04034b50, 0);   // local file header sig
@@ -3454,21 +3443,6 @@ ipcMain.handle('server-write-mc-icon', async (_, id, dataUrl) => {
   } catch(e) { return { success: false, error: e.message }; }
 });
 
-// ── Pick JAR file dialog ───────────────────────────────────
-ipcMain.handle('pick-jar', async () => {
-  const { dialog } = require('electron');
-  const win = require('electron').BrowserWindow.getFocusedWindow();
-  const result = await dialog.showOpenDialog(win, {
-    title: 'Select Plugin JAR',
-    filters: [{ name: 'JAR Files', extensions: ['jar'] }],
-    properties: ['openFile']
-  });
-  if (result.canceled || !result.filePaths.length) return null;
-  const filePath = result.filePaths[0];
-  return { filePath, fileName: path.basename(filePath) };
-});
-
-// ── List files in server plugins/ folder ──────────────────
 ipcMain.handle('server-list-plugins', async (_, id) => {
   try {
     if (!id) return { success: false, error: 'Server ID is required', files: [] };
@@ -3657,7 +3631,7 @@ ipcMain.handle('instance-export', async (_, instId, format) => {
 // ── IPC: Check for CraftDock app updates from GitHub ───────
 ipcMain.handle('check-app-update', async () => {
   try {
-    const res = await fetchJsonHttp('https://api.github.com/repos/RealGeegamr/CraftDock/releases/latest');
+    const res = await fetchJsonHttp('https://api.github.com/repos/Geegamr/CraftDock/releases/latest');
     if (!res?.tag_name) return { success: false, error: 'No releases found' };
     const latestTag = res.tag_name.replace(/^v/, '');
     const current = MAIN_JS_VERSION;
@@ -3667,7 +3641,7 @@ ipcMain.handle('check-app-update', async () => {
       current,
       latest: latestTag,
       hasUpdate,
-      url: res.html_url || 'https://github.com/RealGeegamr/CraftDock/releases',
+      url: res.html_url || 'https://github.com/Geegamr/CraftDock/releases',
       name: res.name || `v${latestTag}`,
       body: res.body || '',
     };
