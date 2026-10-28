@@ -183,23 +183,38 @@ test('reader and writer resolve dev/packaged binaries and fall back when absent 
   });
 });
 
-test('production preload preserves read/write IPC channels, arguments, and results', async () => {
-  await withTempRoot(async root => {
-    const serverId = 'properties-fixture';
-    const serverDirectory = path.join(root, 'craftdock-data', 'servers', serverId);
-    fs.mkdirSync(serverDirectory, { recursive: true });
-    fs.copyFileSync(path.join(fixtureRoot, 'read-edge.properties'), path.join(serverDirectory, 'server.properties'));
-    const handlers = new Map();
-    const { exposed, invocations } = loadProductionIpc(root, handlers);
-    const expected = readServerPropertiesFallback(path.join(serverDirectory, 'server.properties'));
-    assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdockServer.readServerProps(serverId))), expected);
-    assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdockServer.writeProperties(serverId, { motd: 'a=b', online: true }))), { success: true });
-    assert.equal(fs.readFileSync(path.join(serverDirectory, 'server.properties'), 'utf8'), 'motd=a=b\nonline=true\n');
-    await assert.rejects(exposed.craftdockServer.writeProperties('missing', {}), /ENOENT/);
-    assert.deepEqual(JSON.parse(JSON.stringify(invocations)), [
-      ['server-read-props', serverId],
-      ['server-write-props', serverId, { motd: 'a=b', online: true }],
-      ['server-write-props', 'missing', {}],
-    ]);
-  });
+test('production preload preserves read/write IPC through fallback and the actual Rust executable', async () => {
+  for (const useRust of [false, true]) {
+    await withTempRoot(async root => {
+      const serverId = 'properties-fixture';
+      const serverDirectory = path.join(root, 'craftdock-data', 'servers', serverId);
+      fs.mkdirSync(serverDirectory, { recursive: true });
+      const propertiesFile = path.join(serverDirectory, 'server.properties');
+      fs.copyFileSync(path.join(fixtureRoot, 'read-edge.properties'), propertiesFile);
+
+      if (useRust) {
+        const build = spawnSync('cargo', ['build', '--manifest-path', 'rust/Cargo.toml', '--locked', '--bin', 'craftdock-server-properties'], {
+          cwd: projectRoot, encoding: 'utf8',
+        });
+        assert.equal(build.status, 0, `Rust server.properties build failed:\n${build.stderr}`);
+        const devBinary = path.join(root, 'rust', 'target', 'debug', binaryName);
+        fs.mkdirSync(path.dirname(devBinary), { recursive: true });
+        fs.copyFileSync(binaryPath, devBinary);
+        assert.ok(fs.existsSync(devBinary), 'the actual Rust executable must be available to the dev resolver');
+      }
+
+      const handlers = new Map();
+      const { exposed, invocations } = loadProductionIpc(root, handlers);
+      const expected = readServerPropertiesFallback(propertiesFile);
+      assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdockServer.readServerProps(serverId))), expected);
+      assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdockServer.writeProperties(serverId, { motd: 'a=b', online: true }))), { success: true });
+      assert.equal(fs.readFileSync(propertiesFile, 'utf8'), 'motd=a=b\nonline=true\n');
+      await assert.rejects(exposed.craftdockServer.writeProperties('missing', {}), /ENOENT/);
+      assert.deepEqual(JSON.parse(JSON.stringify(invocations)), [
+        ['server-read-props', serverId],
+        ['server-write-props', serverId, { motd: 'a=b', online: true }],
+        ['server-write-props', 'missing', {}],
+      ]);
+    });
+  }
 });
