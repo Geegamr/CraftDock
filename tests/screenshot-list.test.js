@@ -12,8 +12,8 @@ const binaryName = process.platform === 'win32' ? 'craftdock-screenshot-list.exe
 const binaryPath = path.join(projectRoot, 'rust', 'target', 'debug', binaryName);
 const silentLogger = { warn() {} };
 
-async function withTempRoot(callback) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'craftdock-screenshots-'));
+async function withTempRoot(callback, parent = os.tmpdir()) {
+  const root = fs.mkdtempSync(path.join(parent, 'craftdock-screenshots-'));
   try { await callback(root); }
   finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
@@ -95,6 +95,59 @@ test('Rust screenshot scanner matches JavaScript on shared input and preserves o
     assert.deepEqual(actual.map(file => Object.keys(file).sort()), actual.map(() => ['mtime', 'name', 'path', 'size']));
     for (const [actualFile, expectedFile] of actual.map(file => [file, expected.find(item => item.name === file.name)])) {
       assert.ok(Math.abs(actualFile.mtime - expectedFile.mtime) < 2, `${actualFile.name} mtime differs`);
+    }
+  });
+});
+
+test('JavaScript fallback returns absolute normalized paths for relative directories', async () => {
+  await withTempRoot(async root => {
+    const directory = path.join(root, 'screenshots');
+    populateScreenshots(directory);
+    const relativeDirectory = path.relative(process.cwd(), directory);
+    assert.equal(path.isAbsolute(relativeDirectory), false);
+    const fallback = listScreenshotsFallback(relativeDirectory);
+    const native = spawnSync(binaryPath, [directory], { encoding: 'utf8' });
+    assert.equal(native.status, 0, `Rust screenshot scanner failed: ${native.stderr}`);
+    const nativeFiles = JSON.parse(native.stdout);
+
+    assert.ok(fallback.every(file => path.isAbsolute(file.path)));
+    assert.deepEqual(fallback.map(file => file.path), nativeFiles.map(file => file.path));
+  }, process.cwd());
+});
+
+test('JavaScript fallback returns an empty list when reading a directory fails', () => {
+  const originalReadDirectory = fs.readdirSync;
+  try {
+    fs.readdirSync = () => { throw Object.assign(new Error('permission denied'), { code: 'EACCES' }); };
+    assert.deepEqual(listScreenshotsFallback(path.resolve('unreadable-screenshots')), []);
+  } finally {
+    fs.readdirSync = originalReadDirectory;
+  }
+});
+
+test('native scanner failure for an unreadable directory falls back to an empty list', async () => {
+  await withTempRoot(async root => {
+    const directory = path.join(root, 'screenshots');
+    fs.mkdirSync(directory);
+    const native = path.join(root, 'native', binaryName);
+    fs.mkdirSync(path.dirname(native));
+    fs.writeFileSync(native, 'stub');
+    const originalReadDirectory = fs.readdirSync;
+    try {
+      fs.readdirSync = (target, ...args) => {
+        if (path.resolve(String(target)) === path.resolve(directory)) {
+          throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+        }
+        return originalReadDirectory.call(fs, target, ...args);
+      };
+      const reader = createScreenshotListReader({
+        isPackaged: true, appDir: root, resourcesPath: root,
+        platform: process.platform, logger: silentLogger,
+        runFile: (binary, args, options, callback) => callback(new Error('permission denied')),
+      });
+      assert.deepEqual(await reader(directory), []);
+    } finally {
+      fs.readdirSync = originalReadDirectory;
     }
   });
 });

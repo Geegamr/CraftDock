@@ -3,11 +3,12 @@ const path = require('path');
 const { execFile } = require('child_process');
 
 function listScreenshotsFallback(directory) {
+  const absoluteDirectory = path.resolve(directory);
   try {
-    return fs.readdirSync(directory)
+    return fs.readdirSync(absoluteDirectory)
       .filter(name => /\.(png|jpg|jpeg)$/i.test(name))
       .map(name => {
-        const filePath = path.join(directory, name);
+        const filePath = path.join(absoluteDirectory, name);
         const stat = fs.statSync(filePath);
         return { name, path: filePath, size: stat.size, mtime: stat.mtimeMs };
       })
