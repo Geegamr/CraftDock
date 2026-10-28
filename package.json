@@ -29,6 +29,7 @@
     ],
     "files": [
       "main.js",
+      "servers-dat.js",
       "preload.js",
       "console-preload.js",
       "src/**/*",

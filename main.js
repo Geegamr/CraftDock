@@ -5,7 +5,7 @@ app.setName('CraftDock');
 const path  = require('path');
 const fs    = require('fs');
 const https = require('https');
-const zlib  = require('zlib');
+const { createServersDatReader } = require('./servers-dat');
 
 // All data lives in craftdock-data/ next to the launcher so users can find it easily
 const isDev    = !app.isPackaged;
@@ -65,121 +65,12 @@ const INST_SUBDIRS = ['mods','saves','config','resourcepacks','screenshots','sha
 function instDir(id) { return path.join(instancesBase, slugMap[id] || id); }
 function srvDir(id)  { return path.join(serversBase,   slugMap[id] || id); }
 
-// ── Minimal NBT parser (for servers.dat) ───────────────────
-function parseNBT(buffer) {
-  let pos = 0;
-  const readByte   = () => buffer[pos++];
-  const readShort  = () => { const v = buffer.readInt16BE(pos); pos += 2; return v; };
-  const readInt    = () => { const v = buffer.readInt32BE(pos); pos += 4; return v; };
-  const readLong   = () => { pos += 8; return 0; };
-  const readFloat  = () => { pos += 4; return 0; };
-  const readDouble = () => { pos += 8; return 0; };
-  const readString = () => {
-    const len = buffer.readUInt16BE(pos); pos += 2;
-    const s = buffer.slice(pos, pos + len).toString('utf8');
-    pos += len; return s;
-  };
-  const readByteArray  = () => { const n = readInt(); const buf = buffer.slice(pos, pos+n); pos += n; return buf; };
-  const readIntArray   = () => { const n = readInt(); pos += n*4; return []; };
-  const readLongArray  = () => { const n = readInt(); pos += n*8; return []; };
-
-  function readPayload(type) {
-    switch(type) {
-      case 1: return readByte();  case 2: return readShort(); case 3: return readInt();
-      case 4: return readLong();  case 5: return readFloat(); case 6: return readDouble();
-      case 7: return readByteArray(); case 8: return readString();
-      case 9: return readList();  case 10: return readCompound();
-      case 11: return readIntArray(); case 12: return readLongArray();
-      default: throw new Error('Unknown NBT type: ' + type);
-    }
-  }
-  function readList() {
-    const itemType = readByte(); const count = readInt(); const arr = [];
-    for (let i = 0; i < count; i++) arr.push(readPayload(itemType));
-    return arr;
-  }
-  function readCompound() {
-    const obj = {};
-    while (true) { const type = readByte(); if (type === 0) break; const name = readString(); obj[name] = readPayload(type); }
-    return obj;
-  }
-  const rootType = readByte(); readString(); // skip root name
-  return readPayload(rootType);
-}
-
-async function readServersDatFallback(gameDir) {
-  const datFile = path.join(gameDir, 'servers.dat');
-  if (!fs.existsSync(datFile)) return [];
-  try {
-    const raw = fs.readFileSync(datFile);
-    // Minecraft Java Edition stores servers.dat as uncompressed NBT.
-    // Some older versions or tools may gzip it — try raw first, fall back to gunzip.
-    let buf;
-    const isGzip = raw[0] === 0x1f && raw[1] === 0x8b;
-    if (isGzip) {
-      buf = await new Promise((res, rej) => zlib.gunzip(raw, (e, d) => e ? rej(e) : res(d)));
-    } else {
-      buf = raw;
-    }
-    const root = parseNBT(buf);
-    const servers = root.servers || [];
-    return servers.map(s => ({
-      name:   s.name || 'Minecraft Server',
-      ip:     s.ip   || '',
-      icon:   s.icon ? ('data:image/png;base64,' + (Buffer.isBuffer(s.icon) ? s.icon.toString('base64') : s.icon)) : null,
-      hidden: s.hiddenAddress === 1,
-    }));
-  } catch(e) {
-    console.warn('[CraftDock] servers.dat parse error:', e.message);
-    return [];
-  }
-}
-
-function serversDatRustBinary() {
-  const binaryName = process.platform === 'win32' ? 'craftdock-servers-dat.exe' : 'craftdock-servers-dat';
-  const candidates = app.isPackaged
-    ? [path.join(process.resourcesPath, 'native', binaryName)]
-    : [
-        path.join(__dirname, 'rust', 'target', 'release', binaryName),
-        path.join(__dirname, 'rust', 'target', 'debug', binaryName),
-      ];
-  return candidates.find(candidate => fs.existsSync(candidate));
-}
-
-async function readServersDatWithRust(gameDir) {
-  const datFile = path.join(gameDir, 'servers.dat');
-  if (!fs.existsSync(datFile)) return [];
-  const binary = serversDatRustBinary();
-  if (!binary) throw new Error('Rust parser binary is unavailable');
-
-  const { execFile } = require('child_process');
-  const stdout = await new Promise((resolve, reject) => {
-    execFile(binary, [datFile], { windowsHide: true, timeout: 10000, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' }, (error, output) => {
-      if (error) return reject(error);
-      resolve(output);
-    });
-  });
-  const servers = JSON.parse(stdout);
-  if (!Array.isArray(servers) || servers.some(server =>
-    !server || typeof server.name !== 'string' || typeof server.ip !== 'string' ||
-    !(typeof server.icon === 'string' || server.icon === null) || typeof server.hidden !== 'boolean'
-  )) {
-    throw new Error('Rust parser returned an invalid server list');
-  }
-  return servers;
-}
-
-async function readServersDat(gameDir) {
-  try {
-    return await readServersDatWithRust(gameDir);
-  } catch (error) {
-    if (error.message !== 'Rust parser binary is unavailable') {
-      console.warn('[CraftDock] Rust servers.dat parser failed; using JavaScript fallback:', error.message);
-    }
-    return readServersDatFallback(gameDir);
-  }
-}
-
+const readServersDat = createServersDatReader({
+  isPackaged: app.isPackaged,
+  appDir: __dirname,
+  resourcesPath: process.resourcesPath,
+  platform: process.platform,
+});
 
 // Uses AES-256-GCM with a per-install random key stored next to the data.
 // This is far more portable than safeStorage/DPAPI which breaks if the app
