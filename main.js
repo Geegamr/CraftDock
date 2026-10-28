@@ -6,6 +6,7 @@ const path  = require('path');
 const fs    = require('fs');
 const https = require('https');
 const { createServersDatReader } = require('./servers-dat');
+const { createServerJarListReader } = require('./server-jar-list');
 
 // All data lives in craftdock-data/ next to the launcher so users can find it easily
 const isDev    = !app.isPackaged;
@@ -65,12 +66,14 @@ const INST_SUBDIRS = ['mods','saves','config','resourcepacks','screenshots','sha
 function instDir(id) { return path.join(instancesBase, slugMap[id] || id); }
 function srvDir(id)  { return path.join(serversBase,   slugMap[id] || id); }
 
-const readServersDat = createServersDatReader({
+const nativeReaderOptions = {
   isPackaged: app.isPackaged,
   appDir: __dirname,
   resourcesPath: process.resourcesPath,
   platform: process.platform,
-});
+};
+const readServersDat = createServersDatReader(nativeReaderOptions);
+const readServerJarList = createServerJarListReader(nativeReaderOptions);
 
 // Uses AES-256-GCM with a per-install random key stored next to the data.
 // This is far more portable than safeStorage/DPAPI which breaks if the app
@@ -3383,21 +3386,11 @@ ipcMain.handle('server-list-plugins', async (_, id) => {
   try {
     if (!id) return { success: false, error: 'Server ID is required', files: [] };
     const pluginsDir = path.join(srvDir(id), 'plugins');
-    if (!fs.existsSync(pluginsDir)) return { success: true, files: [] };
-    const files = fs.readdirSync(pluginsDir)
-      .filter(f => f.endsWith('.jar') || f.endsWith('.jar.disabled'))
-      .map(f => {
-        const filePath = path.join(pluginsDir, f);
-        const stat     = fs.statSync(filePath);
-        const disabled = f.endsWith('.jar.disabled');
-        // Strip .disabled suffix so the stored name is always the base .jar name
-        const name     = disabled ? f.slice(0, -'.disabled'.length) : f;
-        return { name, size: stat.size, mtime: stat.mtimeMs, enabled: !disabled };
-      });
+    const files = await readServerJarList(pluginsDir);
     return { success: true, files };
-  } catch(e) { 
+  } catch(e) {
     console.error('[IPC Error] server-list-plugins:', e.message, e.stack);
-    return { success: false, error: e.message, files: [] }; 
+    return { success: false, error: e.message, files: [] };
   }
 });
 
@@ -3405,15 +3398,7 @@ ipcMain.handle('server-list-plugins', async (_, id) => {
 ipcMain.handle('server-list-mods', async (_, id) => {
   try {
     const modsDir = path.join(srvDir(id), 'mods');
-    if (!fs.existsSync(modsDir)) return { success: true, files: [] };
-    const files = fs.readdirSync(modsDir)
-      .filter(f => f.endsWith('.jar') || f.endsWith('.jar.disabled'))
-      .map(f => {
-        const stat     = fs.statSync(path.join(modsDir, f));
-        const disabled = f.endsWith('.jar.disabled');
-        const name     = disabled ? f.slice(0, -'.disabled'.length) : f;
-        return { name, size: stat.size, mtime: stat.mtimeMs, enabled: !disabled };
-      });
+    const files = await readServerJarList(modsDir);
     return { success: true, files };
   } catch(e) { return { success: false, error: e.message, files: [] }; }
 });

@@ -49,6 +49,7 @@ test('preload invocation reaches the production main servers.dat handler', async
   const mockMainRequire = name => {
     if (name === 'electron') return electronMain;
     if (name === './servers-dat') return require('../servers-dat');
+    if (name === './server-jar-list') return require('../server-jar-list');
     if (name === './package.json') return require('../package.json');
     return require(name);
   };
