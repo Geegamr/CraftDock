@@ -9,6 +9,7 @@ const { createServersDatReader } = require('./servers-dat');
 const { createServerJarListReader } = require('./server-jar-list');
 const { createScreenshotListReader } = require('./screenshot-list');
 const { createConfigFileListReader } = require('./config-file-list');
+const { createServerPropertiesAccess } = require('./server-properties');
 
 // All data lives in craftdock-data/ next to the launcher so users can find it easily
 const isDev    = !app.isPackaged;
@@ -78,6 +79,7 @@ const readServersDat = createServersDatReader(nativeReaderOptions);
 const readServerJarList = createServerJarListReader(nativeReaderOptions);
 const readScreenshotList = createScreenshotListReader(nativeReaderOptions);
 const readConfigFileList = createConfigFileListReader(nativeReaderOptions);
+const serverProperties = createServerPropertiesAccess(nativeReaderOptions);
 
 // Uses AES-256-GCM with a per-install random key stored next to the data.
 // This is far more portable than safeStorage/DPAPI which breaks if the app
@@ -2762,8 +2764,7 @@ ipcMain.handle('server-command', (_,id,cmd) => {
   p.stdin.write(cmd+'\n'); return {success:true};
 });
 ipcMain.handle('server-write-props', (_,id,props) => {
-  fs.writeFileSync(path.join(srvDir(id),'server.properties'),Object.entries(props).map(([k,v])=>k+'='+v).join('\n')+'\n');
-  return {success:true};
+  return serverProperties.write(path.join(srvDir(id), 'server.properties'), props);
 });
 ipcMain.handle('server-pick-jar', async () => {
   const r=await dialog.showOpenDialog(mainWindow,{title:'Select JAR',filters:[{name:'JAR',extensions:['jar']}],properties:['openFile']});
@@ -3266,18 +3267,7 @@ ipcMain.handle('server-set-backup-config', (event, id, intervalMin, keepCount) =
 
 // Read server.properties as key-value object
 ipcMain.handle('server-read-props', (_, id) => {
-  try {
-    const p = path.join(srvDir(id), 'server.properties');
-    if (!fs.existsSync(p)) return {};
-    const obj = {};
-    fs.readFileSync(p, 'utf8').split('\n').forEach(line => {
-      const eq = line.indexOf('=');
-      if (eq > 0 && !line.startsWith('#')) {
-        obj[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
-      }
-    });
-    return obj;
-  } catch { return {}; }
+  return serverProperties.read(path.join(srvDir(id), 'server.properties'));
 });
 
 // ── Reset World ────────────────────────────────────────────

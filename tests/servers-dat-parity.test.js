@@ -52,6 +52,7 @@ test('preload invocation reaches the production main servers.dat handler', async
     if (name === './server-jar-list') return require('../server-jar-list');
     if (name === './screenshot-list') return require('../screenshot-list');
     if (name === './config-file-list') return require('../config-file-list');
+    if (name === './server-properties') return require('../server-properties');
     if (name === './package.json') return require('../package.json');
     return require(name);
   };

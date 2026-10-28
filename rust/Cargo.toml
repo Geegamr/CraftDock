@@ -18,3 +18,7 @@ path = "src/bin/craftdock-screenshot-list.rs"
 [[bin]]
 name = "craftdock-config-file-list"
 path = "src/bin/craftdock-config-file-list.rs"
+
+[[bin]]
+name = "craftdock-server-properties"
+path = "src/bin/craftdock-server-properties.rs"
