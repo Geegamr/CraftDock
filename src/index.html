@@ -5565,8 +5565,8 @@ class SkinRenderer {
     this._rotY = 0;
     this._rotX = 0;
     this._autoSpin = true;
+    this._isPaused = false;
     this._initThree();
-    this.loadDefaultSteve();
   }
 
   // ── Three.js bootstrap ─────────────────────────────────
@@ -5651,10 +5651,34 @@ class SkinRenderer {
     return faces.map(([tx,ty,tw,th]) => this._faceMat(tex, tx, ty, tw, th));
   }
 
+  // Dispose resources owned by a character group, including per-face texture clones.
+  _disposeCharacterResources(group) {
+    const geometries = new Set();
+    const materials = new Set();
+    const textures = new Set();
+    group.traverse(object => {
+      if (!object.isMesh) return;
+      if (object.geometry) geometries.add(object.geometry);
+      for (const material of (Array.isArray(object.material) ? object.material : [object.material])) {
+        if (!material) continue;
+        materials.add(material);
+        if (material.map) textures.add(material.map);
+      }
+    });
+    geometries.forEach(geometry => geometry.dispose());
+    materials.forEach(material => material.dispose());
+    textures.forEach(texture => texture.dispose());
+  }
+
   // ── Build the full character from a skin texture ────────
   _buildCharacter(tex) {
-    // Remove old character
-    if (this._characterGroup) this._scene.remove(this._characterGroup);
+    // Remove the old character and release its GPU resources before rebuilding.
+    if (this._characterGroup) {
+      const oldGroup = this._characterGroup;
+      this._scene.remove(oldGroup);
+      this._disposeCharacterResources(oldGroup);
+      this._characterGroup = null;
+    }
     const group = new THREE.Group();
     this._characterGroup = group;
     this._scene.add(group);
@@ -5807,7 +5831,7 @@ class SkinRenderer {
 
   // ── Animation loop ─────────────────────────────────────
   _startLoop() {
-    if (this._animFrame) cancelAnimationFrame(this._animFrame);
+    if (this._isPaused || this._animFrame) return;
     let t = 0;
     const tick = () => {
       this._animFrame = requestAnimationFrame(tick);
@@ -5851,6 +5875,7 @@ class SkinRenderer {
       tex.magFilter = THREE.NearestFilter;
       tex.minFilter = THREE.NearestFilter;
       tex.needsUpdate = true;
+      if (this._skin && this._skin !== tex) this._skin.dispose();
       this._skin = tex;
       this._buildCharacter(tex);
     }, undefined, () => {
@@ -5865,9 +5890,36 @@ class SkinRenderer {
     if (this._skin) this._buildCharacter(this._skin);
   }
 
+  pause() {
+    this._isPaused = true;
+    if (this._animFrame) {
+      cancelAnimationFrame(this._animFrame);
+      this._animFrame = null;
+    }
+  }
+
+  resume() {
+    if (!this._isPaused) return;
+    this._isPaused = false;
+    this._startLoop();
+  }
+
   destroy() {
-    if (this._animFrame) cancelAnimationFrame(this._animFrame);
-    if (this._renderer) this._renderer.dispose();
+    this.pause();
+    if (this._characterGroup) {
+      const group = this._characterGroup;
+      this._scene.remove(group);
+      this._disposeCharacterResources(group);
+      this._characterGroup = null;
+    }
+    if (this._skin) {
+      this._skin.dispose();
+      this._skin = null;
+    }
+    if (this._renderer) {
+      this._renderer.dispose();
+      this._renderer = null;
+    }
   }
 }
 
@@ -6157,6 +6209,7 @@ function switchPage(name, btn) {
     if (name==='home') refreshHomePage();
     return;
   }
+  if (_currentPage === 'skins' && name !== 'skins') mainRenderer?.pause();
   _currentPage = name;
   // Hide all pages — must override any inline styles
   document.querySelectorAll('.page').forEach(p => {
@@ -6172,6 +6225,7 @@ function switchPage(name, btn) {
   }
   if (btn) btn.classList.add('active');
   if (name==='skins'&&!mainRenderer) initSkinManager();
+  else if (name==='skins') mainRenderer.resume();
   if (name==='browse') { populateVersionFilters(); triggerBrowse(); }
   if (name==='servers') renderSrvList();
   if (name==='accounts') renderAccountsPage();
