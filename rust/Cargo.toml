@@ -10,3 +10,7 @@ serde_json = "1.0"
 [[bin]]
 name = "craftdock-server-jar-list"
 path = "src/bin/craftdock-server-jar-list.rs"
+
+[[bin]]
+name = "craftdock-screenshot-list"
+path = "src/bin/craftdock-screenshot-list.rs"

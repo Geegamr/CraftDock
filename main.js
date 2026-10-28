@@ -7,6 +7,7 @@ const fs    = require('fs');
 const https = require('https');
 const { createServersDatReader } = require('./servers-dat');
 const { createServerJarListReader } = require('./server-jar-list');
+const { createScreenshotListReader } = require('./screenshot-list');
 
 // All data lives in craftdock-data/ next to the launcher so users can find it easily
 const isDev    = !app.isPackaged;
@@ -74,6 +75,7 @@ const nativeReaderOptions = {
 };
 const readServersDat = createServersDatReader(nativeReaderOptions);
 const readServerJarList = createServerJarListReader(nativeReaderOptions);
+const readScreenshotList = createScreenshotListReader(nativeReaderOptions);
 
 // Uses AES-256-GCM with a per-install random key stored next to the data.
 // This is far more portable than safeStorage/DPAPI which breaks if the app
@@ -1293,19 +1295,9 @@ ipcMain.handle('instance-delete-mod', (_, id, filename) => {
   catch(e) { return { success: false, error: e.message }; }
 });
 
-ipcMain.handle('instance-list-screenshots', (_, id) => {
+ipcMain.handle('instance-list-screenshots', async (_, id) => {
   const ssPath = path.join(instDir(id), 'screenshots');
-  try {
-    if (!fs.existsSync(ssPath)) return [];
-    return fs.readdirSync(ssPath)
-      .filter(f => /\.(png|jpg|jpeg)$/i.test(f))
-      .map(f => {
-        const fp = path.join(ssPath, f);
-        const stat = fs.statSync(fp);
-        return { name: f, path: fp, size: stat.size, mtime: stat.mtimeMs };
-      })
-      .sort((a,b) => b.mtime - a.mtime);
-  } catch { return []; }
+  return await readScreenshotList(ssPath);
 });
 
 // Trigger a foreground token refresh (called after login or when renderer detects stale state)

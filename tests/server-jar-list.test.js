@@ -44,6 +44,7 @@ function loadProductionIpc(tempRoot, handlers) {
     if (name === 'electron') return electronMain;
     if (name === './servers-dat') return require('../servers-dat');
     if (name === './server-jar-list') return require('../server-jar-list');
+    if (name === './screenshot-list') return require('../screenshot-list');
     if (name === './package.json') return require('../package.json');
     return require(name);
   };
