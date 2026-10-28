@@ -24,7 +24,7 @@
       {
         "from": "rust/target/release",
         "to": "native",
-        "filter": ["craftdock-servers-dat", "craftdock-servers-dat.exe", "craftdock-server-jar-list", "craftdock-server-jar-list.exe", "craftdock-screenshot-list", "craftdock-screenshot-list.exe"]
+        "filter": ["craftdock-servers-dat", "craftdock-servers-dat.exe", "craftdock-server-jar-list", "craftdock-server-jar-list.exe", "craftdock-screenshot-list", "craftdock-screenshot-list.exe", "craftdock-config-file-list", "craftdock-config-file-list.exe"]
       }
     ],
     "files": [
@@ -32,6 +32,7 @@
       "servers-dat.js",
       "server-jar-list.js",
       "screenshot-list.js",
+      "config-file-list.js",
       "preload.js",
       "console-preload.js",
       "src/**/*",

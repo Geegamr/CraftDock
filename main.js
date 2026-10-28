@@ -8,6 +8,7 @@ const https = require('https');
 const { createServersDatReader } = require('./servers-dat');
 const { createServerJarListReader } = require('./server-jar-list');
 const { createScreenshotListReader } = require('./screenshot-list');
+const { createConfigFileListReader } = require('./config-file-list');
 
 // All data lives in craftdock-data/ next to the launcher so users can find it easily
 const isDev    = !app.isPackaged;
@@ -76,6 +77,7 @@ const nativeReaderOptions = {
 const readServersDat = createServersDatReader(nativeReaderOptions);
 const readServerJarList = createServerJarListReader(nativeReaderOptions);
 const readScreenshotList = createScreenshotListReader(nativeReaderOptions);
+const readConfigFileList = createConfigFileListReader(nativeReaderOptions);
 
 // Uses AES-256-GCM with a per-install random key stored next to the data.
 // This is far more portable than safeStorage/DPAPI which breaks if the app
@@ -1082,23 +1084,7 @@ ipcMain.handle('instance-create', (_, meta) => {
 // ── Config file listing ────────────────────────────────────────────────────
 ipcMain.handle('instance-list-config-files', (_, id) => {
   const configDir = path.join(instDir(id), 'config');
-  if (!fs.existsSync(configDir)) return [];
-  const CONFIG_EXTS = new Set(['.toml','.json','.yaml','.yml','.cfg','.conf','.ini','.properties','.txt']);
-  const results = [];
-  function walk(dir, subdir) {
-    try {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          walk(fullPath, subdir ? subdir + '/' + entry.name : entry.name);
-        } else if (CONFIG_EXTS.has(path.extname(entry.name).toLowerCase())) {
-          results.push({ name: entry.name, path: fullPath, subdir: subdir || '' });
-        }
-      }
-    } catch {}
-  }
-  walk(configDir, '');
-  return results.sort((a, b) => a.name.localeCompare(b.name));
+  return readConfigFileList(configDir);
 });
 
 ipcMain.handle('instance-open-config-file', (_, filePath) => {
