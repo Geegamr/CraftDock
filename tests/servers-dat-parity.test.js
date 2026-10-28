@@ -89,6 +89,24 @@ const cases = [
     file: 'gzip-defaults.nbt.gz',
     expected: [{ name: 'Minecraft Server', ip: '', icon: null, hidden: false }],
   },
+  {
+    file: 'format-tags-unicode.nbt',
+    expected: [{
+      name: '社区 Server 🌍',
+      ip: '例え.テスト:25565',
+      icon: 'data:image/png;base64,AAH/',
+      hidden: false,
+    }],
+  },
+  {
+    file: 'format-tags-unicode.nbt.gz',
+    expected: [{
+      name: '社区 Server 🌍',
+      ip: '例え.テスト:25565',
+      icon: 'data:image/png;base64,AAH/',
+      hidden: false,
+    }],
+  },
   { file: 'raw-missing-list.nbt', expected: [] },
 ];
 
