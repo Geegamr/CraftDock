@@ -32,7 +32,7 @@ function access(root, isPackaged, runNative) {
   });
 }
 
-function loadProductionIpc(tempRoot, handlers) {
+function loadProductionIpc(tempRoot, handlers, serverPropertiesModule = require('../server-properties')) {
   const exposed = {};
   const app = {
     isPackaged: false, setAppUserModelId() {}, setName() {}, on() {},
@@ -49,7 +49,7 @@ function loadProductionIpc(tempRoot, handlers) {
     if (name === './server-jar-list') return require('../server-jar-list');
     if (name === './screenshot-list') return require('../screenshot-list');
     if (name === './config-file-list') return require('../config-file-list');
-    if (name === './server-properties') return require('../server-properties');
+    if (name === './server-properties') return serverPropertiesModule;
     if (name === './package.json') return require('../package.json');
     return require(name);
   };
@@ -190,6 +190,7 @@ test('production preload preserves read/write IPC through fallback and the actua
       const serverDirectory = path.join(root, 'craftdock-data', 'servers', serverId);
       fs.mkdirSync(serverDirectory, { recursive: true });
       const propertiesFile = path.join(serverDirectory, 'server.properties');
+      const devBinary = path.join(root, 'rust', 'target', 'debug', binaryName);
       fs.copyFileSync(path.join(fixtureRoot, 'read-edge.properties'), propertiesFile);
 
       if (useRust) {
@@ -197,18 +198,60 @@ test('production preload preserves read/write IPC through fallback and the actua
           cwd: projectRoot, encoding: 'utf8',
         });
         assert.equal(build.status, 0, `Rust server.properties build failed:\n${build.stderr}`);
-        const devBinary = path.join(root, 'rust', 'target', 'debug', binaryName);
         fs.mkdirSync(path.dirname(devBinary), { recursive: true });
         fs.copyFileSync(binaryPath, devBinary);
         assert.ok(fs.existsSync(devBinary), 'the actual Rust executable must be available to the dev resolver');
       }
 
+      const nativeCalls = [];
+      const baseServerProperties = require('../server-properties');
+      const serverPropertiesModule = useRust
+        ? {
+          ...baseServerProperties,
+          createServerPropertiesAccess: options => baseServerProperties.createServerPropertiesAccess({
+            ...options,
+            runNative: (binary, args, input = '') => {
+              const result = spawnSync(binary, args, { input, encoding: 'utf8' });
+              nativeCalls.push({ binary, args, status: result.status });
+              if (result.error) throw result.error;
+              if (result.status !== 0) throw new Error(result.stderr || `Rust process exited with ${result.status}`);
+              return result.stdout;
+            },
+          }),
+        }
+        : baseServerProperties;
       const handlers = new Map();
-      const { exposed, invocations } = loadProductionIpc(root, handlers);
+      const { exposed, invocations } = loadProductionIpc(root, handlers, serverPropertiesModule);
       const expected = readServerPropertiesFallback(propertiesFile);
-      assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdockServer.readServerProps(serverId))), expected);
-      assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdockServer.writeProperties(serverId, { motd: 'a=b', online: true }))), { success: true });
-      assert.equal(fs.readFileSync(propertiesFile, 'utf8'), 'motd=a=b\nonline=true\n');
+      let readResult;
+      let writeResult;
+      if (useRust) {
+        const originalReadFileSync = fs.readFileSync;
+        const originalWriteFileSync = fs.writeFileSync;
+        fs.readFileSync = function (filePath, ...args) {
+          if (path.resolve(filePath) === path.resolve(propertiesFile)) throw new Error('Unexpected JavaScript read fallback');
+          return originalReadFileSync.call(this, filePath, ...args);
+        };
+        fs.writeFileSync = function (filePath, ...args) {
+          if (path.resolve(filePath) === path.resolve(propertiesFile)) throw new Error('Unexpected JavaScript write fallback');
+          return originalWriteFileSync.call(this, filePath, ...args);
+        };
+        try {
+          readResult = await exposed.craftdockServer.readServerProps(serverId);
+          writeResult = await exposed.craftdockServer.writeProperties(serverId, { motd: 'a=b', online: true });
+        } finally {
+          fs.readFileSync = originalReadFileSync;
+          fs.writeFileSync = originalWriteFileSync;
+        }
+        assert.deepEqual(nativeCalls.map(({ args, status }) => [args[0], status]), [['read', 0], ['write', 0]]);
+        assert.deepEqual(nativeCalls.map(({ binary }) => binary), [devBinary, devBinary]);
+      } else {
+        readResult = await exposed.craftdockServer.readServerProps(serverId);
+        writeResult = await exposed.craftdockServer.writeProperties(serverId, { motd: 'a=b', online: true });
+      }
+      assert.deepEqual(JSON.parse(JSON.stringify(readResult)), expected);
+      assert.deepEqual(JSON.parse(JSON.stringify(writeResult)), { success: true });
+      assert.deepEqual(fs.readFileSync(propertiesFile), Buffer.from('motd=a=b\nonline=true\n'));
       await assert.rejects(exposed.craftdockServer.writeProperties('missing', {}), /ENOENT/);
       assert.deepEqual(JSON.parse(JSON.stringify(invocations)), [
         ['server-read-props', serverId],
