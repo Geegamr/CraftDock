@@ -107,7 +107,7 @@ function parseNBT(buffer) {
   return readPayload(rootType);
 }
 
-async function readServersDat(gameDir) {
+async function readServersDatFallback(gameDir) {
   const datFile = path.join(gameDir, 'servers.dat');
   if (!fs.existsSync(datFile)) return [];
   try {
@@ -132,6 +132,51 @@ async function readServersDat(gameDir) {
   } catch(e) {
     console.warn('[CraftDock] servers.dat parse error:', e.message);
     return [];
+  }
+}
+
+function serversDatRustBinary() {
+  const binaryName = process.platform === 'win32' ? 'craftdock-servers-dat.exe' : 'craftdock-servers-dat';
+  const candidates = app.isPackaged
+    ? [path.join(process.resourcesPath, 'native', binaryName)]
+    : [
+        path.join(__dirname, 'rust', 'target', 'release', binaryName),
+        path.join(__dirname, 'rust', 'target', 'debug', binaryName),
+      ];
+  return candidates.find(candidate => fs.existsSync(candidate));
+}
+
+async function readServersDatWithRust(gameDir) {
+  const datFile = path.join(gameDir, 'servers.dat');
+  if (!fs.existsSync(datFile)) return [];
+  const binary = serversDatRustBinary();
+  if (!binary) throw new Error('Rust parser binary is unavailable');
+
+  const { execFile } = require('child_process');
+  const stdout = await new Promise((resolve, reject) => {
+    execFile(binary, [datFile], { windowsHide: true, timeout: 10000, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' }, (error, output) => {
+      if (error) return reject(error);
+      resolve(output);
+    });
+  });
+  const servers = JSON.parse(stdout);
+  if (!Array.isArray(servers) || servers.some(server =>
+    !server || typeof server.name !== 'string' || typeof server.ip !== 'string' ||
+    !(typeof server.icon === 'string' || server.icon === null) || typeof server.hidden !== 'boolean'
+  )) {
+    throw new Error('Rust parser returned an invalid server list');
+  }
+  return servers;
+}
+
+async function readServersDat(gameDir) {
+  try {
+    return await readServersDatWithRust(gameDir);
+  } catch (error) {
+    if (error.message !== 'Rust parser binary is unavailable') {
+      console.warn('[CraftDock] Rust servers.dat parser failed; using JavaScript fallback:', error.message);
+    }
+    return readServersDatFallback(gameDir);
   }
 }
 

@@ -5,9 +5,10 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux",
+    "build:native": "cargo build --manifest-path rust/Cargo.toml --release",
+    "build:win": "npm run build:native && electron-builder --win",
+    "build:mac": "npm run build:native && electron-builder --mac",
+    "build:linux": "npm run build:native && electron-builder --linux",
     "clean": "rmdir /s /q dist 2>nul & echo cleaned"
   },
   "build": {
@@ -19,6 +20,13 @@
     "directories": {
       "output": "dist"
     },
+    "extraResources": [
+      {
+        "from": "rust/target/release",
+        "to": "native",
+        "filter": ["craftdock-servers-dat", "craftdock-servers-dat.exe"]
+      }
+    ],
     "files": [
       "main.js",
       "preload.js",
