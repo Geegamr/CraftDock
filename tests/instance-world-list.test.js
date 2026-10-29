@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { execFile, spawnSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -37,18 +37,31 @@ function createWorldFixture(root) {
   return savesPath;
 }
 
-function createReader(root, isPackaged, runFile) {
+function createReader(root, isPackaged, runFile, logger = silentLogger) {
   return createInstanceWorldListReader({
     isPackaged,
     appDir: root,
     resourcesPath: path.join(root, 'resources'),
     platform: process.platform,
-    logger: silentLogger,
+    logger,
     runFile,
   });
 }
 
-function loadProductionIpc(tempRoot, handlers, nativeExecutions) {
+function runRealBinary(binary, args, options, callback, executions) {
+  const result = spawnSync(binary, args, {
+    encoding: options.encoding,
+    timeout: options.timeout,
+    maxBuffer: options.maxBuffer,
+    windowsHide: options.windowsHide,
+  });
+  const error = result.error || (result.status === 0 ? null :
+    new Error(`Rust binary exited with status ${result.status}: ${result.stderr || ''}`));
+  executions.push({ binary, error: error?.message ?? null, status: result.status });
+  callback(error, result.stdout, result.stderr);
+}
+
+function loadProductionIpc(tempRoot, handlers, nativeExecutions, nativeWarnings) {
   const exposed = {};
   const app = {
     isPackaged: false, setAppUserModelId() {}, setName() {}, on() {},
@@ -72,10 +85,9 @@ function loadProductionIpc(tempRoot, handlers, nativeExecutions) {
         ...worldList,
         createInstanceWorldListReader: options => worldList.createInstanceWorldListReader({
           ...options,
-          runFile: (binary, args, execOptions, callback) => {
-            nativeExecutions.push(binary);
-            execFile(binary, args, execOptions, callback);
-          },
+          logger: { warn: (...warning) => nativeWarnings.push(warning) },
+          runFile: (binary, args, execOptions, callback) =>
+            runRealBinary(binary, args, execOptions, callback, nativeExecutions),
         }),
       };
     }
@@ -137,14 +149,15 @@ test('Rust and JavaScript match the world fixture, including canonical paths and
     fs.mkdirSync(path.dirname(packagedBinary), { recursive: true });
     fs.copyFileSync(releaseBinaryPath, packagedBinary);
     const packagedExecutions = [];
-    const packagedReader = createReader(root, true, (binary, args, options, callback) => {
-      packagedExecutions.push(binary);
-      execFile(binary, args, options, callback);
-    });
+    const packagedWarnings = [];
+    const packagedReader = createReader(root, true,
+      (binary, args, options, callback) => runRealBinary(binary, args, options, callback, packagedExecutions),
+      { warn: (...warning) => packagedWarnings.push(warning) });
     assert.deepEqual(await packagedReader(savesPath), rustWorlds,
       'packaged resolver should execute the release Rust binary from resources/native');
-    assert.deepEqual(packagedExecutions, [packagedBinary],
-      'packaged resolver must invoke the real binary rather than satisfy results through fallback');
+    assert.deepEqual(packagedExecutions, [{ binary: packagedBinary, error: null, status: 0 }],
+      'packaged resolver must complete the real Rust binary successfully');
+    assert.deepEqual(packagedWarnings, [], 'packaged resolver must not fall back to JavaScript');
   });
 });
 
@@ -212,7 +225,8 @@ test('production preload preserves instance-list-worlds IPC for native and fallb
       }
       const handlers = new Map();
       const nativeExecutions = [];
-      const { exposed, invocations } = loadProductionIpc(root, handlers, nativeExecutions);
+      const nativeWarnings = [];
+      const { exposed, invocations } = loadProductionIpc(root, handlers, nativeExecutions, nativeWarnings);
       const expected = listInstanceWorldsFallback(savesPath);
       assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdockInstance.listWorlds(instanceId))), expected);
       assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdockInstance.listWorlds('missing'))), []);
@@ -221,9 +235,10 @@ test('production preload preserves instance-list-worlds IPC for native and fallb
         ['instance-list-worlds', 'missing'],
       ]);
       assert.deepEqual(nativeExecutions, useRust ? [
-        path.join(root, 'rust', 'target', 'debug', binaryName),
-        path.join(root, 'rust', 'target', 'debug', binaryName),
-      ] : [], 'preload → IPC must execute Rust for native mode and avoid it for fallback mode');
+        { binary: path.join(root, 'rust', 'target', 'debug', binaryName), error: null, status: 0 },
+        { binary: path.join(root, 'rust', 'target', 'debug', binaryName), error: null, status: 0 },
+      ] : [], 'preload → IPC must complete Rust successfully in native mode and avoid it in fallback mode');
+      assert.deepEqual(nativeWarnings, [], 'preload → IPC must not fall back to JavaScript');
     });
   }
 });
