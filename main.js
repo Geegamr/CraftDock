@@ -1146,6 +1146,7 @@ function writeInstanceOverride(instPath, relativePath, contents) {
     if (stat.isSymbolicLink() || !stat.isDirectory() || !isWithinInstance(realPath)) {
       throw new Error('Invalid override path');
     }
+    return { dev: stat.dev, ino: stat.ino };
   };
 
   let parent = instPath;
@@ -1161,13 +1162,39 @@ function writeInstanceOverride(instPath, relativePath, contents) {
   assertSafeDirectory(parent);
 
   const target = path.join(parent, parts[parts.length - 1]);
+  let fd;
   try {
-    fs.lstatSync(target);
-    throw new Error('Invalid override path');
+    fd = fs.openSync(target, 'wx');
+    const parentAfterOpen = assertSafeDirectory(parent);
+    const parentStat = fs.statSync(parent);
+    const targetStat = fs.lstatSync(target);
+    const openedStat = fs.fstatSync(fd);
+    if (parentAfterOpen.dev !== parentStat.dev || parentAfterOpen.ino !== parentStat.ino ||
+        targetStat.isSymbolicLink() || !targetStat.isFile() ||
+        targetStat.dev !== openedStat.dev || targetStat.ino !== openedStat.ino) {
+      throw new Error('Invalid override path');
+    }
+    let offset = 0;
+    while (offset < contents.length) {
+      offset += fs.writeSync(fd, contents, offset, contents.length - offset);
+    }
+    assertSafeDirectory(parent);
   } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+    if (fd !== undefined) {
+      try {
+        const openedStat = fs.fstatSync(fd);
+        fs.closeSync(fd);
+        fd = undefined;
+        const targetStat = fs.lstatSync(target);
+        if (targetStat.isFile() && targetStat.dev === openedStat.dev && targetStat.ino === openedStat.ino) {
+          fs.unlinkSync(target);
+        }
+      } catch {}
+    }
+    throw error;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
   }
-  fs.writeFileSync(target, contents, { flag: 'wx' });
 }
 
 ipcMain.handle('instance-import-pack', async (_, filePath, type) => {

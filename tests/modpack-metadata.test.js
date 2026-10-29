@@ -246,12 +246,12 @@ test('preload-to-handler import rejects override path traversal and cleans up it
   });
 });
 
-test('preload-to-handler import does not follow symlink-marked archive entries', async () => {
+test('preload-to-handler import rejects a file entry used as an override parent', async () => {
   await withTempRoot(async root => {
-    const archive = path.join(root, 'archive-symlink.zip');
+    const archive = path.join(root, 'file-parent-entry.mrpack');
     fs.writeFileSync(archive, makeStoredZip([
-      ['modrinth.index.json', JSON.stringify({ name: 'Archive symlink probe', files: [] })],
-      ['overrides/config', path.join(root, 'outside-instance'), 0o120777],
+      ['modrinth.index.json', JSON.stringify({ name: 'File parent probe', files: [] })],
+      ['overrides/config', path.join(root, 'outside-instance')],
       ['overrides/config/options.txt', 'must not be written outside'],
     ]));
     const outside = path.join(root, 'outside-instance');
@@ -296,6 +296,104 @@ test('preload-to-handler import rejects junction overrides and cleans up only it
     assert.deepEqual(instanceDirectories(root), [], 'failed import removes only its newly created instance');
     assert.equal(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8'), 'keep outside data', 'cleanup preserves the junction target');
     assert.equal(fs.existsSync(path.join(outside, 'options.txt')), false, 'archive cannot write through the junction');
+  });
+});
+
+test('preload-to-handler import rejects a parent swapped for a junction at file-open without leaving an outside file', async () => {
+  await withTempRoot(async root => {
+    const outside = path.join(root, 'outside-instance');
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'sentinel.txt'), 'preserve outside data');
+    const handlers = new Map();
+    const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
+    const originalOpenSync = fs.openSync;
+    let junctionPlanted = false;
+    fs.openSync = function (filePath, ...args) {
+      if (!junctionPlanted && String(filePath).includes(`${path.sep}instances${path.sep}`) &&
+          String(filePath).endsWith(`${path.sep}config${path.sep}options.txt`)) {
+        const parent = path.dirname(String(filePath));
+        fs.renameSync(parent, `${parent}-moved`);
+        fs.symlinkSync(outside, parent, process.platform === 'win32' ? 'junction' : 'dir');
+        junctionPlanted = true;
+      }
+      return originalOpenSync.call(this, filePath, ...args);
+    };
+    let result;
+    try {
+      result = await exposed.craftdockInstance.importPack(path.join(fixtureRoot, 'modrinth-full.mrpack'), 'mr');
+    } finally {
+      fs.openSync = originalOpenSync;
+    }
+    assert.equal(junctionPlanted, true, 'test swaps the parent immediately before the file-open operation');
+    assert.equal(result.success, false, 'the opened parent is revalidated before writing');
+    assert.match(result.error, /Invalid override path/);
+    const outsideOptions = path.join(outside, 'options.txt');
+    assert.equal(fs.existsSync(outsideOptions), false, 'the empty file created during the swap is safely removed');
+    assert.equal(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8'), 'preserve outside data');
+    assert.deepEqual(instanceDirectories(root), [], 'failed import cleans up only its newly created instance');
+  });
+});
+
+test('preload-to-handler import stays safe if an override parent is swapped after open and before write', async () => {
+  await withTempRoot(async root => {
+    const outside = path.join(root, 'outside-instance');
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'sentinel.txt'), 'preserve outside data');
+    const archive = path.join(root, 'post-open-swap.mrpack');
+    fs.writeFileSync(archive, makeStoredZip([
+      ['modrinth.index.json', JSON.stringify({ name: 'Post-open swap probe', files: [] })],
+      ['overrides/config/options.txt', 'override bytes'],
+    ]));
+    const handlers = new Map();
+    const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
+    const originalOpenSync = fs.openSync;
+    const originalWriteSync = fs.writeSync;
+    let overrideFd;
+    let overrideParent;
+    let swapAttempted = false;
+    let swapSucceeded = false;
+    fs.openSync = function (filePath, ...args) {
+      const fd = originalOpenSync.call(this, filePath, ...args);
+      if (!overrideFd && String(filePath).includes(`${path.sep}instances${path.sep}`) &&
+          String(filePath).endsWith(`${path.sep}config${path.sep}options.txt`)) {
+        overrideFd = fd;
+        overrideParent = path.dirname(String(filePath));
+      }
+      return fd;
+    };
+    fs.writeSync = function (fd, ...args) {
+      if (fd === overrideFd && !swapAttempted) {
+        swapAttempted = true;
+        try {
+          fs.renameSync(overrideParent, `${overrideParent}-moved`);
+          fs.symlinkSync(outside, overrideParent, process.platform === 'win32' ? 'junction' : 'dir');
+          swapSucceeded = true;
+        } catch (error) {
+          if (error.code !== 'EPERM' && error.code !== 'EBUSY') throw error;
+        }
+      }
+      return originalWriteSync.call(this, fd, ...args);
+    };
+    let result;
+    try {
+      result = await exposed.craftdockInstance.importPack(archive, 'mr');
+    } finally {
+      fs.openSync = originalOpenSync;
+      fs.writeSync = originalWriteSync;
+    }
+    assert.equal(swapAttempted, true, 'the attempted swap occurs after open and before the first write');
+    assert.equal(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8'), 'preserve outside data');
+    assert.equal(fs.existsSync(path.join(outside, 'options.txt')), false, 'override bytes never reach the outside target');
+    if (swapSucceeded) {
+      assert.equal(result.success, false, 'a successful parent replacement is rejected');
+      assert.match(result.error, /Invalid override path/);
+      assert.deepEqual(instanceDirectories(root), [], 'failed import removes only its newly created instance');
+    } else {
+      assert.equal(result.success, true, 'when the platform blocks replacement of the open parent, import can finish safely');
+      const instance = path.join(root, 'craftdock-data', 'instances', result.id);
+      assert.equal(fs.readFileSync(path.join(instance, 'config', 'options.txt'), 'utf8'), 'override bytes', 'data remains in the opened in-instance file');
+      assert.deepEqual(instanceDirectories(root), [result.id]);
+    }
   });
 });
 
