@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 use std::env;
 use std::fs;
 use std::io::{self, Read};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 fn meta_path(directory: &Path) -> PathBuf {
     directory.join("skins.json")
@@ -29,17 +29,37 @@ fn is_inside_directory(directory: &Path, file: &Path) -> bool {
     !relative.as_os_str().is_empty()
 }
 
-fn skin_image_path(directory: &Path, id: &str) -> Result<PathBuf, String> {
-    let path = Path::new(id);
-    if id.is_empty()
-        || id.contains(['/', '\\', ':', '\0'])
-        || path
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_)))
-    {
+fn js_string(value: Option<&Value>) -> String {
+    match value {
+        None => "undefined".into(),
+        Some(Value::Null) => "null".into(),
+        Some(Value::Bool(value)) => value.to_string(),
+        Some(Value::Number(value)) => {
+            let number = value.to_string();
+            number
+                .strip_suffix(".0")
+                .map_or(number.clone(), str::to_owned)
+        }
+        Some(Value::String(value)) => value.clone(),
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|value| match value {
+                Value::Null => String::new(),
+                Value::Array(_) | Value::Object(_) => js_string(Some(value)),
+                _ => js_string(Some(value)),
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Some(Value::Object(_)) => "[object Object]".into(),
+    }
+}
+
+fn skin_image_path(directory: &Path, id: Option<&Value>) -> Result<PathBuf, String> {
+    let filename = format!("{}.png", js_string(id));
+    if filename.contains(['/', '\\', ':', '\0']) {
         return Err("Invalid skin id".into());
     }
-    let image = directory.join(format!("{id}.png"));
+    let image = directory.join(filename);
     if fs::symlink_metadata(&image).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
         return Err("Skin image path cannot be a symbolic link".into());
     }
@@ -114,6 +134,22 @@ fn read_skins(directory: &Path) -> Result<Value, String> {
     Ok(json!(skins))
 }
 
+fn js_strict_equal(left: Option<&Value>, right: Option<&Value>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(Value::Number(left)), Some(Value::Number(right))) => left.as_f64() == right.as_f64(),
+        (Some(Value::Array(_) | Value::Object(_)), Some(Value::Array(_) | Value::Object(_))) => {
+            false
+        }
+        (Some(left), Some(right))
+            if std::mem::discriminant(left) == std::mem::discriminant(right) =>
+        {
+            left == right
+        }
+        _ => false,
+    }
+}
+
 fn save_skin(directory: &Path, payload: &str) -> Result<Value, String> {
     let mut skin: Value = serde_json::from_str(payload).map_err(|error| error.to_string())?;
     let metadata_path = ensure_regular_metadata(directory)?;
@@ -128,10 +164,7 @@ fn save_skin(directory: &Path, payload: &str) -> Result<Value, String> {
         .and_then(Value::as_str)
         .is_some_and(|data| data.starts_with("data:image"))
     {
-        let id = skin
-            .get("id")
-            .and_then(Value::as_str)
-            .ok_or("Invalid skin id")?;
+        let id = skin.get("id");
         let image_path = skin_image_path(directory, id)?;
         let data_url = skin["dataUrl"].as_str().unwrap();
         let base64 = data_url
@@ -143,10 +176,10 @@ fn save_skin(directory: &Path, payload: &str) -> Result<Value, String> {
             object.remove("dataUrl");
         }
     }
-    let id = skin.get("id").cloned().ok_or("Invalid skin id")?;
+    let id = skin.get("id");
     if let Some(index) = skins
         .iter()
-        .position(|existing| existing.get("id") == Some(&id))
+        .position(|existing| js_strict_equal(existing.get("id"), id))
     {
         skins[index] = skin;
     } else {
@@ -159,7 +192,7 @@ fn save_skin(directory: &Path, payload: &str) -> Result<Value, String> {
     .map_err(|error| error.to_string())?;
     Ok(json!({"success": true}))
 }
-fn delete_skin(directory: &Path, id: &str) -> Result<Value, String> {
+fn delete_skin(directory: &Path, id: Option<&Value>) -> Result<Value, String> {
     let metadata_path = ensure_regular_metadata(directory)?;
     if !metadata_path.exists() {
         return Ok(Value::Null);
@@ -168,7 +201,7 @@ fn delete_skin(directory: &Path, id: &str) -> Result<Value, String> {
     let mut skins: Vec<Value> =
         serde_json::from_slice(&fs::read(&metadata_path).map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
-    skins.retain(|skin| skin.get("id").and_then(Value::as_str) != Some(id));
+    skins.retain(|skin| !js_strict_equal(skin.get("id"), id));
     fs::write(
         &metadata_path,
         serde_json::to_vec_pretty(&skins).map_err(|error| error.to_string())?,
@@ -185,8 +218,8 @@ fn execute(command: &str, directory: &Path, input: &str) -> Result<Value, String
         "get" => read_skins(directory),
         "save" => save_skin(directory, input),
         "delete" => {
-            let id: String = serde_json::from_str(input).map_err(|error| error.to_string())?;
-            delete_skin(directory, &id)
+            let payload: Value = serde_json::from_str(input).map_err(|error| error.to_string())?;
+            delete_skin(directory, payload.get("id"))
         }
         _ => Err("Unknown command".into()),
     }
@@ -238,7 +271,10 @@ mod tests {
     fn absent_metadata_returns_empty_array_and_delete_returns_null() {
         let directory = temp_directory();
         assert_eq!(read_skins(&directory).unwrap(), json!([]));
-        assert_eq!(delete_skin(&directory, "missing").unwrap(), Value::Null);
+        assert_eq!(
+            delete_skin(&directory, Some(&json!("missing"))).unwrap(),
+            Value::Null
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -277,12 +313,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            delete_skin(&directory, "one").unwrap(),
+            delete_skin(&directory, Some(&json!("one"))).unwrap(),
             json!({"success":true})
         );
         assert_eq!(read_skins(&directory).unwrap(), json!([{"id":"two"}]));
         assert!(!directory.join("one.png").exists());
         assert_eq!(fs::read(directory.join("two.png")).unwrap(), [2]);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn preserves_javascript_string_coercion_for_non_string_ids() {
+        assert_eq!(js_string(None), "undefined");
+        assert_eq!(js_string(Some(&Value::Null)), "null");
+        assert_eq!(js_string(Some(&json!(7))), "7");
+        assert_eq!(js_string(Some(&json!(["a", null, 2]))), "a,,2");
+        assert_eq!(js_string(Some(&json!({"key":"value"}))), "[object Object]");
+        assert!(skin_image_path(Path::new("skins"), Some(&json!("../outside"))).is_err());
+        assert!(skin_image_path(Path::new("skins"), Some(&json!("C:/outside"))).is_err());
+        assert!(skin_image_path(Path::new("skins"), Some(&json!("\\\\server\\share"))).is_err());
     }
 }

@@ -16,9 +16,9 @@ function metadataPath(skinsDirectory) {
 }
 
 function skinImagePath(skinsDirectory, id) {
-  const name = `${id}`;
-  if (/[\\/:\0]/.test(name) || name === '.' || name === '..') throw new Error('Invalid skin id');
-  const imagePath = path.join(skinsDirectory, `${name}.png`);
+  const filename = id + '.png';
+  if (/[\\/:\0]/.test(filename)) throw new Error('Invalid skin id');
+  const imagePath = path.join(skinsDirectory, filename);
   try {
     if (fs.lstatSync(imagePath).isSymbolicLink()) throw new Error('Skin image path cannot be a symbolic link');
   } catch (error) {
@@ -43,6 +43,7 @@ function getAllFallback(skinsDirectory) {
   if (!fs.existsSync(metaFile)) return [];
   const skins = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
   return skins.map(skin => {
+    // Stored paths are legacy metadata, but never hydrate bytes from outside this library.
     if (skin.filePath && fs.existsSync(skin.filePath) && isInsideSkinsDirectory(skinsDirectory, skin.filePath)) {
       skin.dataUrl = 'data:image/png;base64,' + fs.readFileSync(skin.filePath).toString('base64');
     }
@@ -91,7 +92,7 @@ function createSkinLibraryAccess({ isPackaged, appDir, resourcesPath, platform, 
     try {
       return JSON.parse(await runNative(binary, [command, skinsDirectory, ...args], input));
     } catch (error) {
-      if (error.failedToStart) return NATIVE_UNAVAILABLE;
+      if (error.failedToStart || error.nativeOutputExceeded || error.nativeTimedOut) return NATIVE_UNAVAILABLE;
       throw error;
     }
   }
@@ -108,7 +109,7 @@ function createSkinLibraryAccess({ isPackaged, appDir, resourcesPath, platform, 
     },
 
     async remove(skinsDirectory, id) {
-      const result = await invoke(skinsDirectory, 'delete', JSON.stringify(id));
+      const result = await invoke(skinsDirectory, 'delete', JSON.stringify({ id }));
       return result === NATIVE_UNAVAILABLE ? removeFallback(skinsDirectory, id) : result ?? undefined;
     },
   };
@@ -127,6 +128,7 @@ function runRustBinary(binary, args, input = '') {
     let stdout = '';
     let stderr = '';
     let settled = false;
+    let terminationError;
     const fail = (error, failedToStart = false) => {
       if (settled) return;
       settled = true;
@@ -134,24 +136,29 @@ function runRustBinary(binary, args, input = '') {
       if (failedToStart) error.failedToStart = true;
       reject(error);
     };
-    const timeout = setTimeout(() => {
+    const terminate = error => {
+      if (settled || terminationError) return;
+      terminationError = error;
+      clearTimeout(timeout);
       child.kill();
-      fail(new Error('Rust skin library process timed out'));
+    };
+    const timeout = setTimeout(() => {
+      terminate(Object.assign(new Error('Rust skin library process timed out'), { nativeTimedOut: true }));
     }, 10000);
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', chunk => {
+      if (terminationError) return;
       stdout += chunk;
       if (stdout.length > MAX_NATIVE_OUTPUT) {
-        child.kill();
-        fail(new Error('Rust skin library output exceeded limit'));
+        terminate(Object.assign(new Error('Rust skin library output exceeded limit'), { nativeOutputExceeded: true }));
       }
     });
     child.stderr.on('data', chunk => {
+      if (terminationError) return;
       stderr += chunk;
       if (stderr.length > MAX_NATIVE_OUTPUT) {
-        child.kill();
-        fail(new Error('Rust skin library error output exceeded limit'));
+        terminate(Object.assign(new Error('Rust skin library error output exceeded limit'), { nativeOutputExceeded: true }));
       }
     });
     child.on('error', error => fail(error, true));
@@ -159,7 +166,8 @@ function runRustBinary(binary, args, input = '') {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      if (code === 0) resolve(stdout);
+      if (terminationError) reject(terminationError);
+      else if (code === 0) resolve(stdout);
       else reject(new Error(stderr.trim() || `Rust skin library process exited with ${code}`));
     });
     child.stdin.end(input);
@@ -170,5 +178,6 @@ module.exports = {
   createSkinLibraryAccess,
   getAllFallback,
   removeFallback,
+  runRustBinary,
   saveFallback,
 };
