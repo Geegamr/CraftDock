@@ -80,6 +80,14 @@ const readServerJarList = createServerJarListReader(nativeReaderOptions);
 const readScreenshotList = createScreenshotListReader(nativeReaderOptions);
 const readConfigFileList = createConfigFileListReader(nativeReaderOptions);
 const serverProperties = createServerPropertiesAccess(nativeReaderOptions);
+let readInstanceWorldList;
+function listInstanceWorlds(savesPath) {
+  if (!readInstanceWorldList) {
+    const { createInstanceWorldListReader } = require('./instance-world-list');
+    readInstanceWorldList = createInstanceWorldListReader(nativeReaderOptions);
+  }
+  return readInstanceWorldList(savesPath);
+}
 
 // Uses AES-256-GCM with a per-install random key stored next to the data.
 // This is far more portable than safeStorage/DPAPI which breaks if the app
@@ -1241,21 +1249,7 @@ ipcMain.handle('instance-get', (_, id) => {
 });
 
 ipcMain.handle('instance-list-worlds', (_, id) => {
-  const savesPath = path.join(instDir(id), 'saves');
-  try {
-    // Resolve real path even if symlink
-    const real = fs.realpathSync(savesPath);
-    if (!fs.existsSync(real)) return [];
-    return fs.readdirSync(real, { withFileTypes: true })
-      .filter(e => e.isDirectory())
-      .map(e => {
-        const wPath = path.join(real, e.name);
-        let lastPlayed = null;
-        try { lastPlayed = fs.statSync(path.join(wPath, 'level.dat')).mtimeMs; } catch {}
-        return { name: e.name, path: wPath, lastPlayed };
-      })
-      .sort((a,b) => (b.lastPlayed||0) - (a.lastPlayed||0));
-  } catch { return []; }
+  return listInstanceWorlds(path.join(instDir(id), 'saves'));
 });
 
 ipcMain.handle('instance-list-mods', (_, id) => {

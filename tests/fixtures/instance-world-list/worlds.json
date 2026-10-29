@@ -1,0 +1,8 @@
+{
+  "worlds": [
+    { "name": "older", "levelDatMtimeMs": 1700000000123 },
+    { "name": "newer", "levelDatMtimeMs": 1700000000987 },
+    { "name": "never-played", "levelDatMtimeMs": null }
+  ],
+  "nonDirectory": "not-a-world"
+}
