@@ -80,6 +80,14 @@ const readServerJarList = createServerJarListReader(nativeReaderOptions);
 const readScreenshotList = createScreenshotListReader(nativeReaderOptions);
 const readConfigFileList = createConfigFileListReader(nativeReaderOptions);
 const serverProperties = createServerPropertiesAccess(nativeReaderOptions);
+let serverJson;
+function getServerJsonAccess() {
+  if (!serverJson) {
+    const { createServerJsonAccess } = require('./server-json');
+    serverJson = createServerJsonAccess(nativeReaderOptions);
+  }
+  return serverJson;
+}
 let readInstanceWorldList;
 function listInstanceWorlds(savesPath) {
   if (!readInstanceWorldList) {
@@ -3012,20 +3020,19 @@ ipcMain.handle('java-set-override', (_, javaPath) => {
 //  PLAYERS & JSON FILE IPC
 // ═══════════════════════════════════════════════════════════
 
-ipcMain.handle('server-read-json', (_, id, filename) => {
+ipcMain.handle('server-read-json', async (_, id, filename) => {
   try {
     const p = path.join(srvDir(id), filename);
-    if (!fs.existsSync(p)) return [];
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    return await getServerJsonAccess().read(p);
   } catch { return []; }
 });
 
-ipcMain.handle('server-patch-json', (_, id, filename, serializedFn) => {
+ipcMain.handle('server-patch-json', async (_, id, filename, serializedFn) => {
   // We can't pass functions over IPC, so we accept the patched array directly
   // (renderer sends the result, not a fn — see preload)
   try {
     const p = path.join(srvDir(id), filename);
-    fs.writeFileSync(p, JSON.stringify(serializedFn, null, 2));
+    await getServerJsonAccess().write(p, serializedFn);
     return { success: true };
   } catch(e) { return { success: false, error: e.message }; }
 });

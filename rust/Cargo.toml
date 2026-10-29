@@ -26,3 +26,7 @@ path = "src/bin/craftdock-server-properties.rs"
 [[bin]]
 name = "craftdock-instance-world-list"
 path = "src/bin/craftdock-instance-world-list.rs"
+
+[[bin]]
+name = "craftdock-server-json"
+path = "src/bin/craftdock-server-json.rs"
