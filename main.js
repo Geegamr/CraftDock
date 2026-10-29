@@ -1128,6 +1128,48 @@ ipcMain.handle('instance-write-config-file', (_, filePath, text) => {
 });
 
 // ── Pack import (CurseForge .zip / Modrinth .mrpack) ───────────────────────
+function writeInstanceOverride(instPath, relativePath, contents) {
+  const dest = path.resolve(instPath, relativePath);
+  const relativeDest = path.relative(instPath, dest);
+  if (!relativeDest || relativeDest === '..' || relativeDest.startsWith('..' + path.sep) || path.isAbsolute(relativeDest)) {
+    throw new Error('Invalid override path');
+  }
+
+  const realInstancePath = fs.realpathSync(instPath);
+  const isWithinInstance = candidate => {
+    const relative = path.relative(realInstancePath, candidate);
+    return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative));
+  };
+  const assertSafeDirectory = directory => {
+    const stat = fs.lstatSync(directory);
+    const realPath = fs.realpathSync(directory);
+    if (stat.isSymbolicLink() || !stat.isDirectory() || !isWithinInstance(realPath)) {
+      throw new Error('Invalid override path');
+    }
+  };
+
+  let parent = instPath;
+  assertSafeDirectory(parent);
+  const parts = relativeDest.split(path.sep);
+  for (const part of parts.slice(0, -1)) {
+    const directory = path.join(parent, part);
+    try { fs.mkdirSync(directory); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; }
+    assertSafeDirectory(directory);
+    parent = directory;
+  }
+  assertSafeDirectory(parent);
+
+  const target = path.join(parent, parts[parts.length - 1]);
+  try {
+    fs.lstatSync(target);
+    throw new Error('Invalid override path');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  fs.writeFileSync(target, contents, { flag: 'wx' });
+}
+
 ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
   let createdInstancePath;
   try {
@@ -1138,8 +1180,7 @@ ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
     // Create new instance
     const id = 'inst_' + Date.now();
     const instPath = path.join(instancesBase, id);
-    if (fs.existsSync(instPath)) throw new Error('An instance with this ID already exists');
-    fs.mkdirSync(instPath, { recursive: true });
+    fs.mkdirSync(instPath); // exclusive creation: cleanup may only remove a directory this import created
     createdInstancePath = instPath;
     const modsDir = path.join(instPath, 'mods');
     fs.mkdirSync(modsDir, { recursive: true });
@@ -1159,10 +1200,8 @@ ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
     // For .mrpack / CurseForge zip — extract overrides folder
     for (const [name, buf] of zipEntries) {
       if (name.startsWith('overrides/') && !name.endsWith('/')) {
-        const rel = name.replace(/^overrides\//, '');
-        const dest = path.join(instPath, rel);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.writeFileSync(dest, buf);
+        const rel = name.replace(/^overrides\//, '').replace(/[\\/]+/g, path.sep);
+        writeInstanceOverride(instPath, rel, buf);
       }
     }
 

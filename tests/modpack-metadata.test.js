@@ -23,6 +23,57 @@ async function withTempRoot(callback) {
   finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 
+function makeStoredZip(entries) {
+  const crcTable = Array.from({ length: 256 }, (_, value) => {
+    let crc = value;
+    for (let bit = 0; bit < 8; bit++) crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+    return crc >>> 0;
+  });
+  const crc32 = data => {
+    let crc = 0xffffffff;
+    for (const byte of data) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const localParts = [];
+  const centralParts = [];
+  let localOffset = 0;
+  for (const [name, value, unixMode = 0] of entries) {
+    const filename = Buffer.from(name);
+    const data = Buffer.from(value);
+    const crc = crc32(data);
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt32LE(crc, 14);
+    localHeader.writeUInt32LE(data.length, 18);
+    localHeader.writeUInt32LE(data.length, 22);
+    localHeader.writeUInt16LE(filename.length, 26);
+    localParts.push(localHeader, filename, data);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt32LE(crc, 16);
+    centralHeader.writeUInt32LE(data.length, 20);
+    centralHeader.writeUInt32LE(data.length, 24);
+    centralHeader.writeUInt16LE(filename.length, 28);
+    centralHeader.writeUInt16LE(unixMode ? 0x0314 : 0, 4);
+    centralHeader.writeUInt32LE((unixMode << 16) >>> 0, 38);
+    centralHeader.writeUInt32LE(localOffset, 42);
+    centralParts.push(centralHeader, filename);
+    localOffset += localHeader.length + filename.length + data.length;
+  }
+  const centralDirectory = Buffer.concat(centralParts);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralDirectory.length, 12);
+  end.writeUInt32LE(localOffset, 16);
+  return Buffer.concat([...localParts, centralDirectory, end]);
+}
+
 function readFixtureEntries(zipPath) {
   const buffer = fs.readFileSync(zipPath);
   let eocd = -1;
@@ -174,6 +225,77 @@ test('Rust rejects missing or malformed manifests and import leaves no instance 
       assert.ok(result.error);
       assert.deepEqual(instanceDirectories(root), [], 'invalid manifest leaves no instance directories');
     }
+  });
+});
+
+test('preload-to-handler import rejects override path traversal and cleans up its partial instance', async () => {
+  await withTempRoot(async root => {
+    const archive = path.join(root, 'path-traversal.zip');
+    fs.writeFileSync(archive, makeStoredZip([
+      ['manifest.json', JSON.stringify({ name: 'Path probe', files: [] })],
+      ['overrides/config/legitimate.txt', 'created before traversal'],
+      ['overrides/../../../escaped.txt', 'must stay inside instance'],
+    ]));
+    const handlers = new Map();
+    const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
+    const result = await exposed.craftdockInstance.importPack(archive, 'cf');
+    assert.equal(result.success, false);
+    assert.match(result.error, /Invalid override path/);
+    assert.deepEqual(instanceDirectories(root), [], 'partial instance is removed after unsafe override rejection');
+    assert.equal(fs.existsSync(path.join(root, 'escaped.txt')), false, 'archive cannot write outside the instance');
+  });
+});
+
+test('preload-to-handler import does not follow symlink-marked archive entries', async () => {
+  await withTempRoot(async root => {
+    const archive = path.join(root, 'archive-symlink.zip');
+    fs.writeFileSync(archive, makeStoredZip([
+      ['modrinth.index.json', JSON.stringify({ name: 'Archive symlink probe', files: [] })],
+      ['overrides/config', path.join(root, 'outside-instance'), 0o120777],
+      ['overrides/config/options.txt', 'must not be written outside'],
+    ]));
+    const outside = path.join(root, 'outside-instance');
+    fs.mkdirSync(outside);
+    const handlers = new Map();
+    const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
+    const result = await exposed.craftdockInstance.importPack(archive, 'mr');
+    assert.equal(result.success, false);
+    assert.match(result.error, /Invalid override path/);
+    assert.deepEqual(instanceDirectories(root), [], 'failed import removes its newly created instance');
+    assert.equal(fs.existsSync(path.join(outside, 'options.txt')), false, 'archive entry cannot redirect the following write');
+  });
+});
+
+test('preload-to-handler import rejects junction overrides and cleans up only its new instance', async () => {
+  await withTempRoot(async root => {
+    const outside = path.join(root, 'outside-instance');
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'sentinel.txt'), 'keep outside data');
+    const handlers = new Map();
+    const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
+    const originalMkdirSync = fs.mkdirSync;
+    let junctionPlanted = false;
+    fs.mkdirSync = function (directory, ...args) {
+      const result = originalMkdirSync.call(this, directory, ...args);
+      if (!junctionPlanted && path.basename(String(directory)) === 'mods' && String(directory).includes(`${path.sep}instances${path.sep}`)) {
+        const instancePath = path.dirname(String(directory));
+        fs.symlinkSync(outside, path.join(instancePath, 'config'), process.platform === 'win32' ? 'junction' : 'dir');
+        junctionPlanted = true;
+      }
+      return result;
+    };
+    let result;
+    try {
+      result = await exposed.craftdockInstance.importPack(path.join(fixtureRoot, 'modrinth-full.mrpack'), 'mr');
+    } finally {
+      fs.mkdirSync = originalMkdirSync;
+    }
+    assert.equal(junctionPlanted, true, 'test planted a directory junction/symlink inside the new instance');
+    assert.equal(result.success, false);
+    assert.match(result.error, /Invalid override path/);
+    assert.deepEqual(instanceDirectories(root), [], 'failed import removes only its newly created instance');
+    assert.equal(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8'), 'keep outside data', 'cleanup preserves the junction target');
+    assert.equal(fs.existsSync(path.join(outside, 'options.txt')), false, 'archive cannot write through the junction');
   });
 });
 
