@@ -11,12 +11,20 @@ struct World {
     last_played: Option<f64>,
 }
 
+#[cfg(any(windows, test))]
+fn normalize_windows_canonical_path(path: &str) -> String {
+    if let Some(unc_path) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc_path}")
+    } else {
+        path.strip_prefix(r"\\?\").unwrap_or(path).to_owned()
+    }
+}
+
 fn canonical_path(path: &Path) -> Option<PathBuf> {
     let canonical = fs::canonicalize(path).ok()?;
     #[cfg(windows)]
     {
-        let text = canonical.to_string_lossy();
-        return Some(PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(&text)));
+        return Some(PathBuf::from(normalize_windows_canonical_path(&canonical.to_string_lossy())));
     }
     #[cfg(not(windows))]
     Some(canonical)
@@ -97,6 +105,22 @@ mod tests {
         let modified = UNIX_EPOCH + std::time::Duration::from_millis(millis);
         let file = fs::File::create(path).unwrap();
         file.set_modified(modified).unwrap();
+    }
+
+    #[test]
+    fn normalizes_extended_unc_paths_and_preserves_extended_drive_paths() {
+        assert_eq!(
+            normalize_windows_canonical_path(r"\\?\UNC\server\share\world"),
+            r"\\server\share\world",
+        );
+        assert_eq!(
+            normalize_windows_canonical_path(r"\\?\C:\Users\player\saves\world"),
+            r"C:\Users\player\saves\world",
+        );
+        assert_eq!(
+            normalize_windows_canonical_path(r"D:\Users\player\saves\world"),
+            r"D:\Users\player\saves\world",
+        );
     }
 
     #[test]

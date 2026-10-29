@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
+const { execFile, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -48,7 +48,7 @@ function createReader(root, isPackaged, runFile) {
   });
 }
 
-function loadProductionIpc(tempRoot, handlers) {
+function loadProductionIpc(tempRoot, handlers, nativeExecutions) {
   const exposed = {};
   const app = {
     isPackaged: false, setAppUserModelId() {}, setName() {}, on() {},
@@ -66,7 +66,19 @@ function loadProductionIpc(tempRoot, handlers) {
     if (name === './screenshot-list') return require('../screenshot-list');
     if (name === './config-file-list') return require('../config-file-list');
     if (name === './server-properties') return require('../server-properties');
-    if (name === './instance-world-list') return require('../instance-world-list');
+    if (name === './instance-world-list') {
+      const worldList = require('../instance-world-list');
+      return {
+        ...worldList,
+        createInstanceWorldListReader: options => worldList.createInstanceWorldListReader({
+          ...options,
+          runFile: (binary, args, execOptions, callback) => {
+            nativeExecutions.push(binary);
+            execFile(binary, args, execOptions, callback);
+          },
+        }),
+      };
+    }
     if (name === './package.json') return require('../package.json');
     return require(name);
   };
@@ -124,8 +136,15 @@ test('Rust and JavaScript match the world fixture, including canonical paths and
     const packagedBinary = path.join(root, 'resources', 'native', binaryName);
     fs.mkdirSync(path.dirname(packagedBinary), { recursive: true });
     fs.copyFileSync(releaseBinaryPath, packagedBinary);
-    assert.deepEqual(await createReader(root, true)(savesPath), rustWorlds,
+    const packagedExecutions = [];
+    const packagedReader = createReader(root, true, (binary, args, options, callback) => {
+      packagedExecutions.push(binary);
+      execFile(binary, args, options, callback);
+    });
+    assert.deepEqual(await packagedReader(savesPath), rustWorlds,
       'packaged resolver should execute the release Rust binary from resources/native');
+    assert.deepEqual(packagedExecutions, [packagedBinary],
+      'packaged resolver must invoke the real binary rather than satisfy results through fallback');
   });
 });
 
@@ -192,7 +211,8 @@ test('production preload preserves instance-list-worlds IPC for native and fallb
         fs.copyFileSync(binaryPath, devBinary);
       }
       const handlers = new Map();
-      const { exposed, invocations } = loadProductionIpc(root, handlers);
+      const nativeExecutions = [];
+      const { exposed, invocations } = loadProductionIpc(root, handlers, nativeExecutions);
       const expected = listInstanceWorldsFallback(savesPath);
       assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdockInstance.listWorlds(instanceId))), expected);
       assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdockInstance.listWorlds('missing'))), []);
@@ -200,6 +220,10 @@ test('production preload preserves instance-list-worlds IPC for native and fallb
         ['instance-list-worlds', instanceId],
         ['instance-list-worlds', 'missing'],
       ]);
+      assert.deepEqual(nativeExecutions, useRust ? [
+        path.join(root, 'rust', 'target', 'debug', binaryName),
+        path.join(root, 'rust', 'target', 'debug', binaryName),
+      ] : [], 'preload → IPC must execute Rust for native mode and avoid it for fallback mode');
     });
   }
 });
