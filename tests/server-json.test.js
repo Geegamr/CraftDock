@@ -205,6 +205,63 @@ test('production preload keeps IPC contract and uses the actual Rust CLI without
   });
 });
 
+test('production async runner falls back after Rust failures through preload and IPC', async () => {
+  buildRustBinary();
+  await withTempRoot(async root => {
+    const serverId = 'json-failure-fixture';
+    const serverDirectory = path.join(root, 'craftdock-data', 'servers', serverId);
+    fs.mkdirSync(serverDirectory, { recursive: true });
+    const devBinary = path.join(root, 'rust', 'target', 'debug', binaryName);
+    fs.mkdirSync(path.dirname(devBinary), { recursive: true });
+    fs.copyFileSync(binaryPath, devBinary);
+
+    const missingPath = path.join(serverDirectory, 'missing.json');
+    const writeFailurePath = path.join(serverDirectory, 'missing-parent', 'ops.json');
+    for (const [args, label] of [
+      [['read', missingPath], 'read'],
+      [['write', writeFailurePath], 'write'],
+    ]) {
+      const result = spawnSync(devBinary, args, { input: label === 'write' ? '{}' : undefined, encoding: 'utf8' });
+      assert.equal(result.error, undefined, `Rust ${label} should start successfully`);
+      assert.notEqual(result.status, 0, `Rust ${label} should fail for its missing path`);
+    }
+
+    const handlers = new Map();
+    const { exposed, invocations } = loadProductionIpc(root, handlers, require('../server-json'));
+    const originalReadFileSync = fs.readFileSync;
+    const originalWriteFileSync = fs.writeFileSync;
+    let fallbackReads = 0;
+    let fallbackWrites = 0;
+    fs.readFileSync = function (filePath, ...args) {
+      if (path.resolve(filePath) === path.resolve(missingPath)) fallbackReads++;
+      return originalReadFileSync.call(this, filePath, ...args);
+    };
+    fs.writeFileSync = function (filePath, ...args) {
+      if (path.resolve(filePath) === path.resolve(writeFailurePath)) fallbackWrites++;
+      return originalWriteFileSync.call(this, filePath, ...args);
+    };
+    let readResult;
+    let writeResult;
+    try {
+      readResult = await exposed.craftdockServer.readJsonFile(serverId, 'missing.json');
+      writeResult = await exposed.craftdockServer.patchJsonFile(serverId, 'missing-parent/ops.json', {});
+    } finally {
+      fs.readFileSync = originalReadFileSync;
+      fs.writeFileSync = originalWriteFileSync;
+    }
+
+    assert.deepEqual(JSON.parse(JSON.stringify(readResult)), []);
+    assert.equal(writeResult.success, false);
+    assert.match(writeResult.error, /ENOENT/);
+    assert.equal(fallbackReads, 1, 'failed native read should use the JavaScript reader');
+    assert.equal(fallbackWrites, 1, 'failed native write should attempt the JavaScript writer');
+    assert.deepEqual(JSON.parse(JSON.stringify(invocations)), [
+      ['server-read-json', serverId, 'missing.json'],
+      ['server-patch-json', serverId, 'missing-parent/ops.json', {}],
+    ]);
+  });
+});
+
 test('production preload preserves missing/malformed reads and JS fallback write errors', async () => {
   await withTempRoot(async root => {
     const serverDirectory = path.join(root, 'craftdock-data', 'servers', 'json-fixture');
