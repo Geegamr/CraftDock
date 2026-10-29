@@ -50,6 +50,7 @@ function loadProductionIpc(tempRoot, handlers, serverPropertiesModule = require(
     if (name === './screenshot-list') return require('../screenshot-list');
     if (name === './config-file-list') return require('../config-file-list');
     if (name === './server-properties') return serverPropertiesModule;
+    if (name === './modpack-metadata') return { createModpackMetadataReader: () => async () => ({}) };
     if (name === './package.json') return require('../package.json');
     return require(name);
   };

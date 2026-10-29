@@ -10,6 +10,7 @@ const { createServerJarListReader } = require('./server-jar-list');
 const { createScreenshotListReader } = require('./screenshot-list');
 const { createConfigFileListReader } = require('./config-file-list');
 const { createServerPropertiesAccess } = require('./server-properties');
+const { createModpackMetadataReader } = require('./modpack-metadata');
 
 // All data lives in craftdock-data/ next to the launcher so users can find it easily
 const isDev    = !app.isPackaged;
@@ -80,6 +81,7 @@ const readServerJarList = createServerJarListReader(nativeReaderOptions);
 const readScreenshotList = createScreenshotListReader(nativeReaderOptions);
 const readConfigFileList = createConfigFileListReader(nativeReaderOptions);
 const serverProperties = createServerPropertiesAccess(nativeReaderOptions);
+const readModpackMetadata = createModpackMetadataReader(nativeReaderOptions);
 let serverJson;
 function getServerJsonAccess() {
   if (!serverJson) {
@@ -1127,46 +1129,18 @@ ipcMain.handle('instance-write-config-file', (_, filePath, text) => {
 
 // ── Pack import (CurseForge .zip / Modrinth .mrpack) ───────────────────────
 ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
+  let createdInstancePath;
   try {
-    const zipEntries = readZipEntries(filePath); // Map<name, Buffer> (built-in, no deps)
-    const getData = (name) => { const b = zipEntries.get(name); return b ? b.toString('utf8') : null; };
-    let packName = path.basename(filePath, path.extname(filePath));
-    let mcVersion = '1.21.4', loader = '', loaderVersion = '';
-    let mods = [];
-
-    if (type === 'mr') {
-      // Modrinth .mrpack — parse modrinth.index.json
-      const indexEntry = zipEntries.get('modrinth.index.json');
-      if (!indexEntry) return { success: false, error: 'Invalid .mrpack: missing modrinth.index.json' };
-      const idx = JSON.parse(indexEntry.toString('utf8'));
-      packName    = idx.name || packName;
-      mcVersion   = idx.dependencies?.minecraft || mcVersion;
-      const loaderKey = Object.keys(idx.dependencies || {}).find(k => k !== 'minecraft');
-      if (loaderKey) { loader = loaderKey; loaderVersion = idx.dependencies[loaderKey]; }
-      mods = (idx.files || []).map(f => ({ url: f.downloads?.[0], path: f.path, sha512: f.hashes?.sha512 })).filter(m => m.url);
-    } else {
-      // CurseForge .zip — parse manifest.json
-      const manifestEntry = zipEntries.get('manifest.json');
-      if (!manifestEntry) return { success: false, error: 'Invalid CurseForge zip: missing manifest.json' };
-      const manifest = JSON.parse(manifestEntry.toString('utf8'));
-      packName    = manifest.name || packName;
-      mcVersion   = manifest.minecraft?.version || mcVersion;
-      const loaderInfo = manifest.minecraft?.modLoaders?.find(l => l.primary);
-      if (loaderInfo) {
-        const lid = loaderInfo.id || '';
-        if (lid.startsWith('forge-'))    { loader = 'forge';    loaderVersion = lid.replace('forge-',''); }
-        else if (lid.startsWith('fabric-')) { loader = 'fabric';  loaderVersion = lid.replace('fabric-',''); }
-        else if (lid.startsWith('neoforge-')) { loader = 'neoforge'; loaderVersion = lid.replace('neoforge-',''); }
-        else if (lid.startsWith('quilt-')) { loader = 'quilt';   loaderVersion = lid.replace('quilt-',''); }
-      }
-      // CF mods need CF API to resolve — store projectId/fileId for later
-      mods = (manifest.files || []).map(f => ({ projectId: f.projectID, fileId: f.fileID, required: f.required !== false }));
-    }
+    const zipEntries = readZipEntries(filePath); // Map<name, Buffer> used by JS fallback and override extraction
+    const { packName, mcVersion, loader, loaderVersion, mods } =
+      await readModpackMetadata(filePath, type, zipEntries);
 
     // Create new instance
     const id = 'inst_' + Date.now();
     const instPath = path.join(instancesBase, id);
+    if (fs.existsSync(instPath)) throw new Error('An instance with this ID already exists');
     fs.mkdirSync(instPath, { recursive: true });
+    createdInstancePath = instPath;
     const modsDir = path.join(instPath, 'mods');
     fs.mkdirSync(modsDir, { recursive: true });
 
@@ -1194,6 +1168,9 @@ ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
 
     return { success: true, id, name: packName, mcVersion, loader, modCount: mods.length };
   } catch(e) {
+    if (createdInstancePath) {
+      try { fs.rmSync(createdInstancePath, { recursive: true, force: true }); } catch {}
+    }
     return { success: false, error: e.message };
   }
 });

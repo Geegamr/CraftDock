@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 flate2 = "1.1"
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["preserve_order"] }
 
 [[bin]]
 name = "craftdock-server-jar-list"
@@ -30,3 +30,7 @@ path = "src/bin/craftdock-instance-world-list.rs"
 [[bin]]
 name = "craftdock-server-json"
 path = "src/bin/craftdock-server-json.rs"
+
+[[bin]]
+name = "craftdock-modpack-metadata"
+path = "src/bin/craftdock-modpack-metadata.rs"
