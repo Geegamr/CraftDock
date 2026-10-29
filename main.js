@@ -740,47 +740,151 @@ async function resolveVanillaUrl(version) {
 
 // ── Minimal ZIP reader (Node built-ins only, no adm-zip needed) ────
 function readZipEntries(zipPath) {
-  // Returns Map<name, Buffer> for all entries in the zip
   const buf = fs.readFileSync(zipPath);
+  const zlib = require('zlib');
   const entries = new Map();
+  const read16 = (offset, end = buf.length) => {
+    if (offset < 0 || offset + 2 > end) throw new Error('Invalid ZIP: truncated header');
+    return buf.readUInt16LE(offset);
+  };
+  const read32 = (offset, end = buf.length) => {
+    if (offset < 0 || offset + 4 > end) throw new Error('Invalid ZIP: truncated header');
+    return buf.readUInt32LE(offset);
+  };
+  const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
+    let crc = value;
+    for (let bit = 0; bit < 8; bit++) crc = (crc & 1) ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+    return crc >>> 0;
+  });
+  const crc32 = data => {
+    let crc = 0xffffffff;
+    for (const byte of data) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const normalizeName = rawName => {
+    if (!rawName || rawName.includes('\0')) throw new Error('Invalid ZIP: ambiguous entry name');
+    const slashName = rawName.replace(/\\/g, '/');
+    if (slashName.startsWith('/') || /^[a-zA-Z]:/.test(slashName)) throw new Error('Invalid ZIP: absolute entry name');
+    const isDirectory = slashName.endsWith('/');
+    const parts = [];
+    for (const part of slashName.split('/')) {
+      if (!part || part === '.') continue;
+      if (part === '..' || /[<>:"|?*]/.test(part) || /[. ]$/.test(part)) {
+        throw new Error('Invalid ZIP: traversing or ambiguous entry name');
+      }
+      parts.push(part);
+    }
+    if (!parts.length) throw new Error('Invalid ZIP: ambiguous entry name');
+    return parts.join('/') + (isDirectory ? '/' : '');
+  };
 
-  // Find End of Central Directory (EOCD) — search from end
+  // Find an EOCD whose declared comment ends exactly at EOF.
   let eocdOffset = -1;
-  for (let i = buf.length - 22; i >= 0; i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) { eocdOffset = i; break; }
+  const searchStart = Math.max(0, buf.length - 22 - 0xffff);
+  for (let i = buf.length - 22; i >= searchStart; i--) {
+    if (read32(i) === 0x06054b50 && i + 22 + read16(i + 20) === buf.length) {
+      eocdOffset = i;
+      break;
+    }
   }
   if (eocdOffset < 0) throw new Error('Invalid ZIP: EOCD not found');
+  if (read16(eocdOffset + 4) !== 0 || read16(eocdOffset + 6) !== 0 ||
+      read16(eocdOffset + 8) !== read16(eocdOffset + 10)) {
+    throw new Error('Invalid ZIP: multi-disk archives are unsupported');
+  }
 
-  const cdOffset = buf.readUInt32LE(eocdOffset + 16);
-  const cdSize   = buf.readUInt32LE(eocdOffset + 12);
-  const cdCount  = buf.readUInt16LE(eocdOffset + 10);
+  const cdCount = read16(eocdOffset + 10);
+  const cdSize = read32(eocdOffset + 12);
+  const cdOffset = read32(eocdOffset + 16);
+  const cdEnd = cdOffset + cdSize;
+  if (cdCount === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff ||
+      cdEnd > eocdOffset || cdEnd < cdOffset || cdOffset + cdSize !== eocdOffset) {
+    throw new Error('Invalid ZIP: unsupported or out-of-bounds central directory');
+  }
 
   let pos = cdOffset;
+  const normalizedNames = new Set();
   for (let i = 0; i < cdCount; i++) {
-    if (buf.readUInt32LE(pos) !== 0x02014b50) break;
-    const compression  = buf.readUInt16LE(pos + 10);
-    const compressedSz = buf.readUInt32LE(pos + 20);
-    const fileNameLen  = buf.readUInt16LE(pos + 28);
-    const extraLen     = buf.readUInt16LE(pos + 30);
-    const commentLen   = buf.readUInt16LE(pos + 32);
-    const localOffset  = buf.readUInt32LE(pos + 42);
-    const name = buf.slice(pos + 46, pos + 46 + fileNameLen).toString('utf8');
-    pos += 46 + fileNameLen + extraLen + commentLen;
-
-    // Read local file header to get actual data offset
-    const localExtraLen = buf.readUInt16LE(localOffset + 28);
-    const dataOffset = localOffset + 30 + fileNameLen + localExtraLen;
-    const compData = buf.slice(dataOffset, dataOffset + compressedSz);
-
-    if (compression === 0) {
-      // Stored (no compression)
-      entries.set(name, compData);
-    } else if (compression === 8) {
-      // Deflate
-      entries.set(name, require('zlib').inflateRawSync(compData));
+    if (read32(pos, cdEnd) !== 0x02014b50) throw new Error('Invalid ZIP: bad central directory entry');
+    const flags = read16(pos + 8, cdEnd);
+    const compression = read16(pos + 10, cdEnd);
+    const crc = read32(pos + 16, cdEnd);
+    const compressedSz = read32(pos + 20, cdEnd);
+    const uncompressedSz = read32(pos + 24, cdEnd);
+    const fileNameLen = read16(pos + 28, cdEnd);
+    const extraLen = read16(pos + 30, cdEnd);
+    const commentLen = read16(pos + 32, cdEnd);
+    const diskStart = read16(pos + 34, cdEnd);
+    const localOffset = read32(pos + 42, cdEnd);
+    const nameStart = pos + 46;
+    const entryEnd = nameStart + fileNameLen + extraLen + commentLen;
+    if (entryEnd > cdEnd || diskStart !== 0 || compressedSz === 0xffffffff ||
+        uncompressedSz === 0xffffffff || localOffset === 0xffffffff) {
+      throw new Error('Invalid ZIP: malformed or unsupported central directory entry');
     }
-    // Other methods ignored
+    const nameBytes = buf.subarray(nameStart, nameStart + fileNameLen);
+    const rawName = nameBytes.toString('utf8');
+    if (!Buffer.from(rawName, 'utf8').equals(nameBytes)) throw new Error('Invalid ZIP: non-UTF-8 entry name');
+    const name = normalizeName(rawName);
+    const nameKey = (name.endsWith('/') ? name.slice(0, -1) : name).toLowerCase();
+    if (normalizedNames.has(nameKey)) throw new Error('Invalid ZIP: duplicate normalized entry name');
+    normalizedNames.add(nameKey);
+    if (flags & 0x1) throw new Error('Invalid ZIP: encrypted entries are unsupported');
+    if (flags & 0x2040) throw new Error('Invalid ZIP: strong or masked encryption is unsupported');
+    if (flags & ~0x080e) throw new Error('Invalid ZIP: unsupported general-purpose flags');
+    if (compression !== 0 && compression !== 8) throw new Error('Invalid ZIP: unsupported compression method');
+    if (compression !== 8 && (flags & 0x6)) throw new Error('Invalid ZIP: invalid compression flags');
+    if (compression === 0 && compressedSz !== uncompressedSz) throw new Error('Invalid ZIP: corrupt stored entry size');
+
+    if (read32(localOffset) !== 0x04034b50) throw new Error('Invalid ZIP: bad local file header');
+    const localFlags = read16(localOffset + 6);
+    const localCompression = read16(localOffset + 8);
+    const localCrc = read32(localOffset + 14);
+    const localCompressedSz = read32(localOffset + 18);
+    const localUncompressedSz = read32(localOffset + 22);
+    const localNameLen = read16(localOffset + 26);
+    const localExtraLen = read16(localOffset + 28);
+    const dataOffset = localOffset + 30 + localNameLen + localExtraLen;
+    const dataEnd = dataOffset + compressedSz;
+    if (localFlags !== flags || localCompression !== compression ||
+        dataOffset < localOffset || dataEnd > cdOffset || dataEnd < dataOffset ||
+        (localFlags & ~0x080e) !== 0) {
+      throw new Error('Invalid ZIP: inconsistent or out-of-bounds local entry');
+    }
+    const localName = buf.subarray(localOffset + 30, localOffset + 30 + localNameLen);
+    if (!localName.equals(nameBytes)) throw new Error('Invalid ZIP: local and central entry names differ');
+    if (flags & 0x8) {
+      if (![0, crc].includes(localCrc) || ![0, compressedSz].includes(localCompressedSz) ||
+          ![0, uncompressedSz].includes(localUncompressedSz)) {
+        throw new Error('Invalid ZIP: local and central entry sizes differ');
+      }
+      const hasSignature = read32(dataEnd, cdOffset) === 0x08074b50 &&
+        read32(dataEnd + 4, cdOffset) === crc && read32(dataEnd + 8, cdOffset) === compressedSz &&
+        read32(dataEnd + 12, cdOffset) === uncompressedSz;
+      const descriptorStart = dataEnd + (hasSignature ? 4 : 0);
+      if (read32(descriptorStart, cdOffset) !== crc || read32(descriptorStart + 4, cdOffset) !== compressedSz ||
+          read32(descriptorStart + 8, cdOffset) !== uncompressedSz) {
+        throw new Error('Invalid ZIP: corrupt data descriptor');
+      }
+    } else if (localCrc !== crc || localCompressedSz !== compressedSz || localUncompressedSz !== uncompressedSz) {
+      throw new Error('Invalid ZIP: local and central entry sizes differ');
+    }
+
+    const compressed = buf.subarray(dataOffset, dataEnd);
+    let data;
+    try {
+      data = compression === 0 ? Buffer.from(compressed) :
+        zlib.inflateRawSync(compressed, { maxOutputLength: uncompressedSz + 1 });
+    } catch (error) {
+      throw new Error(`Invalid ZIP: corrupt entry ${JSON.stringify(name)}: ${error.message}`);
+    }
+    if (data.length !== uncompressedSz || crc32(data) !== crc) {
+      throw new Error(`Invalid ZIP: corrupt entry ${JSON.stringify(name)} (size or CRC mismatch)`);
+    }
+    entries.set(name, data);
+    pos = entryEnd;
   }
+  if (pos !== cdEnd) throw new Error('Invalid ZIP: central directory size mismatch');
   return entries;
 }
 
@@ -1132,7 +1236,7 @@ ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
   let createdInstancePath;
   try {
     const zipEntries = readZipEntries(filePath);
-    const overrideEntries = [...zipEntries.keys()].filter(name => name.startsWith('overrides/') && !name.endsWith('/'));
+    const overrideEntries = [...zipEntries.keys()].filter(name => name.toLowerCase().startsWith('overrides/') && !name.endsWith('/'));
     if (overrideEntries.length) {
       throw new Error(`Modpack contains ${overrideEntries.length} override file(s), but safe extraction is unavailable; import without overrides is supported.`);
     }

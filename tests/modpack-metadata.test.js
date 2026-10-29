@@ -37,32 +37,42 @@ function makeStoredZip(entries) {
   const localParts = [];
   const centralParts = [];
   let localOffset = 0;
-  for (const [name, value, unixMode = 0] of entries) {
+  for (const [name, value, unixMode = 0, options = {}] of entries) {
     const filename = Buffer.from(name);
     const data = Buffer.from(value);
-    const crc = crc32(data);
+    const compression = options.compression ?? 0;
+    const compressed = compression === 8 ? zlib.deflateRawSync(data) : data;
+    const crc = (crc32(data) ^ (options.corruptCrc ? 1 : 0)) >>> 0;
+    const flags = options.flags ?? 0;
+    const localSizes = options.localSizes ?? true;
     const localHeader = Buffer.alloc(30);
     localHeader.writeUInt32LE(0x04034b50, 0);
     localHeader.writeUInt16LE(20, 4);
-    localHeader.writeUInt32LE(crc, 14);
-    localHeader.writeUInt32LE(data.length, 18);
-    localHeader.writeUInt32LE(data.length, 22);
+    localHeader.writeUInt16LE(flags, 6);
+    localHeader.writeUInt16LE(compression, 8);
+    localHeader.writeUInt32LE(localSizes ? crc : 0, 14);
+    localHeader.writeUInt32LE(localSizes ? compressed.length : 0, 18);
+    localHeader.writeUInt32LE(localSizes ? data.length : 0, 22);
     localHeader.writeUInt16LE(filename.length, 26);
-    localParts.push(localHeader, filename, data);
+    const descriptor = flags & 0x8
+      ? [options.descriptorSignature === false ? Buffer.alloc(0) : Buffer.from([0x50, 0x4b, 0x07, 0x08]), Buffer.from([crc, compressed.length, data.length].flatMap(value => [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]))]
+      : [];
+    localParts.push(localHeader, filename, compressed, ...descriptor);
 
     const centralHeader = Buffer.alloc(46);
     centralHeader.writeUInt32LE(0x02014b50, 0);
     centralHeader.writeUInt16LE(20, 4);
-    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(flags, 8);
+    centralHeader.writeUInt16LE(compression, 10);
     centralHeader.writeUInt32LE(crc, 16);
-    centralHeader.writeUInt32LE(data.length, 20);
+    centralHeader.writeUInt32LE(compressed.length, 20);
     centralHeader.writeUInt32LE(data.length, 24);
     centralHeader.writeUInt16LE(filename.length, 28);
     centralHeader.writeUInt16LE(unixMode ? 0x0314 : 0, 4);
     centralHeader.writeUInt32LE((unixMode << 16) >>> 0, 38);
     centralHeader.writeUInt32LE(localOffset, 42);
     centralParts.push(centralHeader, filename);
-    localOffset += localHeader.length + filename.length + data.length;
+    localOffset += localHeader.length + filename.length + compressed.length + descriptor.reduce((size, part) => size + part.length, 0);
   }
   const centralDirectory = Buffer.concat(centralParts);
   const end = Buffer.alloc(22);
@@ -175,6 +185,27 @@ function instanceDirectories(root) {
   return fs.existsSync(directory) ? fs.readdirSync(directory) : [];
 }
 
+async function importAndTrackInstanceWrites(exposed, archive, type) {
+  const originalMkdirSync = fs.mkdirSync;
+  const originalWriteFileSync = fs.writeFileSync;
+  const instancePath = `${path.sep}instances${path.sep}inst_`;
+  const attempts = { instanceCreation: false, metadataWrite: false };
+  fs.mkdirSync = function (filePath, ...args) {
+    if (String(filePath).includes(instancePath)) attempts.instanceCreation = true;
+    return originalMkdirSync.call(this, filePath, ...args);
+  };
+  fs.writeFileSync = function (filePath, ...args) {
+    if (String(filePath).includes(instancePath)) attempts.metadataWrite = true;
+    return originalWriteFileSync.call(this, filePath, ...args);
+  };
+  try {
+    return { result: await exposed.craftdockInstance.importPack(archive, type), attempts };
+  } finally {
+    fs.mkdirSync = originalMkdirSync;
+    fs.writeFileSync = originalWriteFileSync;
+  }
+}
+
 test('real Rust parser matches JS metadata for both formats, defaults, and unknown loader IDs', () => {
   buildRustBinary();
   const cases = [
@@ -228,21 +259,76 @@ test('Rust rejects missing or malformed manifests and import leaves no instance 
   });
 });
 
-test('preload-to-handler rejects traversal-named ZIP override entries before filesystem setup', async () => {
+test('preload-to-handler rejects normalized override paths before instance creation or writes', async () => {
+  const variants = [
+    ['dot-segment', './overrides/config/options.txt'],
+    ['backslash-separators', 'overrides\\config\\options.txt'],
+    ['dot-segment-backslashes', '.\\overrides\\config\\options.txt'],
+    ['canonical-deflate', 'overrides/config/options.txt', { compression: 8 }],
+    ['deflate-data-descriptor', 'overrides/config/options.txt', { compression: 8, flags: 0x8, localSizes: false }],
+    ['deflate-signatureless-descriptor', 'overrides/config/options.txt', { compression: 8, flags: 0x8, localSizes: false, descriptorSignature: false }],
+  ];
+  for (const [label, name, options] of variants) {
+    await withTempRoot(async root => {
+      const archive = path.join(root, `${label}.zip`);
+      fs.writeFileSync(archive, makeStoredZip([
+        ['manifest.json', JSON.stringify({ name: 'Override probe', files: [] })],
+        [name, 'override payload', 0, options],
+      ]));
+      const handlers = new Map();
+      const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
+      const { result, attempts } = await importAndTrackInstanceWrites(exposed, archive, 'cf');
+      assert.equal(result.success, false, `${label} fails`);
+      assert.match(result.error, /safe extraction is unavailable/);
+      assert.equal(attempts.instanceCreation, false, `${label} never attempts instance creation`);
+      assert.equal(attempts.metadataWrite, false, `${label} never writes instance metadata`);
+      assert.deepEqual(instanceDirectories(root), [], `${label} creates no instance directory`);
+    });
+  }
+});
+
+test('preload-to-handler rejects ambiguous ZIP entry names and corrupt or unsupported entries before setup', async () => {
+  const variants = [
+    ['traversal', 'overrides/../../../escaped.txt', { expect: /traversing/ }],
+    ['absolute', '/overrides/options.txt', { expect: /absolute/ }],
+    ['drive', 'C:/overrides/options.txt', { expect: /absolute/ }],
+    ['nul-byte', 'overrides/options .txt', { expect: /ambiguous entry name/ }],
+    ['unsupported-compression', 'overrides/options.txt', { compression: 12, expect: /unsupported compression/ }],
+    ['encrypted', 'overrides/options.txt', { flags: 1, expect: /encrypted/ }],
+    ['corrupt-crc', 'overrides/options.txt', { corruptCrc: true, expect: /CRC mismatch/ }],
+    ['corrupt-deflate', 'overrides/options.txt', { compression: 8, corruptCrc: true, expect: /corrupt entry/ }],
+  ];
+  for (const [label, name, options] of variants) {
+    await withTempRoot(async root => {
+      const archive = path.join(root, `${label}.zip`);
+      fs.writeFileSync(archive, makeStoredZip([
+        ['manifest.json', JSON.stringify({ name: 'Invalid archive probe', files: [] })],
+        [name, 'entry payload', 0, options],
+      ]));
+      const handlers = new Map();
+      const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
+      const { result, attempts } = await importAndTrackInstanceWrites(exposed, archive, 'cf');
+      assert.equal(result.success, false, `${label} fails`);
+      assert.match(result.error, options.expect, `${label} reports archive refusal`);
+      assert.equal(attempts.instanceCreation, false, `${label} never attempts instance creation`);
+      assert.equal(attempts.metadataWrite, false, `${label} never writes instance metadata`);
+      assert.deepEqual(instanceDirectories(root), [], `${label} creates no instance directory`);
+    });
+  }
+});
+
+test('preload-to-handler rejects truncated ZIP metadata rather than importing an incomplete archive', async () => {
   await withTempRoot(async root => {
-    const archive = path.join(root, 'path-traversal.zip');
+    const archive = path.join(root, 'truncated.zip');
     fs.writeFileSync(archive, makeStoredZip([
-      ['manifest.json', JSON.stringify({ name: 'Path probe', files: [] })],
-      ['overrides/config/ordinary.txt', 'ordinary override'],
-      ['overrides/../../../escaped.txt', 'must not be written'],
-    ]));
+      ['manifest.json', JSON.stringify({ name: 'Truncated probe', files: [] })],
+    ]).subarray(0, -22));
     const handlers = new Map();
     const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
     const result = await exposed.craftdockInstance.importPack(archive, 'cf');
     assert.equal(result.success, false);
-    assert.match(result.error, /safe extraction is unavailable/);
-    assert.deepEqual(instanceDirectories(root), [], 'rejected override creates no instance directory');
-    assert.equal(fs.existsSync(path.join(root, 'escaped.txt')), false);
+    assert.match(result.error, /EOCD not found/);
+    assert.deepEqual(instanceDirectories(root), []);
   });
 });
 
