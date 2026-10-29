@@ -6,6 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
 const { EventEmitter } = require('node:events');
+const zlib = require('node:zlib');
 const { createServerJarListReader, listJarFilesFallback } = require('../server-jar-list');
 
 const projectRoot = path.resolve(__dirname, '..');
@@ -30,7 +31,7 @@ async function withTempRoot(callback) {
   finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 
-function makeStoredZip(entries) {
+function makeZip(entries) {
   const crc32 = data => {
     let crc = 0xffffffff;
     for (const byte of data) {
@@ -45,28 +46,31 @@ function makeStoredZip(entries) {
   for (const [name, value, options = {}] of entries) {
     const filename = Buffer.from(name);
     const data = Buffer.from(value);
+    const compressed = options.compression === 8 ? zlib.deflateRawSync(data) : data;
     const declaredUncompressedSize = options.declaredUncompressedSize ?? data.length;
     const crc = (crc32(data) ^ (options.corruptCrc ? 1 : 0)) >>> 0;
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(options.compression || 0, 8);
     local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(compressed.length, 18);
     local.writeUInt32LE(declaredUncompressedSize, 22);
     local.writeUInt16LE(filename.length, 26);
-    localParts.push(local, filename, data);
+    localParts.push(local, filename, compressed);
 
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0);
     central.writeUInt16LE(20, 4);
     central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(options.compression || 0, 10);
     central.writeUInt32LE(crc, 16);
-    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(compressed.length, 20);
     central.writeUInt32LE(declaredUncompressedSize, 24);
     central.writeUInt16LE(filename.length, 28);
     central.writeUInt32LE(localOffset, 42);
     centralParts.push(central, filename);
-    localOffset += local.length + filename.length + data.length;
+    localOffset += local.length + filename.length + compressed.length;
   }
   const centralDirectory = Buffer.concat(centralParts);
   const end = Buffer.alloc(22);
@@ -134,31 +138,36 @@ function loadProductionIpc(tempRoot, handlers, options = {}) {
   return { exposed, invocations };
 }
 
-function prepareNativeLaunch(root, archivePath, nativeSuffix, nativeName) {
+function prepareNativeLaunch(root, archivePaths, nativeSuffix, nativeNames = []) {
   const version = '1.16.5';
   const id = 'native-jar-fixture';
   const dataRoot = path.join(root, 'craftdock-data');
   const versionDir = path.join(dataRoot, 'client-cache', version);
   const librariesDir = path.join(dataRoot, 'client-cache', 'libraries');
   const instanceDir = path.join(dataRoot, 'instances', id);
-  const nativeJar = path.join(librariesDir, 'org', 'lwjgl', `lwjgl-3.3.3-${nativeSuffix}.jar`);
+  const archives = (Array.isArray(archivePaths) ? archivePaths : [archivePaths]).map((archivePath, index) => {
+    const artifact = index === 0 ? 'lwjgl' : `lwjgl-extra${index}`;
+    const nativeJar = path.join(librariesDir, 'org', 'lwjgl', `${artifact}-3.3.3-${nativeSuffix}.jar`);
+    fs.mkdirSync(path.dirname(nativeJar), { recursive: true });
+    fs.copyFileSync(archivePath, nativeJar);
+    return { nativeJar, artifactPath: path.relative(librariesDir, nativeJar) };
+  });
   fs.mkdirSync(versionDir, { recursive: true });
   fs.mkdirSync(instanceDir, { recursive: true });
-  fs.mkdirSync(path.dirname(nativeJar), { recursive: true });
   fs.mkdirSync(path.join(dataRoot, 'client-cache', 'assets', 'indexes'), { recursive: true });
-  fs.copyFileSync(archivePath, nativeJar);
   fs.writeFileSync(path.join(instanceDir, 'instance.json'), JSON.stringify({ id, mcVersion: version, javaPath: 'java' }));
   fs.writeFileSync(path.join(versionDir, 'version.json'), JSON.stringify({
     mainClass: 'net.minecraft.client.main.Main',
     downloads: { client: { url: 'https://fixture.invalid/client.jar' } },
-    libraries: [{ downloads: { artifact: {
-      url: 'https://fixture.invalid/native.jar', path: path.relative(librariesDir, nativeJar),
-    } } }],
+    libraries: archives.map(({ artifactPath }) => ({ downloads: { artifact: {
+      url: 'https://fixture.invalid/native.jar', path: artifactPath,
+    } } })),
     assetIndex: { id: 'fixture' },
   }));
   fs.writeFileSync(path.join(versionDir, `minecraft-${version}-client.jar`), 'cached client jar');
   fs.writeFileSync(path.join(dataRoot, 'client-cache', 'assets', 'indexes', 'fixture.json'), JSON.stringify({ objects: {} }));
-  return { id, version, nativeJar, nativePath: path.join(versionDir, 'natives', nativeName) };
+  const nativePaths = nativeNames.map(name => path.join(versionDir, 'natives', name));
+  return { id, version, nativeJar: archives[0].nativeJar, nativeJars: archives.map(({ nativeJar }) => nativeJar), nativePath: nativePaths[0], nativePaths };
 }
 
 function launchDependencies() {
@@ -283,13 +292,16 @@ test('reader resolves development and packaged binaries and falls back on native
 
 test('production preload launches with a valid native JAR and extracts native bytes unchanged', async () => {
   await withTempRoot(async root => {
-    const nativeName = process.platform === 'win32' ? 'lwjgl64.dll' : 'liblwjgl.so';
+    const nativeName = process.platform === 'win32' ? 'lwjgl64.dll' : process.platform === 'darwin' ? 'liblwjgl.dylib' : 'liblwjgl.so';
     const nativeSuffix = process.platform === 'win32' ? 'natives-windows' : process.platform === 'darwin' ? 'natives-osx' : 'natives-linux';
     const nativeBytes = Buffer.from([0, 255, 17, 42, 128, 10]);
-    const nativeJar = makeStoredZip([[nativeName, nativeBytes], ['META-INF/MANIFEST.MF', 'fixture manifest']]);
+    const nativeJar = makeZip([
+      [nativeName, nativeBytes, { compression: 8 }],
+      ['META-INF/MANIFEST.MF', 'fixture manifest', { compression: 8 }],
+    ]);
     const archivePath = path.join(root, 'valid-native.jar');
     fs.writeFileSync(archivePath, nativeJar);
-    const fixture = prepareNativeLaunch(root, archivePath, nativeSuffix, nativeName);
+    const fixture = prepareNativeLaunch(root, archivePath, nativeSuffix, [nativeName]);
     const deps = launchDependencies();
     const handlers = new Map();
     const { exposed, invocations } = loadProductionIpc(root, handlers, deps);
@@ -302,24 +314,29 @@ test('production preload launches with a valid native JAR and extracts native by
   });
 });
 
-test('production preload skips native writes for over-limit and malformed JARs without changing existing files', async () => {
+test('production preload validates all native JARs before writing any candidate files', async () => {
   await withTempRoot(async root => {
-    const nativeName = process.platform === 'win32' ? 'lwjgl64.dll' : 'liblwjgl.so';
+    const nativeName = process.platform === 'win32' ? 'lwjgl64.dll' : process.platform === 'darwin' ? 'liblwjgl.dylib' : 'liblwjgl.so';
     const nativeSuffix = process.platform === 'win32' ? 'natives-windows' : process.platform === 'darwin' ? 'natives-osx' : 'natives-linux';
+    const rejectedNativeName = process.platform === 'win32' ? 'rejected.dll' : process.platform === 'darwin' ? 'rejected.dylib' : 'rejected.so';
+    const sentinelName = process.platform === 'win32' ? 'sentinel.dll' : process.platform === 'darwin' ? 'sentinel.dylib' : 'sentinel.so';
     const rejectedArchives = [
-      ['oversize', makeStoredZip([[nativeName, 'small native', { declaredUncompressedSize: 128 * 1024 * 1024 + 1 }]]), /entry exceeds size limit/],
-      ['malformed', makeStoredZip([[nativeName, 'corrupt native', { corruptCrc: true }]]), /corrupt entry/],
+      ['oversize', makeZip([[rejectedNativeName, 'small native', { declaredUncompressedSize: 128 * 1024 * 1024 + 1 }]]), /entry exceeds size limit/],
+      ['malformed', makeZip([[rejectedNativeName, 'corrupt native', { corruptCrc: true }]]), /corrupt entry/],
     ];
-    for (const [label, archiveBytes, expectedError] of rejectedArchives) {
+    for (const [label, rejectedBytes, expectedError] of rejectedArchives) {
       for (const hasExistingNative of [true, false]) {
-        const archivePath = path.join(root, `${label}.jar`);
-        fs.writeFileSync(archivePath, archiveBytes);
-        const fixture = prepareNativeLaunch(root, archivePath, nativeSuffix, nativeName);
-        fs.rmSync(fixture.nativePath, { force: true });
+        const validBytes = makeZip([[nativeName, `${label} valid native`, { compression: 8 }]]);
+        const validArchivePath = path.join(root, `${label}-valid.jar`);
+        const rejectedArchivePath = path.join(root, `${label}-rejected.jar`);
+        fs.writeFileSync(validArchivePath, validBytes);
+        fs.writeFileSync(rejectedArchivePath, rejectedBytes);
+        const fixture = prepareNativeLaunch(root, [validArchivePath, rejectedArchivePath], nativeSuffix, [nativeName, rejectedNativeName, sentinelName]);
+        for (const nativePath of fixture.nativePaths) fs.rmSync(nativePath, { force: true });
         const existingNative = Buffer.from('preserve existing native');
         if (hasExistingNative) {
           fs.mkdirSync(path.dirname(fixture.nativePath), { recursive: true });
-          fs.writeFileSync(fixture.nativePath, existingNative);
+          fs.writeFileSync(fixture.nativePaths[2], existingNative);
         }
         const deps = launchDependencies();
         const warnings = [];
@@ -333,11 +350,11 @@ test('production preload skips native writes for over-limit and malformed JARs w
             return fs.readdirSync(directory, ...args);
           },
           writeFileSync(filePath, ...args) {
-            if (String(filePath) === fixture.nativePath) nativeWriteAttempts.push(filePath);
+            if (fixture.nativePaths.includes(String(filePath))) nativeWriteAttempts.push(String(filePath));
             return fs.writeFileSync(filePath, ...args);
           },
           unlinkSync(filePath) {
-            if (String(filePath) === fixture.nativePath) nativeDeleteAttempts.push(filePath);
+            if (fixture.nativePaths.includes(String(filePath))) nativeDeleteAttempts.push(String(filePath));
             return fs.unlinkSync(filePath);
           },
         };
@@ -348,13 +365,15 @@ test('production preload skips native writes for over-limit and malformed JARs w
         });
 
         const result = await exposed.craftdockInstance.launch({ id: fixture.id, mcVersion: fixture.version });
-        assert.equal(result.success, true, 'the existing launch response remains unchanged despite a rejected native archive');
-        assert.deepEqual(nativeWriteAttempts, [], `${label} is rejected before native target writes`);
-        assert.deepEqual(nativeDeleteAttempts, [], `${label} is rejected before native target deletion`);
-        assert.equal(fs.existsSync(fixture.nativePath), hasExistingNative, `${label} does not create or remove the target`);
-        if (hasExistingNative) assert.deepEqual(fs.readFileSync(fixture.nativePath), existingNative, `${label} preserves the existing native`);
+        assert.equal(result.success, true, 'the current launch success contract is retained');
+        assert.deepEqual(nativeWriteAttempts, [], `${label} candidate archives do not partially write native files`);
+        assert.deepEqual(nativeDeleteAttempts, [], `${label} does not delete native targets`);
+        assert.equal(fs.existsSync(fixture.nativePaths[0]), false, `${label} valid candidate native is not written`);
+        assert.equal(fs.existsSync(fixture.nativePaths[1]), false, `${label} rejected candidate native is not written`);
+        assert.equal(fs.existsSync(fixture.nativePaths[2]), hasExistingNative, `${label} leaves sentinel presence unchanged`);
+        if (hasExistingNative) assert.deepEqual(fs.readFileSync(fixture.nativePaths[2]), existingNative, `${label} preserves sentinel bytes`);
         assert.equal(deps.spawnCalls.filter(args => args.includes('net.minecraft.client.main.Main')).length, 1);
-        assert.ok(warnings.some(parts => expectedError.test(parts)), `${label} is reported through the current native extraction warning`);
+        assert.ok(warnings.some(parts => expectedError.test(parts)), `${label} is reported through the existing extraction warning`);
       }
     }
   });
