@@ -133,7 +133,7 @@ function createReader(root, packaged = false, runNative) {
   });
 }
 
-function loadProductionIpc(tempRoot, handlers, modpackMetadataModule) {
+function loadProductionIpc(tempRoot, handlers, modpackMetadataModule, fsOverrides = {}) {
   const exposed = {};
   const app = {
     isPackaged: false, setAppUserModelId() {}, setName() {}, on() {},
@@ -144,6 +144,7 @@ function loadProductionIpc(tempRoot, handlers, modpackMetadataModule) {
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler), on() {} },
     dialog: {}, shell: {}, Tray: class {}, Menu: {}, nativeImage: {},
   };
+  const mainFs = Object.keys(fsOverrides).length ? Object.assign(Object.create(fs), fsOverrides) : fs;
   const mockMainRequire = name => {
     if (name === 'electron') return electronMain;
     if (name === './servers-dat') return require('../servers-dat');
@@ -155,11 +156,16 @@ function loadProductionIpc(tempRoot, handlers, modpackMetadataModule) {
     if (name === './package.json') return require('../package.json');
     return require(name);
   };
-  vm.runInNewContext(fs.readFileSync(path.join(projectRoot, 'main.js'), 'utf8'), {
+  const mainContext = {
     Buffer, __dirname: tempRoot, console: { log() {}, warn() {}, error() {} }, fetch,
     module: { exports: {} }, process: { ...process, resourcesPath: path.join(tempRoot, 'resources') },
-    require: mockMainRequire, setInterval: () => 0, clearInterval() {},
-  }, { filename: 'main.js' });
+    require: name => name === 'fs' ? mainFs : mockMainRequire(name),
+    setInterval: () => 0, clearInterval() {},
+  };
+  const mainSource = fs.readFileSync(path.join(projectRoot, 'main.js'), 'utf8')
+    .replace('// ── Verify a JAR/ZIP file has a valid ZIP end-of-central-directory ──',
+      'globalThis.__readZipEntriesForTest = readZipEntries;\n// ── Verify a JAR/ZIP file has a valid ZIP end-of-central-directory ──');
+  vm.runInNewContext(mainSource, mainContext, { filename: 'main.js' });
 
   const invocations = [];
   const electronPreload = {
@@ -177,7 +183,7 @@ function loadProductionIpc(tempRoot, handlers, modpackMetadataModule) {
   vm.runInNewContext(fs.readFileSync(path.join(projectRoot, 'preload.js'), 'utf8'), {
     require: name => name === 'electron' ? electronPreload : require(name),
   }, { filename: 'preload.js' });
-  return { exposed, invocations };
+  return { exposed, invocations, readZipEntries: mainContext.__readZipEntriesForTest };
 }
 
 function instanceDirectories(root) {
@@ -315,6 +321,95 @@ test('preload-to-handler rejects ambiguous ZIP entry names and corrupt or unsupp
       assert.deepEqual(instanceDirectories(root), [], `${label} creates no instance directory`);
     });
   }
+});
+
+test('ZIP reader accepts exact size boundaries and rejects each just-over-limit boundary', async () => {
+  await withTempRoot(async root => {
+    const archive = path.join(root, 'boundaries.zip');
+    const expandedPayload = 'abcdefghij'.repeat(10);
+    const compressedPayload = zlib.deflateRawSync(Buffer.from(expandedPayload));
+    const bytes = makeStoredZip([
+      ['one.txt', 'abc', 0, { flags: 0x8, localSizes: false }],
+      ['two.txt', 'de', 0, { flags: 0x8, localSizes: false, descriptorSignature: false }],
+      ['three.txt', expandedPayload, 0, { compression: 8 }],
+    ]);
+    fs.writeFileSync(archive, bytes);
+    const { readZipEntries } = loadProductionIpc(root, new Map(), require('../modpack-metadata'));
+    const exact = {
+      maxArchiveBytes: bytes.length,
+      maxEntries: 3,
+      maxCompressedEntryBytes: compressedPayload.length,
+      maxUncompressedEntryBytes: expandedPayload.length,
+      maxExpandedBytes: 105,
+    };
+    assert.deepEqual([...readZipEntries(archive, exact).keys()], ['one.txt', 'two.txt', 'three.txt']);
+
+    const overLimit = [
+      ['archive', { ...exact, maxArchiveBytes: bytes.length - 1 }, /archive exceeds size limit/],
+      ['entry count', { ...exact, maxEntries: 2 }, /entry count exceeds size limit/],
+      ['compressed entry', { ...exact, maxCompressedEntryBytes: compressedPayload.length - 1 }, /entry exceeds size limit/],
+      ['uncompressed entry', { ...exact, maxUncompressedEntryBytes: expandedPayload.length - 1 }, /entry exceeds size limit/],
+      ['cumulative expansion', { ...exact, maxExpandedBytes: 104 }, /expanded data exceeds size limit/],
+    ];
+    for (const [label, limits, expected] of overLimit) {
+      assert.throws(() => readZipEntries(archive, limits), expected, `${label} rejects immediately over its limit`);
+    }
+  });
+});
+
+test('oversized archive returns the import error contract before instance creation', async () => {
+  await withTempRoot(async root => {
+    const archive = path.join(fixtureRoot, 'curseforge-defaults.zip');
+    const originalFstatSync = fs.fstatSync;
+    const handlers = new Map();
+    const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'), {
+      fstatSync(fd, ...args) {
+        const stat = originalFstatSync.call(fs, fd, ...args);
+        return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, { size: 256 * 1024 * 1024 + 1 });
+      },
+    });
+    const { result, attempts } = await importAndTrackInstanceWrites(exposed, archive, 'cf');
+    assert.deepEqual(Object.keys(result).sort(), ['error', 'success']);
+    assert.equal(result.success, false);
+    assert.match(result.error, /archive exceeds size limit/);
+    assert.equal(attempts.instanceCreation, false);
+    assert.equal(attempts.metadataWrite, false);
+    assert.deepEqual(instanceDirectories(root), []);
+  });
+});
+
+test('preload-to-handler uses the shared ZIP reader for server backup restore', async () => {
+  await withTempRoot(async root => {
+    const handlers = new Map();
+    const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
+    const serverDir = path.join(root, 'craftdock-data', 'servers', 'srv_test');
+    const invalidBackup = path.join(serverDir, 'backups', 'invalid-backup.zip');
+    fs.mkdirSync(path.join(serverDir, 'world'), { recursive: true });
+    fs.mkdirSync(path.dirname(invalidBackup), { recursive: true });
+    fs.writeFileSync(path.join(serverDir, 'world', 'keep.txt'), 'preserve current world');
+    fs.writeFileSync(invalidBackup, 'not a zip');
+    const result = await exposed.craftdockServer.restoreBackup('srv_test', 'invalid-backup.zip');
+    assert.equal(result.success, false);
+    assert.match(result.error, /Backup restore failed: Invalid ZIP/);
+    assert.equal(fs.readFileSync(path.join(serverDir, 'world', 'keep.txt'), 'utf8'), 'preserve current world');
+  });
+});
+
+test('preload-to-handler restores a normal server backup through the bounded ZIP reader', async () => {
+  await withTempRoot(async root => {
+    const serverDir = path.join(root, 'craftdock-data', 'servers', 'srv_test');
+    const backupPath = path.join(serverDir, 'backups', 'world.zip');
+    fs.mkdirSync(path.join(serverDir, 'world'), { recursive: true });
+    fs.mkdirSync(path.dirname(backupPath), { recursive: true });
+    fs.writeFileSync(path.join(serverDir, 'world', 'old.txt'), 'old world');
+    fs.writeFileSync(backupPath, makeStoredZip([['world/level.dat', 'restored world']]));
+    const handlers = new Map();
+    const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
+    const result = await exposed.craftdockServer.restoreBackup('srv_test', 'world.zip');
+    assert.equal(result.success, true);
+    assert.equal(fs.existsSync(path.join(serverDir, 'world', 'old.txt')), false);
+    assert.equal(fs.readFileSync(path.join(serverDir, 'world', 'level.dat'), 'utf8'), 'restored world');
+  });
 });
 
 test('preload-to-handler rejects truncated ZIP metadata rather than importing an incomplete archive', async () => {

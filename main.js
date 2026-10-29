@@ -739,8 +739,34 @@ async function resolveVanillaUrl(version) {
 }
 
 // ── Minimal ZIP reader (Node built-ins only, no adm-zip needed) ────
-function readZipEntries(zipPath) {
-  const buf = fs.readFileSync(zipPath);
+// Limits: 256 MiB archive, 50,000 entries, 128 MiB per compressed/expanded entry,
+// and 256 MiB total expanded data. Shared by modpacks, JARs, and server backups.
+const ZIP_LIMITS = Object.freeze({
+  maxArchiveBytes: 256 * 1024 * 1024,
+  maxEntries: 50000,
+  maxCompressedEntryBytes: 128 * 1024 * 1024,
+  maxUncompressedEntryBytes: 128 * 1024 * 1024,
+  maxExpandedBytes: 256 * 1024 * 1024,
+});
+
+function readZipEntries(zipPath, limits = ZIP_LIMITS) {
+  const fd = fs.openSync(zipPath, 'r');
+  let buf;
+  try {
+    const archiveSize = fs.fstatSync(fd).size;
+    if (!Number.isSafeInteger(archiveSize) || archiveSize < 0) throw new Error('Invalid ZIP: invalid archive size');
+    if (archiveSize > limits.maxArchiveBytes) throw new Error('Invalid ZIP: archive exceeds size limit');
+    buf = Buffer.allocUnsafe(archiveSize);
+    let bytesRead = 0;
+    while (bytesRead < archiveSize) {
+      const count = fs.readSync(fd, buf, bytesRead, archiveSize - bytesRead, bytesRead);
+      if (!count) throw new Error('Invalid ZIP: archive changed or truncated while reading');
+      bytesRead += count;
+    }
+    if (fs.fstatSync(fd).size !== archiveSize) throw new Error('Invalid ZIP: archive changed while reading');
+  } finally {
+    fs.closeSync(fd);
+  }
   const zlib = require('zlib');
   const entries = new Map();
   const read16 = (offset, end = buf.length) => {
@@ -794,6 +820,7 @@ function readZipEntries(zipPath) {
   }
 
   const cdCount = read16(eocdOffset + 10);
+  if (cdCount > limits.maxEntries) throw new Error('Invalid ZIP: entry count exceeds size limit');
   const cdSize = read32(eocdOffset + 12);
   const cdOffset = read32(eocdOffset + 16);
   const cdEnd = cdOffset + cdSize;
@@ -803,6 +830,8 @@ function readZipEntries(zipPath) {
   }
 
   let pos = cdOffset;
+  let expandedBytes = 0;
+  const metadata = [];
   const normalizedNames = new Set();
   for (let i = 0; i < cdCount; i++) {
     if (read32(pos, cdEnd) !== 0x02014b50) throw new Error('Invalid ZIP: bad central directory entry');
@@ -834,6 +863,11 @@ function readZipEntries(zipPath) {
     if (flags & ~0x080e) throw new Error('Invalid ZIP: unsupported general-purpose flags');
     if (compression !== 0 && compression !== 8) throw new Error('Invalid ZIP: unsupported compression method');
     if (compression !== 8 && (flags & 0x6)) throw new Error('Invalid ZIP: invalid compression flags');
+    if (compressedSz > limits.maxCompressedEntryBytes || uncompressedSz > limits.maxUncompressedEntryBytes) {
+      throw new Error('Invalid ZIP: entry exceeds size limit');
+    }
+    expandedBytes += uncompressedSz;
+    if (expandedBytes > limits.maxExpandedBytes) throw new Error('Invalid ZIP: expanded data exceeds size limit');
     if (compression === 0 && compressedSz !== uncompressedSz) throw new Error('Invalid ZIP: corrupt stored entry size');
 
     if (read32(localOffset) !== 0x04034b50) throw new Error('Invalid ZIP: bad local file header');
@@ -870,10 +904,17 @@ function readZipEntries(zipPath) {
       throw new Error('Invalid ZIP: local and central entry sizes differ');
     }
 
+    metadata.push({ name, compression, crc, compressedSz, uncompressedSz, dataOffset, dataEnd });
+    pos = entryEnd;
+  }
+  if (pos !== cdEnd) throw new Error('Invalid ZIP: central directory size mismatch');
+
+  // Validate every declared size and descriptor before allocating expanded entry data.
+  for (const { name, compression, crc, compressedSz, uncompressedSz, dataOffset, dataEnd } of metadata) {
     const compressed = buf.subarray(dataOffset, dataEnd);
     let data;
     try {
-      data = compression === 0 ? Buffer.from(compressed) :
+      data = compression === 0 ? compressed :
         zlib.inflateRawSync(compressed, { maxOutputLength: uncompressedSz + 1 });
     } catch (error) {
       throw new Error(`Invalid ZIP: corrupt entry ${JSON.stringify(name)}: ${error.message}`);
@@ -882,9 +923,7 @@ function readZipEntries(zipPath) {
       throw new Error(`Invalid ZIP: corrupt entry ${JSON.stringify(name)} (size or CRC mismatch)`);
     }
     entries.set(name, data);
-    pos = entryEnd;
   }
-  if (pos !== cdEnd) throw new Error('Invalid ZIP: central directory size mismatch');
   return entries;
 }
 
@@ -3260,6 +3299,10 @@ ipcMain.handle('server-restore-backup', async (event, id, filename) => {
   const destPath = path.join(backupDir(id), filename);
   if (!fs.existsSync(destPath)) return { success: false, error: 'Backup file not found' };
 
+  let entries;
+  try { entries = readZipEntries(destPath); }
+  catch(e) { return { success: false, error: 'Backup restore failed: ' + e.message }; }
+
   // Stop server if running
   const proc = runningServers.get(id);
   if (proc) {
@@ -3279,7 +3322,6 @@ ipcMain.handle('server-restore-backup', async (event, id, filename) => {
 
   // Extract using built-in zip reader
   try {
-    const entries = readZipEntries(destPath);
     for (const [name, data] of entries.entries()) {
       if (name.endsWith('/')) continue;
       const dest = path.join(srvDir(id), name.replace(/\//g, path.sep));
