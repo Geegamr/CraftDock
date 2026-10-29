@@ -228,149 +228,75 @@ test('Rust rejects missing or malformed manifests and import leaves no instance 
   });
 });
 
-test('preload-to-handler import rejects override path traversal and cleans up its partial instance', async () => {
+test('preload-to-handler rejects traversal-named ZIP override entries before filesystem setup', async () => {
   await withTempRoot(async root => {
     const archive = path.join(root, 'path-traversal.zip');
     fs.writeFileSync(archive, makeStoredZip([
       ['manifest.json', JSON.stringify({ name: 'Path probe', files: [] })],
-      ['overrides/config/legitimate.txt', 'created before traversal'],
-      ['overrides/../../../escaped.txt', 'must stay inside instance'],
+      ['overrides/config/ordinary.txt', 'ordinary override'],
+      ['overrides/../../../escaped.txt', 'must not be written'],
     ]));
     const handlers = new Map();
     const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
     const result = await exposed.craftdockInstance.importPack(archive, 'cf');
     assert.equal(result.success, false);
-    assert.match(result.error, /Invalid override path/);
-    assert.deepEqual(instanceDirectories(root), [], 'partial instance is removed after unsafe override rejection');
-    assert.equal(fs.existsSync(path.join(root, 'escaped.txt')), false, 'archive cannot write outside the instance');
+    assert.match(result.error, /safe extraction is unavailable/);
+    assert.deepEqual(instanceDirectories(root), [], 'rejected override creates no instance directory');
+    assert.equal(fs.existsSync(path.join(root, 'escaped.txt')), false);
   });
 });
 
-test('preload-to-handler import rejects a file entry used as an override parent', async () => {
+test('preload-to-handler rejects ZIP override names regardless of stored Unix mode metadata', async () => {
   await withTempRoot(async root => {
-    const archive = path.join(root, 'file-parent-entry.mrpack');
+    const archive = path.join(root, 'unix-mode.mrpack');
     fs.writeFileSync(archive, makeStoredZip([
-      ['modrinth.index.json', JSON.stringify({ name: 'File parent probe', files: [] })],
-      ['overrides/config', path.join(root, 'outside-instance')],
-      ['overrides/config/options.txt', 'must not be written outside'],
+      ['modrinth.index.json', JSON.stringify({ name: 'ZIP mode probe', files: [] })],
+      ['overrides/config/options.txt', 'ordinary ZIP payload', 0o120777],
     ]));
-    const outside = path.join(root, 'outside-instance');
-    fs.mkdirSync(outside);
     const handlers = new Map();
     const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
     const result = await exposed.craftdockInstance.importPack(archive, 'mr');
     assert.equal(result.success, false);
-    assert.match(result.error, /Invalid override path/);
-    assert.deepEqual(instanceDirectories(root), [], 'failed import removes its newly created instance');
-    assert.equal(fs.existsSync(path.join(outside, 'options.txt')), false, 'archive entry cannot redirect the following write');
+    assert.match(result.error, /safe extraction is unavailable/);
+    assert.deepEqual(instanceDirectories(root), [], 'the importer gates on entry names and never extracts ZIP metadata');
   });
 });
 
-test('preload-to-handler import rejects junction overrides and cleans up only its new instance', async () => {
-  await withTempRoot(async root => {
-    const outside = path.join(root, 'outside-instance');
-    fs.mkdirSync(outside);
-    fs.writeFileSync(path.join(outside, 'sentinel.txt'), 'keep outside data');
-    const handlers = new Map();
-    const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
-    const originalMkdirSync = fs.mkdirSync;
-    let junctionPlanted = false;
-    fs.mkdirSync = function (directory, ...args) {
-      const result = originalMkdirSync.call(this, directory, ...args);
-      if (!junctionPlanted && path.basename(String(directory)) === 'mods' && String(directory).includes(`${path.sep}instances${path.sep}`)) {
-        const instancePath = path.dirname(String(directory));
-        fs.symlinkSync(outside, path.join(instancePath, 'config'), process.platform === 'win32' ? 'junction' : 'dir');
-        junctionPlanted = true;
-      }
-      return result;
-    };
-    let result;
-    try {
-      result = await exposed.craftdockInstance.importPack(path.join(fixtureRoot, 'modrinth-full.mrpack'), 'mr');
-    } finally {
-      fs.mkdirSync = originalMkdirSync;
-    }
-    assert.equal(junctionPlanted, true, 'test planted a directory junction/symlink inside the new instance');
-    assert.equal(result.success, false);
-    assert.match(result.error, /Invalid override path/);
-    assert.deepEqual(instanceDirectories(root), [], 'failed import removes only its newly created instance');
-    assert.equal(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8'), 'keep outside data', 'cleanup preserves the junction target');
-    assert.equal(fs.existsSync(path.join(outside, 'options.txt')), false, 'archive cannot write through the junction');
-  });
-});
-
-test('preload-to-handler import rejects a parent swapped for a junction at file-open without leaving an outside file', async () => {
+test('preload-to-handler late-hard-link attack cannot observe payload because override write is never attempted', async () => {
   await withTempRoot(async root => {
     const outside = path.join(root, 'outside-instance');
     fs.mkdirSync(outside);
     fs.writeFileSync(path.join(outside, 'sentinel.txt'), 'preserve outside data');
-    const handlers = new Map();
-    const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
-    const originalOpenSync = fs.openSync;
-    let junctionPlanted = false;
-    fs.openSync = function (filePath, ...args) {
-      if (!junctionPlanted && String(filePath).includes(`${path.sep}instances${path.sep}`) &&
-          String(filePath).endsWith(`${path.sep}config${path.sep}options.txt`)) {
-        const parent = path.dirname(String(filePath));
-        fs.renameSync(parent, `${parent}-moved`);
-        fs.symlinkSync(outside, parent, process.platform === 'win32' ? 'junction' : 'dir');
-        junctionPlanted = true;
-      }
-      return originalOpenSync.call(this, filePath, ...args);
-    };
-    let result;
-    try {
-      result = await exposed.craftdockInstance.importPack(path.join(fixtureRoot, 'modrinth-full.mrpack'), 'mr');
-    } finally {
-      fs.openSync = originalOpenSync;
-    }
-    assert.equal(junctionPlanted, true, 'test swaps the parent immediately before the file-open operation');
-    assert.equal(result.success, false, 'the opened parent is revalidated before writing');
-    assert.match(result.error, /Invalid override path/);
-    const outsideOptions = path.join(outside, 'options.txt');
-    assert.equal(fs.existsSync(outsideOptions), false, 'the empty file created during the swap is safely removed');
-    assert.equal(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8'), 'preserve outside data');
-    assert.deepEqual(instanceDirectories(root), [], 'failed import cleans up only its newly created instance');
-  });
-});
-
-test('preload-to-handler import stays safe if an override parent is swapped after open and before write', async () => {
-  await withTempRoot(async root => {
-    const outside = path.join(root, 'outside-instance');
-    fs.mkdirSync(outside);
-    fs.writeFileSync(path.join(outside, 'sentinel.txt'), 'preserve outside data');
-    const archive = path.join(root, 'post-open-swap.mrpack');
+    const outsideLink = path.join(outside, 'options.txt');
+    const archive = path.join(root, 'late-hardlink.mrpack');
     fs.writeFileSync(archive, makeStoredZip([
-      ['modrinth.index.json', JSON.stringify({ name: 'Post-open swap probe', files: [] })],
-      ['overrides/config/options.txt', 'override bytes'],
+      ['modrinth.index.json', JSON.stringify({ name: 'Late hard-link probe', files: [] })],
+      ['overrides/config/options.txt', 'sensitive override payload'],
     ]));
     const handlers = new Map();
     const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
     const originalOpenSync = fs.openSync;
     const originalWriteSync = fs.writeSync;
-    let overrideFd;
-    let overrideParent;
-    let swapAttempted = false;
-    let swapSucceeded = false;
+    const originalLinkSync = fs.linkSync;
+    let destinationFd;
+    let destinationPath;
+    let destinationOpenAttempted = false;
+    let payloadWriteAttempted = false;
+    let lateHardLinkAttempted = false;
     fs.openSync = function (filePath, ...args) {
+      if (String(filePath).includes(`${path.sep}instances${path.sep}`)) destinationOpenAttempted = true;
       const fd = originalOpenSync.call(this, filePath, ...args);
-      if (!overrideFd && String(filePath).includes(`${path.sep}instances${path.sep}`) &&
-          String(filePath).endsWith(`${path.sep}config${path.sep}options.txt`)) {
-        overrideFd = fd;
-        overrideParent = path.dirname(String(filePath));
+      if (String(filePath).endsWith(`${path.sep}config${path.sep}options.txt`)) {
+        destinationFd = fd;
+        destinationPath = String(filePath);
       }
       return fd;
     };
     fs.writeSync = function (fd, ...args) {
-      if (fd === overrideFd && !swapAttempted) {
-        swapAttempted = true;
-        try {
-          fs.renameSync(overrideParent, `${overrideParent}-moved`);
-          fs.symlinkSync(outside, overrideParent, process.platform === 'win32' ? 'junction' : 'dir');
-          swapSucceeded = true;
-        } catch (error) {
-          if (error.code !== 'EPERM' && error.code !== 'EBUSY') throw error;
-        }
+      if (fd === destinationFd) {
+        payloadWriteAttempted = true;
+        lateHardLinkAttempted = true;
+        originalLinkSync.call(this, destinationPath, outsideLink);
       }
       return originalWriteSync.call(this, fd, ...args);
     };
@@ -381,23 +307,19 @@ test('preload-to-handler import stays safe if an override parent is swapped afte
       fs.openSync = originalOpenSync;
       fs.writeSync = originalWriteSync;
     }
-    assert.equal(swapAttempted, true, 'the attempted swap occurs after open and before the first write');
+    assert.deepEqual(Object.keys(result).sort(), ['error', 'success'], 'failure preserves the IPC result contract');
+    assert.equal(result.success, false);
+    assert.match(result.error, /safe extraction is unavailable/);
+    assert.equal(destinationOpenAttempted, false, 'no override destination is opened');
+    assert.equal(payloadWriteAttempted, false, 'no override payload write is attempted');
+    assert.equal(lateHardLinkAttempted, false, 'the simulated outside link cannot be installed before a payload write');
+    assert.equal(fs.existsSync(outsideLink), false);
     assert.equal(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8'), 'preserve outside data');
-    assert.equal(fs.existsSync(path.join(outside, 'options.txt')), false, 'override bytes never reach the outside target');
-    if (swapSucceeded) {
-      assert.equal(result.success, false, 'a successful parent replacement is rejected');
-      assert.match(result.error, /Invalid override path/);
-      assert.deepEqual(instanceDirectories(root), [], 'failed import removes only its newly created instance');
-    } else {
-      assert.equal(result.success, true, 'when the platform blocks replacement of the open parent, import can finish safely');
-      const instance = path.join(root, 'craftdock-data', 'instances', result.id);
-      assert.equal(fs.readFileSync(path.join(instance, 'config', 'options.txt'), 'utf8'), 'override bytes', 'data remains in the opened in-instance file');
-      assert.deepEqual(instanceDirectories(root), [result.id]);
-    }
+    assert.deepEqual(instanceDirectories(root), [], 'rejected archive creates no instance directory');
   });
 });
 
-test('preload-to-handler import runs the real Rust binary and preserves IPC metadata and override behavior', async () => {
+test('preload-to-handler imports a Modrinth pack without overrides using the Rust metadata reader', async () => {
   buildRustBinary();
   await withTempRoot(async root => {
     const binary = path.join(root, 'rust', 'target', 'debug', binaryName);
@@ -417,41 +339,34 @@ test('preload-to-handler import runs the real Rust binary and preserves IPC meta
     };
     const handlers = new Map();
     const { exposed, invocations } = loadProductionIpc(root, handlers, instrumentedModule);
-    const archive = path.join(fixtureRoot, 'modrinth-full.mrpack');
+    const archive = path.join(fixtureRoot, 'modrinth-defaults.mrpack');
     const result = await exposed.craftdockInstance.importPack(archive, 'mr');
     assert.equal(result.success, true);
-    assert.equal(result.name, 'Cobblemon Adventures 🌍');
-    assert.equal(result.mcVersion, '1.20.1');
-    assert.equal(result.loader, 'fabric-loader');
-    assert.equal(result.modCount, 1);
+    assert.equal(result.mcVersion, '1.21.4');
+    assert.equal(result.modCount, 0);
     assert.match(result.id, /^inst_\d+$/);
     assert.deepEqual(JSON.parse(JSON.stringify(invocations)), [['instance-import-pack', archive, 'mr']]);
-    assert.deepEqual(nativeCalls, [[binary, ['inspect', archive, 'mr']]], 'production import invokes the copied Rust binary');
+    assert.deepEqual(nativeCalls, [[binary, ['inspect', archive, 'mr']]]);
     const instanceDir = path.join(root, 'craftdock-data', 'instances', result.id);
     const metadata = JSON.parse(fs.readFileSync(path.join(instanceDir, 'instance.json'), 'utf8'));
-    assert.deepEqual(metadata._pendingMods, [], 'Modrinth download records keep the current import metadata shape');
-    assert.equal(fs.readFileSync(path.join(instanceDir, 'config', 'options.txt'), 'utf8'), 'not parsed by Rust');
+    assert.deepEqual(metadata._pendingMods, []);
+    assert.deepEqual(instanceDirectories(root), [result.id]);
   });
 });
 
-test('preload-to-handler import uses JS fallback when no Rust executable is available', async () => {
+test('preload-to-handler imports a CurseForge pack without overrides using the JS metadata fallback', async () => {
   await withTempRoot(async root => {
     const handlers = new Map();
     const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
-    const archive = path.join(fixtureRoot, 'curseforge-full.zip');
+    const archive = path.join(fixtureRoot, 'curseforge-defaults.zip');
     const result = await exposed.craftdockInstance.importPack(archive, 'cf');
     assert.equal(result.success, true);
-    assert.equal(result.name, 'Forge Pack');
-    assert.equal(result.mcVersion, '1.19.4');
-    assert.equal(result.loader, 'forge');
-    assert.equal(result.modCount, 2);
+    assert.equal(result.mcVersion, '1.21.4');
+    assert.equal(result.modCount, 0);
     const instanceDir = path.join(root, 'craftdock-data', 'instances', result.id);
     const metadata = JSON.parse(fs.readFileSync(path.join(instanceDir, 'instance.json'), 'utf8'));
-    assert.deepEqual(metadata._pendingMods, [
-      { projectId: 11, fileId: 22, required: false },
-      { projectId: 33, fileId: 44, required: true },
-    ]);
-    assert.equal(fs.readFileSync(path.join(instanceDir, 'config', 'server.properties'), 'utf8'), 'motd=fixture');
+    assert.deepEqual(metadata._pendingMods, []);
+    assert.deepEqual(instanceDirectories(root), [result.id]);
   });
 });
 
@@ -470,7 +385,7 @@ test('failed metadata persistence removes a newly created instance directory', a
     };
     let result;
     try {
-      result = await exposed.craftdockInstance.importPack(path.join(fixtureRoot, 'modrinth-full.mrpack'), 'mr');
+      result = await exposed.craftdockInstance.importPack(path.join(fixtureRoot, 'modrinth-defaults.mrpack'), 'mr');
     } finally {
       fs.writeFileSync = originalWriteFileSync;
     }

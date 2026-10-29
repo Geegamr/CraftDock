@@ -1128,79 +1128,14 @@ ipcMain.handle('instance-write-config-file', (_, filePath, text) => {
 });
 
 // ── Pack import (CurseForge .zip / Modrinth .mrpack) ───────────────────────
-function writeInstanceOverride(instPath, relativePath, contents) {
-  const dest = path.resolve(instPath, relativePath);
-  const relativeDest = path.relative(instPath, dest);
-  if (!relativeDest || relativeDest === '..' || relativeDest.startsWith('..' + path.sep) || path.isAbsolute(relativeDest)) {
-    throw new Error('Invalid override path');
-  }
-
-  const realInstancePath = fs.realpathSync(instPath);
-  const isWithinInstance = candidate => {
-    const relative = path.relative(realInstancePath, candidate);
-    return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative));
-  };
-  const assertSafeDirectory = directory => {
-    const stat = fs.lstatSync(directory);
-    const realPath = fs.realpathSync(directory);
-    if (stat.isSymbolicLink() || !stat.isDirectory() || !isWithinInstance(realPath)) {
-      throw new Error('Invalid override path');
-    }
-    return { dev: stat.dev, ino: stat.ino };
-  };
-
-  let parent = instPath;
-  assertSafeDirectory(parent);
-  const parts = relativeDest.split(path.sep);
-  for (const part of parts.slice(0, -1)) {
-    const directory = path.join(parent, part);
-    try { fs.mkdirSync(directory); }
-    catch (error) { if (error.code !== 'EEXIST') throw error; }
-    assertSafeDirectory(directory);
-    parent = directory;
-  }
-  assertSafeDirectory(parent);
-
-  const target = path.join(parent, parts[parts.length - 1]);
-  let fd;
-  try {
-    fd = fs.openSync(target, 'wx');
-    const parentAfterOpen = assertSafeDirectory(parent);
-    const parentStat = fs.statSync(parent);
-    const targetStat = fs.lstatSync(target);
-    const openedStat = fs.fstatSync(fd);
-    if (parentAfterOpen.dev !== parentStat.dev || parentAfterOpen.ino !== parentStat.ino ||
-        targetStat.isSymbolicLink() || !targetStat.isFile() ||
-        targetStat.dev !== openedStat.dev || targetStat.ino !== openedStat.ino) {
-      throw new Error('Invalid override path');
-    }
-    let offset = 0;
-    while (offset < contents.length) {
-      offset += fs.writeSync(fd, contents, offset, contents.length - offset);
-    }
-    assertSafeDirectory(parent);
-  } catch (error) {
-    if (fd !== undefined) {
-      try {
-        const openedStat = fs.fstatSync(fd);
-        fs.closeSync(fd);
-        fd = undefined;
-        const targetStat = fs.lstatSync(target);
-        if (targetStat.isFile() && targetStat.dev === openedStat.dev && targetStat.ino === openedStat.ino) {
-          fs.unlinkSync(target);
-        }
-      } catch {}
-    }
-    throw error;
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
-}
-
 ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
   let createdInstancePath;
   try {
-    const zipEntries = readZipEntries(filePath); // Map<name, Buffer> used by JS fallback and override extraction
+    const zipEntries = readZipEntries(filePath);
+    const overrideEntries = [...zipEntries.keys()].filter(name => name.startsWith('overrides/') && !name.endsWith('/'));
+    if (overrideEntries.length) {
+      throw new Error(`Modpack contains ${overrideEntries.length} override file(s), but safe extraction is unavailable; import without overrides is supported.`);
+    }
     const { packName, mcVersion, loader, loaderVersion, mods } =
       await readModpackMetadata(filePath, type, zipEntries);
 
@@ -1223,14 +1158,6 @@ ipcMain.handle('instance-import-pack', async (_, filePath, type) => {
       mods: [],
     };
     writeInstMeta(id, meta);
-
-    // For .mrpack / CurseForge zip — extract overrides folder
-    for (const [name, buf] of zipEntries) {
-      if (name.startsWith('overrides/') && !name.endsWith('/')) {
-        const rel = name.replace(/^overrides\//, '').replace(/[\\/]+/g, path.sep);
-        writeInstanceOverride(instPath, rel, buf);
-      }
-    }
 
     return { success: true, id, name: packName, mcVersion, loader, modCount: mods.length };
   } catch(e) {
