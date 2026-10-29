@@ -333,10 +333,12 @@ test('production preload validates all native JARs before writing any candidate 
         fs.writeFileSync(rejectedArchivePath, rejectedBytes);
         const fixture = prepareNativeLaunch(root, [validArchivePath, rejectedArchivePath], nativeSuffix, [nativeName, rejectedNativeName, sentinelName]);
         for (const nativePath of fixture.nativePaths) fs.rmSync(nativePath, { force: true });
-        const existingNative = Buffer.from('preserve existing native');
+        const existingCandidateNative = Buffer.from('preserve rejected candidate native');
+        const existingSentinelNative = Buffer.from('preserve unrelated native');
         if (hasExistingNative) {
           fs.mkdirSync(path.dirname(fixture.nativePath), { recursive: true });
-          fs.writeFileSync(fixture.nativePaths[2], existingNative);
+          fs.writeFileSync(fixture.nativePaths[1], existingCandidateNative);
+          fs.writeFileSync(fixture.nativePaths[2], existingSentinelNative);
         }
         const deps = launchDependencies();
         const warnings = [];
@@ -369,9 +371,12 @@ test('production preload validates all native JARs before writing any candidate 
         assert.deepEqual(nativeWriteAttempts, [], `${label} candidate archives do not partially write native files`);
         assert.deepEqual(nativeDeleteAttempts, [], `${label} does not delete native targets`);
         assert.equal(fs.existsSync(fixture.nativePaths[0]), false, `${label} valid candidate native is not written`);
-        assert.equal(fs.existsSync(fixture.nativePaths[1]), false, `${label} rejected candidate native is not written`);
-        assert.equal(fs.existsSync(fixture.nativePaths[2]), hasExistingNative, `${label} leaves sentinel presence unchanged`);
-        if (hasExistingNative) assert.deepEqual(fs.readFileSync(fixture.nativePaths[2]), existingNative, `${label} preserves sentinel bytes`);
+        assert.equal(fs.existsSync(fixture.nativePaths[1]), hasExistingNative, `${label} preserves rejected candidate target presence`);
+        assert.equal(fs.existsSync(fixture.nativePaths[2]), hasExistingNative, `${label} leaves other native presence unchanged`);
+        if (hasExistingNative) {
+          assert.deepEqual(fs.readFileSync(fixture.nativePaths[1]), existingCandidateNative, `${label} preserves rejected candidate target bytes`);
+          assert.deepEqual(fs.readFileSync(fixture.nativePaths[2]), existingSentinelNative, `${label} preserves other native bytes`);
+        }
         assert.equal(deps.spawnCalls.filter(args => args.includes('net.minecraft.client.main.Main')).length, 1);
         assert.ok(warnings.some(parts => expectedError.test(parts)), `${label} is reported through the existing extraction warning`);
       }
