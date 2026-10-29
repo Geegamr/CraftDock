@@ -1902,16 +1902,6 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
       fs.readdirSync(nativesDir).some(f => nativeExts.includes(path.extname(f).toLowerCase()));
 
     if (!hasRealNatives) {
-      // Wipe dir and re-extract from scratch
-      try {
-        if (fs.existsSync(nativesDir)) {
-          for (const f of fs.readdirSync(nativesDir)) {
-            try { fs.unlinkSync(path.join(nativesDir, f)); } catch {}
-          }
-        }
-      } catch {}
-      if (!fs.existsSync(nativesDir)) fs.mkdirSync(nativesDir, { recursive: true });
-
       // Collect native JARs: scan BOTH raw classpath (before dedup) and cpMap output
       const nativeJarSet = new Set();
       for (const p of [...classpath, ...[...cpMap.values()].map(v => v.path)]) {
@@ -1930,23 +1920,42 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
       }
 
       send('progress', `Extracting natives from ${nativeJarSet.size} JAR(s)…`);
+      const stagedNativeFiles = [];
+      let extractionFailed = false;
       for (const jarPath of nativeJarSet) {
         try {
           const entries = readZipEntries(jarPath);
-          let n = 0;
-          for (const [name, buf] of entries) {
-            if (nativeExts.includes(path.extname(name).toLowerCase()) && !name.includes('/')) {
-              fs.writeFileSync(path.join(nativesDir, name), buf);
-              n++;
-            }
-          }
-          if (n > 0) send('progress', `  ✓ ${path.basename(jarPath)} → ${n} native file(s)`);
+          const files = [...entries].filter(([name]) =>
+            nativeExts.includes(path.extname(name).toLowerCase()) && !name.includes('/'));
+          stagedNativeFiles.push({ jarPath, files });
         } catch (e) {
+          extractionFailed = true;
           console.warn('[CraftDock] Natives extract error:', path.basename(jarPath), e.message);
         }
       }
 
-      const extracted = fs.readdirSync(nativesDir).filter(f => nativeExts.includes(path.extname(f).toLowerCase()));
+      // Do not remove or partially replace installed natives unless every candidate archive validated.
+      if (!extractionFailed) {
+        try {
+          if (fs.existsSync(nativesDir)) {
+            for (const f of fs.readdirSync(nativesDir)) {
+              try { fs.unlinkSync(path.join(nativesDir, f)); } catch {}
+            }
+          }
+        } catch {}
+        if (!fs.existsSync(nativesDir)) fs.mkdirSync(nativesDir, { recursive: true });
+
+        for (const { jarPath, files } of stagedNativeFiles) {
+          for (const [name, data] of files) {
+            fs.writeFileSync(path.join(nativesDir, name), data);
+          }
+          if (files.length > 0) send('progress', `  ✓ ${path.basename(jarPath)} → ${files.length} native file(s)`);
+        }
+      }
+
+      const extracted = fs.existsSync(nativesDir)
+        ? fs.readdirSync(nativesDir).filter(f => nativeExts.includes(path.extname(f).toLowerCase()))
+        : [];
       send('progress', `Natives ready: ${extracted.length} file(s) in ${path.basename(nativesDir)}`);
     }
 
