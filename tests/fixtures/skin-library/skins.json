@@ -1,0 +1,20 @@
+[
+  {
+    "id": "fixture-existing",
+    "name": "Existing image",
+    "filePath": "fixture-image.png",
+    "model": "classic"
+  },
+  {
+    "id": "fixture-missing",
+    "name": "Missing image",
+    "filePath": "missing-image.png",
+    "model": "slim"
+  },
+  {
+    "id": "fixture-inline",
+    "name": "Inline data",
+    "dataUrl": "data:text/plain;base64,SGVsbG8=",
+    "model": "classic"
+  }
+]

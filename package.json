@@ -24,7 +24,7 @@
       {
         "from": "rust/target/release",
         "to": "native",
-        "filter": ["craftdock-servers-dat", "craftdock-servers-dat.exe", "craftdock-server-jar-list", "craftdock-server-jar-list.exe", "craftdock-screenshot-list", "craftdock-screenshot-list.exe", "craftdock-config-file-list", "craftdock-config-file-list.exe", "craftdock-server-properties", "craftdock-server-properties.exe", "craftdock-instance-world-list", "craftdock-instance-world-list.exe", "craftdock-server-json", "craftdock-server-json.exe", "craftdock-modpack-metadata", "craftdock-modpack-metadata.exe", "craftdock-instance-mod-toggle", "craftdock-instance-mod-toggle.exe"]
+        "filter": ["craftdock-servers-dat", "craftdock-servers-dat.exe", "craftdock-server-jar-list", "craftdock-server-jar-list.exe", "craftdock-screenshot-list", "craftdock-screenshot-list.exe", "craftdock-config-file-list", "craftdock-config-file-list.exe", "craftdock-server-properties", "craftdock-server-properties.exe", "craftdock-instance-world-list", "craftdock-instance-world-list.exe", "craftdock-server-json", "craftdock-server-json.exe", "craftdock-modpack-metadata", "craftdock-modpack-metadata.exe", "craftdock-instance-mod-toggle", "craftdock-instance-mod-toggle.exe", "craftdock-skin-library", "craftdock-skin-library.exe"]
       }
     ],
     "files": [
@@ -38,6 +38,7 @@
       "server-json.js",
       "modpack-metadata.js",
       "instance-mod-toggle.js",
+      "skin-library.js",
       "preload.js",
       "console-preload.js",
       "src/**/*",

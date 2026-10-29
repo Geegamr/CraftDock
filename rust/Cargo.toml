@@ -38,3 +38,7 @@ path = "src/bin/craftdock-modpack-metadata.rs"
 [[bin]]
 name = "craftdock-instance-mod-toggle"
 path = "src/bin/craftdock-instance-mod-toggle.rs"
+
+[[bin]]
+name = "craftdock-skin-library"
+path = "src/bin/craftdock-skin-library.rs"

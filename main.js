@@ -81,6 +81,14 @@ const readServerJarList = createServerJarListReader(nativeReaderOptions);
 const readScreenshotList = createScreenshotListReader(nativeReaderOptions);
 const readConfigFileList = createConfigFileListReader(nativeReaderOptions);
 const serverProperties = createServerPropertiesAccess(nativeReaderOptions);
+let skinLibrary;
+function getSkinLibraryAccess() {
+  if (!skinLibrary) {
+    const { createSkinLibraryAccess } = require('./skin-library');
+    skinLibrary = createSkinLibraryAccess(nativeReaderOptions);
+  }
+  return skinLibrary;
+}
 const readModpackMetadata = createModpackMetadataReader(nativeReaderOptions);
 let instanceModAccess;
 let serverJson;
@@ -555,37 +563,10 @@ ipcMain.handle('store-delete', (_, key) => {
 });
 
 // ── IPC: Skins ─────────────────────────────────────────────
-ipcMain.handle('skins-get-all', () => {
-  const metaFile = path.join(skinsDir, 'skins.json');
-  if (!fs.existsSync(metaFile)) return [];
-  const skins = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
-  return skins.map(s => {
-    if (s.filePath && fs.existsSync(s.filePath))
-      s.dataUrl = 'data:image/png;base64,' + fs.readFileSync(s.filePath).toString('base64');
-    return s;
-  });
-});
-ipcMain.handle('skins-save', (_, skin) => {
-  const metaFile = path.join(skinsDir, 'skins.json');
-  let skins = fs.existsSync(metaFile) ? JSON.parse(fs.readFileSync(metaFile, 'utf8')) : [];
-  if (skin.dataUrl?.startsWith('data:image')) {
-    const imgPath = path.join(skinsDir, skin.id + '.png');
-    fs.writeFileSync(imgPath, Buffer.from(skin.dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'));
-    skin.filePath = imgPath; delete skin.dataUrl;
-  }
-  const idx = skins.findIndex(s => s.id === skin.id);
-  if (idx >= 0) skins[idx] = skin; else skins.push(skin);
-  fs.writeFileSync(metaFile, JSON.stringify(skins, null, 2));
-  return { success: true };
-});
-ipcMain.handle('skins-delete', (_, id) => {
-  const metaFile = path.join(skinsDir, 'skins.json');
-  if (!fs.existsSync(metaFile)) return;
-  fs.writeFileSync(metaFile, JSON.stringify(JSON.parse(fs.readFileSync(metaFile,'utf8')).filter(s=>s.id!==id), null, 2));
-  const imgPath = path.join(skinsDir, id + '.png');
-  if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
-  return { success: true };
-});
+ipcMain.handle('skins-get-all', () => getSkinLibraryAccess().getAll(skinsDir));
+ipcMain.handle('skins-save', (_, skin) => getSkinLibraryAccess().save(skinsDir, skin));
+ipcMain.handle('skins-delete', (_, id) => getSkinLibraryAccess().remove(skinsDir, id));
+
 ipcMain.handle('dialog-open-skin', async () => {
   const r = await dialog.showOpenDialog(mainWindow, {
     title: 'Select Skin PNG', filters: [{ name: 'PNG Image', extensions: ['png'] }], properties: ['openFile']
