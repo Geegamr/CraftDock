@@ -22,7 +22,15 @@ function toggleInstanceModFallback(modsDirectory, filename, enable) {
     : filename.endsWith('.disabled') ? filename : `${filename}.disabled`;
   const to = path.join(modsDirectory, targetName);
   try {
-    if (from !== to) fs.renameSync(from, to);
+    if (from !== to) {
+      fs.linkSync(from, to);
+      try {
+        fs.unlinkSync(from);
+      } catch (error) {
+        try { fs.unlinkSync(to); } catch {}
+        throw error;
+      }
+    }
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };

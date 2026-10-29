@@ -45,7 +45,19 @@ fn toggle(mods_directory: &Path, filename: &OsString, enable: bool) -> io::Resul
     } else {
         format!("{name}.disabled")
     };
-    fs::rename(source, mods_directory.join(target_name))
+    let target = mods_directory.join(target_name);
+    if target.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("Mod target already exists: {}", target.display()),
+        ));
+    }
+    fs::hard_link(&source, &target)?;
+    if let Err(error) = fs::remove_file(&source) {
+        let _ = fs::remove_file(&target);
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn run(mut args: impl Iterator<Item = OsString>) -> io::Result<()> {
@@ -118,6 +130,23 @@ mod tests {
         let directory = temp_directory();
         toggle(&directory, &OsString::from("missing.jar"), true).unwrap();
         toggle(&directory, &OsString::from("missing.jar.disabled"), false).unwrap();
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn destination_collision_preserves_both_files() {
+        let directory = temp_directory();
+        let enabled = directory.join("collision.jar");
+        let disabled = directory.join("collision.jar.disabled");
+        fs::write(&enabled, b"enabled sentinel").unwrap();
+        fs::write(&disabled, b"disabled sentinel").unwrap();
+
+        assert!(toggle(&directory, &OsString::from("collision.jar"), false).is_err());
+        assert_eq!(fs::read(&enabled).unwrap(), b"enabled sentinel");
+        assert_eq!(fs::read(&disabled).unwrap(), b"disabled sentinel");
+        assert!(toggle(&directory, &OsString::from("collision.jar.disabled"), true).is_err());
+        assert_eq!(fs::read(&enabled).unwrap(), b"enabled sentinel");
+        assert_eq!(fs::read(&disabled).unwrap(), b"disabled sentinel");
         fs::remove_dir_all(directory).unwrap();
     }
 

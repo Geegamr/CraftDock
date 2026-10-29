@@ -114,12 +114,31 @@ test('fallback preserves bytes and handles already-desired, missing, and unsafe 
     const missing = toggleInstanceModFallback(mods, 'missing.jar', false);
     assert.equal(missing.success, false);
     assert.equal(typeof missing.error, 'string');
+    for (const [enabledName, disabledName] of [
+      ['disable-collision.jar', 'disable-collision.jar.disabled'],
+      ['enable-collision.jar', 'enable-collision.jar.disabled'],
+    ]) {
+      fs.writeFileSync(path.join(mods, enabledName), Buffer.from(`source:${enabledName}`));
+      fs.writeFileSync(path.join(mods, disabledName), Buffer.from(`target:${disabledName}`));
+      const collision = toggleInstanceModFallback(
+        mods,
+        enabledName === 'disable-collision.jar' ? enabledName : disabledName,
+        enabledName !== 'disable-collision.jar',
+      );
+      assert.equal(collision.success, false);
+      assert.equal(typeof collision.error, 'string');
+      assert.deepEqual(fs.readFileSync(path.join(mods, enabledName)), Buffer.from(`source:${enabledName}`));
+      assert.deepEqual(fs.readFileSync(path.join(mods, disabledName)), Buffer.from(`target:${disabledName}`));
+    }
     for (const filename of ['../outside.jar', 'subdir/mod.jar', '..\\outside.jar', 'no-extension', '.jar', '...jar']) {
       assert.equal(isValidModFilename(filename), false, `expected unsafe or unsupported name to fail: ${filename}`);
       assert.equal(toggleInstanceModFallback(mods, filename, false).success, false);
     }
     assert.equal(isValidModFilename('space and 🌍.jar'), true);
-    assert.deepEqual(fs.readdirSync(mods).sort(), ['keep.jar']);
+    assert.deepEqual(fs.readdirSync(mods).sort(), [
+      'disable-collision.jar', 'disable-collision.jar.disabled',
+      'enable-collision.jar', 'enable-collision.jar.disabled', 'keep.jar',
+    ]);
   });
 });
 
@@ -149,6 +168,29 @@ test('Rust CLI and JavaScript fallback produce the same rename and error results
     assert.equal(fallbackMissing.success, false);
     assert.equal(await access(projectRoot).toggle(nativeMods, 'already.jar', true).then(result => result.success), true);
     assert.equal(await access(projectRoot).toggle(nativeMods, '../outside.jar', false).then(result => result.success), false);
+  });
+});
+
+test('packaged resolver selects the packaged Rust executable', async () => {
+  buildRustBinary();
+  await withTempRoot(async root => {
+    const packagedBinary = path.join(root, 'resources', 'native', binaryName);
+    fs.mkdirSync(path.dirname(packagedBinary), { recursive: true });
+    fs.copyFileSync(binaryPath, packagedBinary);
+    const mods = path.join(root, 'mods');
+    fs.mkdirSync(mods);
+    fs.writeFileSync(path.join(mods, 'packaged.jar'), 'packaged resolver bytes');
+    const calls = [];
+    const packagedAccess = access(root, true, (binary, args) => {
+      calls.push(binary);
+      const result = spawnSync(binary, args, { encoding: 'utf8' });
+      if (result.error) throw Object.assign(result.error, { failedToStart: true });
+      if (result.status !== 0) throw new Error(result.stderr || `Rust process exited with ${result.status}`);
+      return result.stdout;
+    });
+    assert.deepEqual(await packagedAccess.toggle(mods, 'packaged.jar', false), { success: true });
+    assert.deepEqual(calls, [packagedBinary]);
+    assert.equal(fs.readFileSync(path.join(mods, 'packaged.jar.disabled'), 'utf8'), 'packaged resolver bytes');
   });
 });
 
@@ -198,17 +240,36 @@ test('production preload preserves IPC and runs both Rust and fallback paths wit
       const missingDesired = await exposed.craftdockInstance.toggleMod('toggle-fixture', 'missing.jar', true);
       const missingSource = await exposed.craftdockInstance.toggleMod('toggle-fixture', 'missing.jar', false);
       const traversal = await exposed.craftdockInstance.toggleMod('toggle-fixture', '../outside.jar', false);
+      for (const [enabledName, disabledName, enable] of [
+        ['disable-collision.jar', 'disable-collision.jar.disabled', false],
+        ['enable-collision.jar', 'enable-collision.jar.disabled', true],
+      ]) {
+        const sourceName = enable ? disabledName : enabledName;
+        const targetName = enable ? enabledName : disabledName;
+        const sourceBytes = Buffer.from(`source:${sourceName}`);
+        const targetBytes = Buffer.from(`target:${targetName}`);
+        fs.writeFileSync(path.join(modsPath, enabledName), sourceName === enabledName ? sourceBytes : targetBytes);
+        fs.writeFileSync(path.join(modsPath, disabledName), sourceName === disabledName ? sourceBytes : targetBytes);
+        const collision = await exposed.craftdockInstance.toggleMod('toggle-fixture', sourceName, enable);
+        assert.equal(collision.success, false);
+        assert.equal(typeof collision.error, 'string');
+        assert.deepEqual(fs.readFileSync(path.join(modsPath, enabledName)), enabledName === sourceName ? sourceBytes : targetBytes);
+        assert.deepEqual(fs.readFileSync(path.join(modsPath, disabledName)), disabledName === sourceName ? sourceBytes : targetBytes);
+      }
       assert.deepEqual(JSON.parse(JSON.stringify(alreadyDesired)), { success: true });
       assert.deepEqual(JSON.parse(JSON.stringify(missingDesired)), { success: true });
       assert.equal(missingSource.success, false);
       assert.equal(typeof missingSource.error, 'string');
       assert.equal(traversal.success, false);
       assert.deepEqual(fs.readFileSync(path.join(modsPath, 'from-disk.jar')), bytes);
-      assert.deepEqual(fs.readdirSync(modsPath), ['from-disk.jar']);
+      assert.deepEqual(fs.readdirSync(modsPath).sort(), [
+        'disable-collision.jar', 'disable-collision.jar.disabled',
+        'enable-collision.jar', 'enable-collision.jar.disabled', 'from-disk.jar',
+      ]);
       if (useRust) {
-        assert.equal(nativeCalls.length, 5, 'Rust should execute each valid operation, including its no-op state checks');
-        assert.deepEqual(nativeCalls.map(({ binary }) => binary), Array(5).fill(path.join(root, 'rust', 'target', 'debug', binaryName)));
-        assert.deepEqual(nativeCalls.map(({ status }) => status), [0, 0, 0, 0, 1]);
+        assert.equal(nativeCalls.length, 7, 'Rust should execute valid operations, including no-op and collision checks');
+        assert.deepEqual(nativeCalls.map(({ binary }) => binary), Array(7).fill(path.join(root, 'rust', 'target', 'debug', binaryName)));
+        assert.deepEqual(nativeCalls.map(({ status }) => status), [0, 0, 0, 0, 1, 1, 1]);
       }
       assert.deepEqual(JSON.parse(JSON.stringify(invocations)), [
         ['instance-toggle-mod', 'toggle-fixture', 'from-disk.jar', false],
@@ -217,6 +278,8 @@ test('production preload preserves IPC and runs both Rust and fallback paths wit
         ['instance-toggle-mod', 'toggle-fixture', 'missing.jar', true],
         ['instance-toggle-mod', 'toggle-fixture', 'missing.jar', false],
         ['instance-toggle-mod', 'toggle-fixture', '../outside.jar', false],
+        ['instance-toggle-mod', 'toggle-fixture', 'disable-collision.jar', false],
+        ['instance-toggle-mod', 'toggle-fixture', 'enable-collision.jar.disabled', true],
       ]);
     });
   }
