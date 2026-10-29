@@ -82,6 +82,7 @@ const readScreenshotList = createScreenshotListReader(nativeReaderOptions);
 const readConfigFileList = createConfigFileListReader(nativeReaderOptions);
 const serverProperties = createServerPropertiesAccess(nativeReaderOptions);
 const readModpackMetadata = createModpackMetadataReader(nativeReaderOptions);
+let instanceModAccess;
 let serverJson;
 function getServerJsonAccess() {
   if (!serverJson) {
@@ -1384,13 +1385,11 @@ ipcMain.handle('instance-list-mods', (_, id) => {
 });
 
 ipcMain.handle('instance-toggle-mod', (_, id, filename, enable) => {
-  const modsPath = path.join(instDir(id), 'mods');
-  const from = path.join(modsPath, filename);
-  let to;
-  if (enable) to = from.replace(/\.disabled$/, '');
-  else to = from.endsWith('.disabled') ? from : from + '.disabled';
-  try { if (from !== to) fs.renameSync(from, to); return { success: true }; }
-  catch(e) { return { success: false, error: e.message }; }
+  if (!instanceModAccess) {
+    const { createInstanceModAccess } = require('./instance-mod-toggle');
+    instanceModAccess = createInstanceModAccess(nativeReaderOptions);
+  }
+  return instanceModAccess.toggle(path.join(instDir(id), 'mods'), filename, enable);
 });
 
 ipcMain.handle('instance-delete-mod', (_, id, filename) => {

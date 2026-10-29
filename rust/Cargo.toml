@@ -34,3 +34,7 @@ path = "src/bin/craftdock-server-json.rs"
 [[bin]]
 name = "craftdock-modpack-metadata"
 path = "src/bin/craftdock-modpack-metadata.rs"
+
+[[bin]]
+name = "craftdock-instance-mod-toggle"
+path = "src/bin/craftdock-instance-mod-toggle.rs"
