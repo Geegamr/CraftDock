@@ -625,11 +625,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 
 <!-- TITLEBAR -->
 <div class="titlebar">
-  <div class="titlebar-logo">
+  <div class="titlebar-logo" data-tauri-drag-region>
     <img src="../assets/icon.svg" width="20" height="20" style="border-radius:4px;image-rendering:pixelated;flex-shrink:0" alt="CraftDock">
     CRAFTDOCK
   </div>
-  <div class="titlebar-center">v0.6.3<span class="beta-badge">Closed Beta</span></div>
+  <div class="titlebar-center" data-tauri-drag-region>v0.6.3<span class="beta-badge">Closed Beta</span></div>
   <div class="titlebar-controls">
     <button class="tc-btn min" onclick="winCtrl('minimize')" aria-label="Minimize" title="Minimize">─</button>
     <button class="tc-btn max" onclick="winCtrl('maximize')" aria-label="Maximize" title="Maximize">□</button>
@@ -2305,6 +2305,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 const isCraftDock = typeof window.craftdock !== 'undefined';
 const hasCraftDockInstances = typeof window.craftdockInstance !== 'undefined';
 function winCtrl(action) {
+  const tauriCommands = {
+    minimize: 'window_minimize',
+    maximize: 'window_toggle_maximize',
+    close: 'window_close',
+  };
+  const invokeTauri = window.__TAURI__?.core?.invoke;
+  if (typeof invokeTauri === 'function' && tauriCommands[action]) {
+    invokeTauri(tauriCommands[action]).catch(error => console.error('Could not control Tauri window:', error));
+    return;
+  }
   if (isCraftDock && typeof window.craftdock[action] === 'function') {
     window.craftdock[action]();
   }
@@ -11141,7 +11151,10 @@ function settingsOpenDataFolder() {
 
 function settingsOpenGithub() {
   const url = 'https://github.com/Geegamr/CraftDock/issues';
-  if (isCraftDock && window.craftdock?.openExternal) {
+  const invokeTauri = window.__TAURI__?.core?.invoke;
+  if (typeof invokeTauri === 'function') {
+    invokeTauri('report_issue').catch(error => console.error('Could not open issue tracker:', error));
+  } else if (isCraftDock && window.craftdock?.openExternal) {
     window.craftdock.openExternal(url);
   } else {
     window.open(url, '_blank');

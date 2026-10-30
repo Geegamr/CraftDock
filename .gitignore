@@ -6,6 +6,7 @@ dist/
 out/
 build/
 rust/target/
+src-tauri/target/
 
 # ── Environment / Secrets ─────────────────────────────────────
 .env
