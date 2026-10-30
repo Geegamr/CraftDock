@@ -6,6 +6,7 @@
   "scripts": {
     "start": "electron .",
     "tauri": "cargo tauri dev",
+    "tauri:build": "cargo tauri build",
     "build:native": "cargo build --manifest-path rust/Cargo.toml --release",
     "build:win": "npm run build:native && electron-builder --win",
     "build:mac": "npm run build:native && electron-builder --mac",

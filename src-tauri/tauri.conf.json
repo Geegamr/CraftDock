@@ -6,7 +6,8 @@
   "build": {
     "devUrl": "http://localhost:4173",
     "beforeDevCommand": "node scripts/serve-tauri-renderer.js",
-    "frontendDist": "../src"
+    "beforeBuildCommand": "node scripts/build-tauri-renderer.js",
+    "frontendDist": "dist"
   },
   "app": {
     "withGlobalTauri": true,
