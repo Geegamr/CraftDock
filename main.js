@@ -4,6 +4,15 @@ if (process.platform === 'win32') app.setAppUserModelId('com.craftdock.launcher'
 app.setName('CraftDock');
 const path  = require('path');
 const fs    = require('fs');
+
+// Electron does not load .env automatically. Load the development-only key before IPC handlers use it.
+if (!app.isPackaged && typeof process.loadEnvFile === 'function') {
+  try {
+    process.loadEnvFile(path.join(__dirname, '.env'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
 const https = require('https');
 const { createServersDatReader } = require('./servers-dat');
 const { createServerJarListReader } = require('./server-jar-list');
@@ -576,9 +585,12 @@ ipcMain.handle('dialog-open-skin', async () => {
 });
 
 // ── IPC: CurseForge API ────────────────────────────────────
-// Key is baked in — users never need to supply their own.
-// process.env.CF_API_KEY from .env overrides it in dev if needed.
-const CF_API_KEY = process.env.CF_API_KEY || '$2a$10$bL4bIL5pUWqfcO7KwxOSAOWBiNKEFGPHDTACGArQcHClc8W6cFx8K';
+// Loaded from the developer's environment or .env in development; never bundled as a fallback.
+const CF_API_KEY = process.env.CF_API_KEY || '';
+function requireCurseForgeApiKey() {
+  if (!CF_API_KEY) throw new Error('CurseForge API key is not configured (CF_API_KEY).');
+  return CF_API_KEY;
+}
 const CF_BASE_URL = "https://api.curseforge.com/v1";
 ipcMain.handle('cf-get-mc-versions', async () => {
   try {
@@ -586,7 +598,7 @@ ipcMain.handle('cf-get-mc-versions', async () => {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
-        'x-api-key': CF_API_KEY
+        'x-api-key': requireCurseForgeApiKey()
       }
     });
 
@@ -626,7 +638,7 @@ async function cfSearch(gameId, classId, query = '', gameVersion = '', modLoader
     method: 'GET',
     headers: {
       'Accept': 'application/json',
-      'x-api-key': CF_API_KEY
+      'x-api-key': requireCurseForgeApiKey()
     }
   });
 
