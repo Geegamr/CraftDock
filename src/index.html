@@ -2321,14 +2321,49 @@ function winCtrl(action) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  TAURI BRIDGE — the narrow subset of preload.js implemented by Rust commands
+// ═══════════════════════════════════════════════════════════
+function tauriBridge() {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (typeof invoke !== 'function') return null;
+  return {
+    store: {
+      get: (key) => invoke('store_get', { key }),
+      set: (key, value) => invoke('store_set', { key, value }),
+      delete: (key) => invoke('store_delete', { key }),
+    },
+    api: {
+      curseforgeSearch: (query, version, loader, classId, sortField, index, pageSize) =>
+        invoke('curseforge_search', {
+          query: query ?? '',
+          gameVersion: version ?? '',
+          modLoaderType: loader ?? '',
+          classId: classId ?? 4471,
+          sortField: sortField ?? 2,
+          index: index ?? 0,
+          pageSize: pageSize ?? 40,
+        }),
+      getMinecraftVersions: () => invoke('cf_get_mc_versions'),
+    },
+  };
+}
+
+// CurseForge is provided either by Electron's preload or by the Tauri Rust commands.
+function resourceApi() {
+  return window.craftdock?.api || tauriBridge()?.api || null;
+}
+
+// ═══════════════════════════════════════════════════════════
 //  PERSISTENT STORAGE — window.storage (artifact) or localStorage
 // ═══════════════════════════════════════════════════════════
 const Store = {
   async get(key) {
     try {
-      // Priority: Electron file-based IPC store > claude.ai storage > localStorage
+      // Priority: Electron file-based IPC store > Tauri Rust store > claude.ai storage > localStorage
       if (typeof window.craftdock?.store?.get === 'function')
         return await window.craftdock.store.get(key);
+      const tauri = tauriBridge();
+      if (tauri?.store) return await tauri.store.get(key);
       if (window.storage) { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : null; }
       const v = localStorage.getItem(key); return v ? JSON.parse(v) : null;
     } catch { return null; }
@@ -2337,6 +2372,8 @@ const Store = {
     try {
       if (typeof window.craftdock?.store?.set === 'function')
         { await window.craftdock.store.set(key, val); return; }
+      const tauri = tauriBridge();
+      if (tauri?.store) { await tauri.store.set(key, val); return; }
       if (window.storage) { await window.storage.set(key, JSON.stringify(val)); return; }
       localStorage.setItem(key, JSON.stringify(val));
     } catch {}
@@ -2345,6 +2382,8 @@ const Store = {
     try {
       if (typeof window.craftdock?.store?.delete === 'function')
         { await window.craftdock.store.delete(key); return; }
+      const tauri = tauriBridge();
+      if (tauri?.store) { await tauri.store.delete(key); return; }
       if (window.storage) { await window.storage.delete(key); return; }
       localStorage.removeItem(key);
     } catch {}
@@ -3496,7 +3535,7 @@ function applyBrowseFavFilter() {
   }
   renderBrowseList(display, false);
   // Append or remove load-more footer inside browseList
-  updateLoadMoreFooter(!browseShowFavOnly && browseAllPacks.length < browseTotalHits && browseSource === 'modrinth');
+  updateLoadMoreFooter(!browseShowFavOnly && browseAllPacks.length < browseTotalHits);
 }
 
 function updateLoadMoreFooter(show) {
@@ -3516,7 +3555,8 @@ function updateLoadMoreFooter(show) {
 }
 
 async function loadMoreBrowse() {
-  browseOffset += 100;
+  // CurseForge pages 40 at a time; Modrinth pages 100
+  browseOffset += browseSource === 'modrinth' ? 100 : 40;
   const q       = document.getElementById('browseSearchInput')?.value || '';
   const version = document.getElementById('browseVersionFilter')?.value || '';
   const sort    = document.getElementById('browseSortFilter')?.value || 'downloads';
@@ -3548,7 +3588,7 @@ async function fetchBrowsePacks(query, version, sort, append = false) {
     if (browseSource === 'modrinth') {
       packs = await fetchModrinthItems(query, version, sort, append ? browseOffset : 0);
     } else {
-      packs = await fetchCurseForgeItems(query, version, sort);
+      packs = await fetchCurseForgeItems(query, version, sort, append ? browseOffset : 0);
     }
 
     const sp = document.getElementById('browseAppendSpinner');
@@ -3612,15 +3652,16 @@ async function fetchModrinthItems(query, version, sort, offset = 0) {
   }));
 }
 
-async function fetchCurseForgeItems(query, version, sort) {
-  const api = window.craftdock?.api;
+async function fetchCurseForgeItems(query, version, sort, offset = 0) {
+  const api = resourceApi();
   if (!api?.curseforgeSearch) {
-    throw new Error('CurseForge requires the Electron app. Try Modrinth for browser use.');
+    throw new Error('CurseForge is unavailable in this build. Try Modrinth instead.');
   }
   const classId = CF_CLASS_MAP[browseType] || 4471;
   const sortMap = { downloads: 2, relevance: 1, newest: 11, updated: 3, follows: 8 };
-  const result = await api.curseforgeSearch(query || '', version || '', browseLoader || '', classId, sortMap[sort] || 2);
+  const result = await api.curseforgeSearch(query || '', version || '', browseLoader || '', classId, sortMap[sort] || 2, offset, 40);
   if (!result.success) throw new Error(result.error || 'CurseForge error');
+  browseTotalHits = result.pagination?.totalCount || (result.data || []).length;
   return (result.data || []).map(m => ({
     id: String(m.id), name: m.name,
     author: m.authors?.[0]?.name || 'Unknown',
@@ -4366,7 +4407,7 @@ async function fetchPbBukkitDev(q, offset) {
   // BukkitDev / dev.bukkit.org via CurseForge API — falls back gracefully
   const page = Math.floor(offset / 20);
   const params = new URLSearchParams({ gameId: 432, classId: 5, searchFilter: q || '', sortOrder: 'desc', index: page * 20, pageSize: 20 });
-  const api = window.craftdock?.api;
+  const api = resourceApi();
   if (api?.curseforgeSearch) {
     const result = await api.curseforgeSearch(q || '', '', '', 5, 2);
     if (!result.success) throw new Error(result.error);
@@ -4377,7 +4418,7 @@ async function fetchPbBukkitDev(q, offset) {
       externalUrl: `https://dev.bukkit.org/projects/${m.slug}`
     }));
   }
-  throw new Error('Bukkit/CurseForge requires the Electron app');
+  throw new Error('Bukkit/CurseForge is unavailable in this build');
 }
 
 function renderPbResults(results, listEl) {
@@ -4975,13 +5016,13 @@ async function searchModrinthMods(query, loader, offset = 0) {
 }
 
 async function searchCurseForgeMods(query, loader, offset = 0) {
-  const api = window.craftdock?.api;
+  const api = resourceApi();
   if (!api?.curseforgeSearch) {
-    throw new Error('CurseForge requires the Electron app');
+    throw new Error('CurseForge is unavailable in this build');
   }
   const loaderMap = { forge: '1', fabric: '4', neoforge: '6', quilt: '5' };
   const loaderType = loaderMap[loader] || '';
-  const result = await api.curseforgeSearch(query || '', '', loaderType, offset, MB_PAGE_SIZE);
+  const result = await api.curseforgeSearch(query || '', '', loaderType, 6, query ? 1 : 2, offset, MB_PAGE_SIZE);
   if (!result.success) throw new Error(result.error || 'CurseForge API error');
   return {
     total: result.pagination?.totalCount || (result.data?.length || 0),
@@ -10957,7 +10998,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 async function loadVersions() {
-  const result = await window.craftdock.api.getMinecraftVersions();
+  const api = resourceApi();
+  if (!api?.getMinecraftVersions) return;
+  const result = await api.getMinecraftVersions();
 
   if (!result.success) {
     console.error("Error:", result.error);

@@ -613,7 +613,7 @@ ipcMain.handle('cf-get-mc-versions', async () => {
     return { success: false, error: e.message };
   }
 });
-async function cfSearch(gameId, classId, query = '', gameVersion = '', modLoaderType = '', pageSize = 20, sortField = 2) {
+async function cfSearch(gameId, classId, query = '', gameVersion = '', modLoaderType = '', pageSize = 20, sortField = 2, index = 0) {
   // Per CF API docs: GET https://api.curseforge.com/v1/mods/search
   // Required: gameId. Auth: x-api-key header. Accept: application/json.
   // sortField: 1=Featured,2=Popularity,3=LastUpdated,4=Name,5=Author,
@@ -633,6 +633,8 @@ async function cfSearch(gameId, classId, query = '', gameVersion = '', modLoader
   if (modLoaderType !== '' && modLoaderType !== null && modLoaderType !== undefined) {
     params.append('modLoaderType', Number(modLoaderType));
   }
+  // Pagination: a nonzero index returns the next page from CurseForge
+  if (Number(index) > 0) params.append('index', Number(index));
 
   const res = await fetch(`${CF_BASE_URL}/mods/search?${params}`, {
     method: 'GET',
@@ -646,11 +648,10 @@ async function cfSearch(gameId, classId, query = '', gameVersion = '', modLoader
 
   return await res.json();
 }
-ipcMain.handle('curseforge-search', async (_, query = '', gameVersion = '', modLoaderType = '', classId = 4471, sortField = 2) => {
+ipcMain.handle('curseforge-search', async (_, query = '', gameVersion = '', modLoaderType = '', classId = 4471, sortField = 2, index = 0, pageSize = 40) => {
   try {
-    // Pass all params including sortField — cfSearch now accepts it as 7th argument
-    const data = await cfSearch(432, classId, query, gameVersion, modLoaderType, 40, sortField);
-    return { success: true, data: data.data || [] };
+    const data = await cfSearch(432, classId, query, gameVersion, modLoaderType, pageSize, sortField, index);
+    return { success: true, data: data.data || [], pagination: data.pagination || null };
   } catch (e) {
     return { success: false, error: e.message };
   }

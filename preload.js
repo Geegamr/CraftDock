@@ -36,8 +36,8 @@ contextBridge.exposeInMainWorld('craftdock', {
 
   // CurseForge API
   api: {
-  curseforgeSearch: (query, version, loader, classId, sortField) =>
-    ipcRenderer.invoke('curseforge-search', query, version, loader, classId, sortField),
+  curseforgeSearch: (query, version, loader, classId, sortField, index, pageSize) =>
+    ipcRenderer.invoke('curseforge-search', query, version, loader, classId, sortField, index, pageSize),
 
   getMinecraftVersions: () =>
     ipcRenderer.invoke('cf-get-mc-versions'),
