@@ -32,10 +32,26 @@ Persistence and CurseForge use the same renderer code as Electron. The renderer 
 
 `electron-store`-specific behavior (DPAPI `safe:` tokens) is not decrypted by Rust: such an account is reported as needing a fresh login.
 
+## Instance folders
+
+Instances are real folders, written by Rust under the same data root as the store (`%APPDATA%\com.craftdock.launcher.tauri\data` on Windows, or `CRAFTDOCK_DATA_ROOT`):
+
+```text
+<data root>/instances/<folder name>/   mods, saves, config, resourcepacks,
+                                       screenshots, shaderpacks, logs, instance.json
+<data root>/slug-map.json              instance id → folder name
+```
+
+`instance_create` registers a unique folder name from the instance name (`My Pack` → `My_Pack`, `My_Pack_2` on collision), creates the profile subfolders, and writes `instance.json`. `instance_list`, `instance_get`, `instance_update`, and `instance_delete` work on those folders, so the instance list is whatever exists on disk and survives restarts. Ram settings, notes, tags, and the icon are stored in the sidecar; `craftdock:inst-meta` in the key/value store keeps the UI-only fields, as in Electron.
+
+`instance_open_folder` (the instance "Open folder" button) creates the folder if needed and opens it, and `open_folder` opens the data folder from Settings. Both accept only paths and subfolders that resolve inside the data root; ids are validated as single path segments, so the webview cannot open or create anything elsewhere.
+
+Shared-world/server/resource tags are saved as fields on the instance, but the Windows junction/symlink switching for those shared folders is still Electron-only, as is importing or installing a modpack.
+
 ## Capability boundary
 
-The `main-capability` capability allows `core:default` and grants `opener:allow-open-url` only for the exact issue-tracker URL. The registered Rust commands are the three window controls, the fixed issue-tracker action, the store commands, and the two CurseForge commands. Store commands accept a key and JSON value and resolve every path themselves inside the fixed data root; CurseForge commands accept search filters only and use a fixed base URL and game ID. No command takes a filesystem path, an arbitrary URL, or a process argument from the webview, and no API key is ever returned to it.
+The `main-capability` capability allows `core:default` and grants `opener:allow-open-url` only for the exact issue-tracker URL. The registered Rust commands are the three window controls, the fixed issue-tracker action, the store commands, the instance commands, `get_data_root`, `open_folder`, and the two CurseForge commands. Store commands accept a key and JSON value and resolve every path themselves inside the fixed data root; instance commands accept metadata and ids (never paths) and derive folders from the slug map; `open_folder` accepts a path but canonicalizes it and refuses anything outside the data root. CurseForge commands accept search filters only and use a fixed base URL and game ID. No command takes an arbitrary URL or a process argument from the webview, and no API key is ever returned to it.
 
-No filesystem, shell, process, dialog, skin, authentication, server, Java, instance-file, or IPC-to-Node commands are registered. The existing renderer relies on Electron APIs in many other flows (installing or launching an instance, opening folders, signing in, scanning Java); those flows are deliberately unsupported in this target and must not be treated as migrated. In browser/dev mode, the existing `window.open` fallback remains available.
+No shell, process, dialog, skin, authentication, server, Java, mod-download, launch, export, or IPC-to-Node commands are registered. The existing renderer relies on Electron APIs in many other flows (installing or launching an instance, listing mods or worlds, downloading mods, signing in, scanning Java, managing servers); those flows are deliberately unsupported in this target and must not be treated as migrated. In browser/dev mode, the existing `window.open` fallback remains available.
 
 The Tauri identifier uses a `.tauri` suffix so this target's app data/window identity does not collide with the existing Electron product identifier.

@@ -2332,6 +2332,18 @@ function tauriBridge() {
       set: (key, value) => invoke('store_set', { key, value }),
       delete: (key) => invoke('store_delete', { key }),
     },
+    // Only the instance behaviors Rust actually implements. Everything else in
+    // window.craftdockInstance stays Electron-only on purpose.
+    instance: {
+      create: (meta) => invoke('instance_create', { meta }),
+      update: (meta) => invoke('instance_update', { meta }),
+      delete: (id) => invoke('instance_delete', { id }),
+      list: () => invoke('instance_list'),
+      get: (id) => invoke('instance_get', { id }),
+      openFolder: (id, sub) => invoke('instance_open_folder', { id, sub: sub || null }),
+    },
+    openFolder: (path) => invoke('open_folder', { path }),
+    getDataRoot: () => invoke('get_data_root'),
     api: {
       curseforgeSearch: (query, version, loader, classId, sortField, index, pageSize) =>
         invoke('curseforge_search', {
@@ -2351,6 +2363,12 @@ function tauriBridge() {
 // CurseForge is provided either by Electron's preload or by the Tauri Rust commands.
 function resourceApi() {
   return window.craftdock?.api || tauriBridge()?.api || null;
+}
+
+// Data-folder helpers come from Electron's preload or from the Tauri commands.
+function dataRootBridge() {
+  if (isCraftDock && window.craftdock?.getDataRoot) return window.craftdock;
+  return tauriBridge();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2422,7 +2440,7 @@ const AccountStore = {
 // InstanceStore — backed by real filesystem folders via IPC when in Electron,
 // falls back to localStorage-style store in browser/demo mode.
 const InstanceStore = {
-  get _api() { return window.craftdockInstance || null; },
+  get _api() { return window.craftdockInstance || tauriBridge()?.instance || null; },
 
   async getAll() {
     if (this._api) {
@@ -6775,8 +6793,10 @@ async function createCustomInstance() {
 // ─── Instance folder/shared worlds management ─────────────
 async function openActiveInstanceFolder(sub) {
   if (!activeInstanceId) return;
-  if (isCraftDock && window.craftdockInstance?.openFolder) {
-    await window.craftdockInstance.openFolder(activeInstanceId, sub || null);
+  const instanceApi = window.craftdockInstance || tauriBridge()?.instance;
+  if (instanceApi?.openFolder) {
+    const result = await instanceApi.openFolder(activeInstanceId, sub || null);
+    if (result && result.success === false) showNotif('Open Folder', result.error || 'Could not open this folder');
   } else {
     showNotif('Open Folder', 'Available in the desktop app');
   }
@@ -11035,10 +11055,11 @@ async function loadSettings() {
   // Data path — resolve once and cache
   const pathEl = document.getElementById('settingsDataPath');
   if (pathEl) {
+    const dataBridge = dataRootBridge();
     if (window._cachedDataRoot) {
       pathEl.textContent = window._cachedDataRoot;
-    } else if (isCraftDock && window.craftdock?.getDataRoot) {
-      window.craftdock.getDataRoot()
+    } else if (dataBridge?.getDataRoot) {
+      dataBridge.getDataRoot()
         .then(p => { window._cachedDataRoot = p || '—'; if (pathEl) pathEl.textContent = window._cachedDataRoot; })
         .catch(() => { if (pathEl) pathEl.textContent = '—'; });
     } else {
@@ -11185,11 +11206,14 @@ async function settingsScanJava() {
 }
 
 function settingsOpenDataFolder() {
-  if (isCraftDock && window.craftdock?.getDataRoot) {
-    window.craftdock.getDataRoot().then(p => {
-      if (p && window.craftdock?.openFolder) window.craftdock.openFolder(p);
-    });
-  }
+  const bridge = dataRootBridge();
+  if (!bridge?.getDataRoot || !bridge?.openFolder) return;
+  bridge.getDataRoot().then(p => {
+    if (!p) return null;
+    return bridge.openFolder(p);
+  }).then(result => {
+    if (result && result.success === false) showNotif('Data Folder', result.error || 'Could not open the data folder');
+  }).catch(error => console.error('Could not open the data folder:', error));
 }
 
 function settingsOpenGithub() {

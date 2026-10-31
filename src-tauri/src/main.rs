@@ -9,6 +9,10 @@ use rand::RngCore;
 use serde_json::{json, Value};
 use tauri::Manager;
 
+mod instance_store;
+
+use instance_store::InstanceStore;
+
 const CF_BASE_URL: &str = "https://api.curseforge.com/v1";
 const CF_GAME_ID: u32 = 432; // Minecraft
 const ACCOUNTS_KEY: &str = "craftdock:accounts";
@@ -49,7 +53,7 @@ fn report_issue(app: tauri::AppHandle) -> Result<(), String> {
 // way, and account tokens encrypted with the same portable AES-256-GCM key
 // file so either front end can read the other's data.
 
-fn store_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn data_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let root = match std::env::var("CRAFTDOCK_DATA_ROOT") {
         Ok(value) if !value.trim().is_empty() => PathBuf::from(value.trim()),
         _ => app
@@ -260,7 +264,7 @@ fn store_remove(root: &Path, key: &str) -> Result<(), String> {
 
 #[tauri::command]
 fn store_get(app: tauri::AppHandle, key: String) -> Value {
-    match store_root(&app) {
+    match data_root(&app) {
         Ok(root) => store_read(&root, &key),
         Err(_) => Value::Null,
     }
@@ -268,14 +272,121 @@ fn store_get(app: tauri::AppHandle, key: String) -> Value {
 
 #[tauri::command]
 fn store_set(app: tauri::AppHandle, key: String, value: Value) -> Result<(), String> {
-    let root = store_root(&app)?;
+    let root = data_root(&app)?;
     store_write(&root, &key, value)
 }
 
 #[tauri::command]
 fn store_delete(app: tauri::AppHandle, key: String) -> Result<(), String> {
-    let root = store_root(&app)?;
+    let root = data_root(&app)?;
     store_remove(&root, &key)
+}
+
+// ── Instance folders ───────────────────────────────────────
+// `instance.json` sidecars under `<data root>/instances/<slug>` are the source
+// of truth, exactly like the Electron main process. Only the renderer-visible
+// fields are accepted; paths are derived from ids, never passed in.
+
+fn instance_store(app: &tauri::AppHandle) -> Result<InstanceStore, String> {
+    Ok(InstanceStore::new(data_root(app)?))
+}
+
+fn open_path_result(app: &tauri::AppHandle, path: &Path) -> Value {
+    use tauri_plugin_opener::OpenerExt;
+
+    match app.opener().open_path(path.to_string_lossy().to_string(), None::<&str>) {
+        Ok(()) => json!({ "success": true }),
+        Err(error) => json!({ "success": false, "error": error.to_string() }),
+    }
+}
+
+#[tauri::command]
+fn get_data_root(app: tauri::AppHandle) -> Option<String> {
+    data_root(&app)
+        .ok()
+        .map(|root| root.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn instance_create(app: tauri::AppHandle, meta: Value) -> Value {
+    match instance_store(&app).and_then(|store| store.create(meta)) {
+        Ok(created) => created,
+        Err(error) => json!({ "success": false, "error": error }),
+    }
+}
+
+#[tauri::command]
+fn instance_list(app: tauri::AppHandle) -> Value {
+    match instance_store(&app) {
+        Ok(store) => Value::Array(store.list()),
+        Err(_) => Value::Array(Vec::new()),
+    }
+}
+
+#[tauri::command]
+fn instance_get(app: tauri::AppHandle, id: String) -> Value {
+    instance_store(&app)
+        .ok()
+        .and_then(|store| store.read_meta(&id))
+        .unwrap_or(Value::Null)
+}
+
+#[tauri::command]
+fn instance_update(app: tauri::AppHandle, meta: Value) -> Value {
+    match instance_store(&app).and_then(|store| store.update(meta)) {
+        Ok(updated) => updated,
+        Err(error) => json!({ "success": false, "error": error }),
+    }
+}
+
+#[tauri::command]
+fn instance_delete(app: tauri::AppHandle, id: String) -> Value {
+    match instance_store(&app).and_then(|store| store.delete(&id)) {
+        Ok(deleted) => deleted,
+        Err(error) => json!({ "success": false, "error": error }),
+    }
+}
+
+#[tauri::command]
+fn instance_open_folder(app: tauri::AppHandle, id: String, sub: Option<String>) -> Value {
+    let target = match instance_store(&app)
+        .and_then(|store| store.folder_to_open(&id, sub.as_deref()))
+    {
+        Ok(target) => target,
+        Err(error) => return json!({ "success": false, "error": error }),
+    };
+    open_path_result(&app, &target)
+}
+
+/// Resolves `path` and refuses anything outside the data root. Paths the app
+/// already owns (instance folders, screenshots, exports) stay inside it.
+fn resolve_inside_root(root: &Path, path: &str) -> Result<PathBuf, String> {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| format!("{}: {error}", root.display()))?;
+    let resolved = PathBuf::from(path)
+        .canonicalize()
+        .map_err(|error| format!("{path}: {error}"))?;
+
+    if !resolved.starts_with(&canonical_root) {
+        return Err("Only paths inside CraftDock's data folder can be opened from the app".to_string());
+    }
+    Ok(resolved)
+}
+
+/// Opens a folder or file the app already owns. Anything outside the CraftDock
+/// data folder is refused so the webview cannot launch arbitrary paths.
+#[tauri::command]
+fn open_folder(app: tauri::AppHandle, path: String) -> Value {
+    let root = match data_root(&app) {
+        Ok(root) => root,
+        Err(error) => return json!({ "success": false, "error": error }),
+    };
+
+    match resolve_inside_root(&root, &path) {
+        Ok(resolved) => open_path_result(&app, &resolved),
+        Err(error) => json!({ "success": false, "error": error }),
+    }
 }
 
 fn read_env_key(file: &Path) -> Option<String> {
@@ -419,6 +530,14 @@ fn main() {
             store_get,
             store_set,
             store_delete,
+            get_data_root,
+            instance_create,
+            instance_list,
+            instance_get,
+            instance_update,
+            instance_delete,
+            instance_open_folder,
+            open_folder,
             curseforge_search,
             cf_get_mc_versions,
         ])
@@ -504,5 +623,26 @@ mod tests {
         std::fs::write(&env_file, "OTHER=1\n").unwrap();
         assert_eq!(read_env_key(&env_file), None);
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn opens_only_paths_inside_the_data_root() {
+        let root = temp_root("open-guard");
+        let inside = root.join("instances").join("Pack");
+        std::fs::create_dir_all(&inside).unwrap();
+        let outside = root.with_extension("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+
+        assert_eq!(resolve_inside_root(&root, &inside.to_string_lossy()).unwrap(), inside.canonicalize().unwrap());
+        assert!(resolve_inside_root(&root, &outside.to_string_lossy()).is_err());
+        // A sibling whose name merely starts with the root name must not pass.
+        let prefixed = PathBuf::from(format!("{}-other", root.display()));
+        std::fs::create_dir_all(&prefixed).unwrap();
+        assert!(resolve_inside_root(&root, &prefixed.to_string_lossy()).is_err());
+        assert!(resolve_inside_root(&root, "does-not-exist").is_err());
+
+        std::fs::remove_dir_all(root).ok();
+        std::fs::remove_dir_all(outside).ok();
+        std::fs::remove_dir_all(prefixed).ok();
     }
 }
