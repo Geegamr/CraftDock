@@ -20,6 +20,8 @@ The development run starts `scripts/serve-tauri-renderer.js` on `127.0.0.1:4173`
 
 Output: `src-tauri/target/release/craftdock.exe`, a Windows GUI subsystem binary that opens its window with no console. Bundling is disabled, so no installer is produced; the single exe can be copied and run anywhere WebView2 is installed.
 
+Fonts are bundled too: `src/assets/fonts` holds the Manrope and JetBrains Mono woff2 files (variable, latin + latin-ext, OFL licensed) and the renderer declares them with `@font-face`, so the UI never fetches fonts from the network and renders the same offline. The build copies them to `src-tauri/dist/assets/fonts`, and the dev server serves `assets/*` from `src/assets` first, then the project `assets/` folder.
+
 ## Migrated behavior
 
 The window buttons in CraftDock's own titlebar call `window_minimize`, `window_toggle_maximize`, and `window_close`; the window is created with the OS decorations off so only that titlebar is visible. Settings → Report Issue calls `report_issue`, which opens the fixed `https://github.com/Geegamr/CraftDock/issues` URL through `tauri-plugin-opener` and accepts no URL from the webview.

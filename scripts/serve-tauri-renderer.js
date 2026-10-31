@@ -5,6 +5,8 @@ const path = require('node:path');
 const projectRoot = path.resolve(__dirname, '..');
 const root = path.join(projectRoot, 'src');
 const assetRoot = path.join(projectRoot, 'assets');
+// Bundled fonts live beside the renderer, the shared icon set beside the project.
+const rendererAssetRoot = path.join(root, 'assets');
 const port = 4173;
 const contentTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -21,13 +23,21 @@ const contentTypes = {
 http.createServer((request, response) => {
   const requestPath = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
   const servingAssets = requestPath.startsWith('/assets/');
-  const contentRoot = servingAssets ? assetRoot : root;
   const relativePath = requestPath === '/' ? 'index.html' : servingAssets
     ? requestPath.slice('/assets/'.length)
     : requestPath.slice(1);
-  const filePath = path.resolve(contentRoot, relativePath);
-  if (filePath !== contentRoot && !filePath.startsWith(`${contentRoot}${path.sep}`)) {
-    response.writeHead(403).end('Forbidden');
+  const roots = servingAssets ? [rendererAssetRoot, assetRoot] : [root];
+  let filePath = null;
+  for (const contentRoot of roots) {
+    const candidate = path.resolve(contentRoot, relativePath);
+    if (candidate !== contentRoot && !candidate.startsWith(`${contentRoot}${path.sep}`)) continue;
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      filePath = candidate;
+      break;
+    }
+  }
+  if (!filePath) {
+    response.writeHead(404).end('Not found');
     return;
   }
   fs.readFile(filePath, (error, contents) => {
