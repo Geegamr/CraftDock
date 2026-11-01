@@ -68,7 +68,7 @@ For general feedback and discussion, join the [Discord server](https://discord.g
 
 ## Credits
 
-- The CraftDock logo is heavily inspired by [ATLauncher](https://atlauncher.com)'s icon, which has been one of our favourite launcher looks since the early days. Thank you to the ATLauncher team. CraftDock is not affiliated with ATLauncher and is not endorsed by it.
+- The CraftDock logo is heavily inspired by [ATLauncher](https://atlauncher.com)'s icon, which has been one of my favourite launcher looks since the early days. Thanks to the ATLauncher team. CraftDock is not affiliated with ATLauncher and is not endorsed by it.
 - Built with [Electron](https://www.electronjs.org), with native helpers in Rust.
 
 ---
