@@ -47,14 +47,38 @@ const { createServerPropertiesAccess } = require('./server-properties');
 const { createModpackMetadataReader } = require('./modpack-metadata');
 const { createBrowseCacheStore } = require('./browse-cache');
 
-// All data lives in craftdock-data/ next to the launcher so users can find it easily
 const isDev    = !app.isPackaged;
 // The portable Windows build unpacks itself into a throwaway temp folder, so the
 // exe directory disappears on exit (taking instances and logins with it).
 // electron-builder tells us the folder the user launched it from instead.
 const portableDir = process.env.PORTABLE_EXECUTABLE_DIR || '';
 const appRoot  = isDev ? __dirname : (portableDir || path.dirname(app.getPath('exe')));
-const dataRoot = path.join(appRoot, 'craftdock-data');
+// Instances, servers and saved logins live in craftdock-data/. The portable build
+// keeps that next to its exe so the whole launcher stays self-contained; an
+// installed build keeps it in the per-user app folder, because an install folder
+// is replaced on every update and would take the user's data with it.
+const dataRoot = isDev
+  ? path.join(appRoot, 'craftdock-data')
+  : (portableDir
+      ? path.join(portableDir, 'craftdock-data')
+      : path.join(app.getPath('userData'), 'craftdock-data'));
+
+// Earlier installed builds wrote craftdock-data/ inside their own folder. Move
+// that data (accounts included) to the new location once, so upgrading does not
+// look like a fresh install.
+if (!isDev && !portableDir) {
+  const legacyDataRoot = path.join(path.dirname(app.getPath('exe')), 'craftdock-data');
+  if (legacyDataRoot !== dataRoot && fs.existsSync(legacyDataRoot) && !fs.existsSync(dataRoot)) {
+    try {
+      fs.mkdirSync(path.dirname(dataRoot), { recursive: true });
+      try { fs.renameSync(legacyDataRoot, dataRoot); }
+      catch { fs.cpSync(legacyDataRoot, dataRoot, { recursive: true }); fs.rmSync(legacyDataRoot, { recursive: true, force: true }); }
+      console.log('[CraftDock] moved existing data to', dataRoot);
+    } catch (error) {
+      console.error('[CraftDock] could not move data to', dataRoot, error && error.message);
+    }
+  }
+}
 // Live server processes, keyed by server id. Declared here (module scope) because
 // the quit handler reads it long after the server section has finished running.
 const runningServers = new Map();
@@ -2518,7 +2542,7 @@ ipcMain.handle('shared-worlds-path', () => sharedWorldsDir);
 // Fetch available builds for a specific MC version + software
 ipcMain.handle('server-get-builds', async (_, software, mcVersion) => {
   try {
-    if (software === 'paper' || software === 'spigot') {
+    if (software === 'paper') {
       const d = await fetchJsonHttp(`https://fill.papermc.io/v3/projects/paper/versions/${mcVersion}`);
       const builds = (d.builds || [])
         .map(build => Number(build))
@@ -2706,11 +2730,14 @@ ipcMain.handle('server-install', async (event, srv) => {
       throw new Error(`No ${sw} build found for Minecraft ${sv}. Pick a different Minecraft version.`);
     }
     let jarUrl = null;
+    // Fabric/Quilt start with their loader installer jar; Forge/NeoForge run
+    // their installer directly and have nothing to download here.
+    if (isModded) jarUrl = moddedInstallerUrl(sw, sv, loaderVersion);
     if      (sw==='paper')   jarUrl = await resolvePaperUrl(sv, srv.build || null);
     else if (sw==='purpur')  jarUrl = srv.build
       ? `https://api.purpurmc.org/v2/purpur/${sv}/${srv.build}/download`
       : await resolvePurpurUrl(sv);
-    else if (sw==='spigot')  jarUrl = await resolvePaperUrl(sv, srv.build || null);
+    else if (sw==='spigot')  throw new Error('Spigot servers are no longer supported. Create this server as Paper instead.');
     else if (sw==='vanilla') jarUrl = await resolveVanillaUrl(sv);
     else if (!isModded)      throw new Error(`Unsupported server software "${sw}". Delete this server and create it again.`);
 
@@ -2730,10 +2757,12 @@ ipcMain.handle('server-install', async (event, srv) => {
       // Remove stub server.jar the Fabric installer creates — we always download it ourselves
       try { fs.unlinkSync(path.join(dir,'server.jar')); } catch {}
 
-      // Step A: Install Fabric loader (WITHOUT -downloadMinecraft)
+      // Step A: install the loader (Fabric and Quilt take different arguments).
+      // Neither downloads Minecraft itself here: we fetch server.jar in step B.
       await new Promise((resolve, reject) => {
-        const args = ['-jar', installerPath, 'server', '-mcversion', sv, '-dir', dir];
-        if (loaderVersion) args.push('-loader', loaderVersion);
+        const args = sw === 'quilt'
+          ? ['-jar', installerPath, 'install', 'server', sv, ...(loaderVersion ? [loaderVersion] : []), `--install-dir=${dir}`]
+          : ['-jar', installerPath, 'server', '-mcversion', sv, '-dir', dir, ...(loaderVersion ? ['-loader', loaderVersion] : [])];
         send(67, 'java ' + args.slice(1).join(' '));
         const p = spawn(javaInfo.exe, args, { cwd: dir, windowsHide: true, stdio: ['ignore','pipe','pipe'] });
         let output = '', errOut = '';
@@ -2767,7 +2796,7 @@ ipcMain.handle('server-install', async (event, srv) => {
     const lines = Object.entries({...props,'server-port':String(srv.port||25565),'server-ip':srv.ip==='0.0.0.0'?'':srv.ip}).map(([k,v])=>k+'='+v).join('\n');
     fs.writeFileSync(path.join(dir,'server.properties'),lines+'\n');
     ['fabric','forge','neoforge','quilt'].includes(sw) && fs.mkdirSync(path.join(dir,'mods'),{recursive:true});
-    ['paper','spigot','purpur','bukkit'].includes(sw)  && fs.mkdirSync(path.join(dir,'plugins'),{recursive:true});
+    ['paper','purpur','bukkit'].includes(sw)  && fs.mkdirSync(path.join(dir,'plugins'),{recursive:true});
     send(100,'Installation complete!');
     event.sender.send('server-status-change',srv.id,'stopped');
     return {success:true};

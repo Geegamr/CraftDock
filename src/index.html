@@ -1419,7 +1419,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600">Server Software</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
         <button class="srv-sw active" data-sw="paper"    onclick="selectCsSw(this)">Paper</button>
-        <button class="srv-sw"        data-sw="spigot"   onclick="selectCsSw(this)">Spigot</button>
         <button class="srv-sw"        data-sw="vanilla"  onclick="selectCsSw(this)">Vanilla</button>
         <button class="srv-sw"        data-sw="fabric"   onclick="selectCsSw(this)">Fabric</button>
         <button class="srv-sw"        data-sw="forge"    onclick="selectCsSw(this)">Forge</button>
@@ -1720,7 +1719,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         <button class="srv-sw" data-sw="fabric"   onclick="vmSelectSw(this)">Fabric</button>
         <button class="srv-sw" data-sw="quilt"    onclick="vmSelectSw(this)">Quilt</button>
         <button class="srv-sw" data-sw="neoforge" onclick="vmSelectSw(this)">NeoForge</button>
-        <button class="srv-sw" data-sw="spigot"   onclick="vmSelectSw(this)">Spigot</button>
       </div>
     </div>
 
@@ -6869,11 +6867,11 @@ const ServerStore = {
 let activeServerId = null;
 let _csIconDataUrl = null;
 const SW_COLORS = {
-  paper:'#e74c3c', spigot:'#f39c12', vanilla:'#27ae60', fabric:'#b0c4de',
+  paper:'#e74c3c', vanilla:'#27ae60', fabric:'#b0c4de',
   forge:'#c97d30', neoforge:'#c05f1e', quilt:'#9b59b6', purpur:'#8b5cf6'
 };
 const SW_SUPPORTS_MODS    = ['fabric','forge','neoforge','quilt'];
-const SW_SUPPORTS_PLUGINS = ['paper','spigot','purpur','bukkit'];
+const SW_SUPPORTS_PLUGINS = ['paper','purpur','bukkit'];
 
 const DEFAULT_PROPS = [
   ['gamemode','survival'],['difficulty','normal'],['max-players','20'],
@@ -7978,7 +7976,6 @@ async function openServerDetail(id) {
                 <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;font-weight:600">Software</div>
                 <select class="settings-select" id="srvSettSw-${srv.id}" style="width:100%" onchange="onSrvSwChange('${srv.id}')">
                   <option value="paper"    ${srv.software==='paper'   ?'selected':''}>Paper</option>
-                  <option value="spigot"   ${srv.software==='spigot'  ?'selected':''}>Spigot (→Paper)</option>
                   <option value="vanilla"  ${srv.software==='vanilla' ?'selected':''}>Vanilla</option>
                   <option value="fabric"   ${srv.software==='fabric'  ?'selected':''}>Fabric</option>
                   <option value="forge"    ${srv.software==='forge'   ?'selected':''}>Forge</option>
