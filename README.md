@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/license-Apache 2.0-22c55e?style=flat-square">
 
 <br>
-  <a href="https://discord.gg/pNKnKNdDc4">
+  <a href="https://discord.gg/zfmemagrZR">
     <img src="https://img.shields.io/badge/Join%20the%20Discord-%235865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the Discord">
   </a>
 </br>
@@ -19,7 +19,7 @@
 
 > 🟢 **CraftDock is now in Public Beta.** Anyone can download it — no invite or tester access needed.
 > Features may still change and bugs are expected. Grab the latest build from [Releases](https://github.com/Geegamr/CraftDock/releases).
-> Found something broken? [Open an issue](https://github.com/Geegamr/CraftDock/issues) or [join the Discord](https://discord.gg/pNKnKNdDc4).
+> Found something broken? [Open an issue](https://github.com/Geegamr/CraftDock/issues) or [join the Discord](https://discord.gg/zfmemagrZR).
 
 ---
 
@@ -55,14 +55,21 @@
 | Public Beta (current) | **Now** |
 | v1.0 Release | TBD |
 
-Public beta is open to everyone — install from [Releases](https://github.com/Geegamr/CraftDock/releases), report issues on GitHub, and follow progress on the [Discord](https://discord.gg/pNKnKNdDc4).
+Public beta is open to everyone — install from [Releases](https://github.com/Geegamr/CraftDock/releases), report issues on GitHub, and follow progress on the [Discord](https://discord.gg/zfmemagrZR).
 
 ---
 
 ## Contributing
 
 Bug reports via [GitHub Issues](https://github.com/Geegamr/CraftDock/issues) are welcome. Please include your OS, Electron version, and steps to reproduce.
-For general feedback and discussion, join the [Discord server](https://discord.gg/pNKnKNdDc4).
+For general feedback and discussion, join the [Discord server](https://discord.gg/zfmemagrZR).
+
+---
+
+## Credits
+
+- The CraftDock logo is heavily inspired by [ATLauncher](https://atlauncher.com)'s icon, which has been one of our favourite launcher looks since the early days. Thank you to the ATLauncher team. CraftDock is not affiliated with ATLauncher and is not endorsed by it.
+- Built with [Electron](https://www.electronjs.org), with native helpers in Rust.
 
 ---
 
@@ -73,7 +80,7 @@ Apache 2.0 — see [LICENSE](LICENSE) for details.
 ---
 
 <div align="center">
-  <a href="https://discord.gg/pNKnKNdDc4">
+  <a href="https://discord.gg/zfmemagrZR">
     <img src="https://img.shields.io/badge/Join%20the%20Discord-%235865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the Discord">
   </a>
   <br><br>
