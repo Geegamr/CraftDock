@@ -58,13 +58,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .app-body{display:flex;height:calc(100vh - 36px);overflow:hidden}
 
 /* ── RAIL ── */
-.icon-rail{width:68px;background:var(--bg-darkest);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:4px;flex-shrink:0}
+.icon-rail{width:68px;background:var(--bg-darkest);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:4px;flex-shrink:0;transform:translateZ(0);contain:paint}
 .rail-btn{width:44px;height:44px;border-radius:var(--radius-sm);border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-muted);position:relative;flex-direction:column;gap:3px}
-.rail-btn svg{width:20px;height:20px}
-.rail-btn span{font-size:9px;font-weight:600;letter-spacing:0.04em}
-.rail-btn:hover{background:var(--accent-subtle);color:var(--accent-bright)}
-.rail-btn.active{background:var(--accent-subtle);color:var(--accent)}
-.rail-btn.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:24px;background:var(--accent);border-radius:0 3px 3px 0}
+.rail-btn svg{width:20px;height:20px;position:relative;z-index:1}
+.rail-btn span{font-size:9px;font-weight:600;letter-spacing:0.04em;position:relative;z-index:1}
+/* The highlight is a separate layer that only changes opacity, so switching it
+   never repaints the page behind the rail or waits on that page's frames. */
+.rail-btn::after{content:'';position:absolute;inset:0;border-radius:inherit;background:var(--accent-subtle);opacity:0;pointer-events:none;z-index:0;will-change:opacity;transition:none;transform:translateZ(0)}
+.rail-btn:hover::after,.rail-btn.active::after{opacity:1}
+.rail-btn:hover{color:var(--accent-bright)}
+.rail-btn.active{color:var(--accent)}
+.rail-btn.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:24px;background:var(--accent);border-radius:0 3px 3px 0;z-index:2}
 .rail-spacer{flex:1}
 .rail-divider{width:32px;height:1px;background:var(--border);margin:4px 0}
 
