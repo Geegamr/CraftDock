@@ -34,7 +34,11 @@ struct NbtReader<'a> {
 
 impl<'a> NbtReader<'a> {
     fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, pos: 0, items_read: 0 }
+        Self {
+            bytes,
+            pos: 0,
+            items_read: 0,
+        }
     }
 
     fn take(&mut self, count: usize) -> Result<&'a [u8], String> {
@@ -70,7 +74,10 @@ impl<'a> NbtReader<'a> {
         if count < 0 || count as usize > MAX_COLLECTION_ITEMS {
             return Err("Invalid NBT collection length".into());
         }
-        self.items_read = self.items_read.checked_add(count as usize).ok_or("NBT item count overflow")?;
+        self.items_read = self
+            .items_read
+            .checked_add(count as usize)
+            .ok_or("NBT item count overflow")?;
         if self.items_read > MAX_COLLECTION_ITEMS {
             return Err("NBT contains too many collection items".into());
         }
@@ -86,8 +93,12 @@ impl<'a> NbtReader<'a> {
             2 => Ok(Tag::Short(self.short()?)),
             3 => Ok(Tag::Int(self.int()?)),
             4 => Ok(Tag::Long(self.long()?)),
-            5 => Ok(Tag::Float(f32::from_bits(u32::from_be_bytes(self.take(4)?.try_into().unwrap())))),
-            6 => Ok(Tag::Double(f64::from_bits(u64::from_be_bytes(self.take(8)?.try_into().unwrap())))),
+            5 => Ok(Tag::Float(f32::from_bits(u32::from_be_bytes(
+                self.take(4)?.try_into().unwrap(),
+            )))),
+            6 => Ok(Tag::Double(f64::from_bits(u64::from_be_bytes(
+                self.take(8)?.try_into().unwrap(),
+            )))),
             7 => {
                 let length = self.count()?;
                 Ok(Tag::ByteArray(self.take(length)?.to_vec()))
@@ -127,13 +138,17 @@ impl<'a> NbtReader<'a> {
             }
             11 => {
                 let length = self.count()?;
-                let byte_length = length.checked_mul(4).ok_or("NBT int array length overflow")?;
+                let byte_length = length
+                    .checked_mul(4)
+                    .ok_or("NBT int array length overflow")?;
                 self.take(byte_length)?;
                 Ok(Tag::IntArray)
             }
             12 => {
                 let length = self.count()?;
-                let byte_length = length.checked_mul(8).ok_or("NBT long array length overflow")?;
+                let byte_length = length
+                    .checked_mul(8)
+                    .ok_or("NBT long array length overflow")?;
                 self.take(byte_length)?;
                 Ok(Tag::LongArray)
             }
@@ -172,7 +187,9 @@ fn js_truthy(tag: &Tag) -> bool {
         Tag::Long(v) => *v != 0,
         Tag::Float(v) => *v != 0.0 && !v.is_nan(),
         Tag::Double(v) => *v != 0.0 && !v.is_nan(),
-        Tag::ByteArray(_) | Tag::List(_, _) | Tag::Compound(_) | Tag::IntArray | Tag::LongArray => true,
+        Tag::ByteArray(_) | Tag::List(_, _) | Tag::Compound(_) | Tag::IntArray | Tag::LongArray => {
+            true
+        }
     }
 }
 
@@ -261,7 +278,8 @@ fn parse_server_list(bytes: &[u8]) -> Result<Value, String> {
 }
 
 fn read_input(path: &Path) -> Result<Vec<u8>, String> {
-    let metadata = fs::metadata(path).map_err(|error| format!("Could not read servers.dat: {error}"))?;
+    let metadata =
+        fs::metadata(path).map_err(|error| format!("Could not read servers.dat: {error}"))?;
     if metadata.len() > MAX_FILE_SIZE as u64 {
         return Err("servers.dat exceeds size limit".into());
     }
@@ -305,8 +323,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flate2::write::GzEncoder;
     use flate2::Compression;
+    use flate2::write::GzEncoder;
     use std::io::Write;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -316,25 +334,39 @@ mod tests {
     }
 
     fn server_compound(out: &mut Vec<u8>) {
-        out.push(8); push_string(out, "name"); push_string(out, "Example Server");
-        out.push(8); push_string(out, "ip"); push_string(out, "play.example.test:25565");
-        out.push(1); push_string(out, "hiddenAddress"); out.push(1);
-        out.push(7); push_string(out, "icon"); out.extend_from_slice(&3_i32.to_be_bytes()); out.extend_from_slice(&[0, 1, 255]);
+        out.push(8);
+        push_string(out, "name");
+        push_string(out, "Example Server");
+        out.push(8);
+        push_string(out, "ip");
+        push_string(out, "play.example.test:25565");
+        out.push(1);
+        push_string(out, "hiddenAddress");
+        out.push(1);
+        out.push(7);
+        push_string(out, "icon");
+        out.extend_from_slice(&3_i32.to_be_bytes());
+        out.extend_from_slice(&[0, 1, 255]);
         out.push(0);
     }
 
     fn fixture() -> Vec<u8> {
         let mut out = vec![10];
         push_string(&mut out, "");
-        out.push(9); push_string(&mut out, "servers");
-        out.push(10); out.extend_from_slice(&1_i32.to_be_bytes());
+        out.push(9);
+        push_string(&mut out, "servers");
+        out.push(10);
+        out.extend_from_slice(&1_i32.to_be_bytes());
         server_compound(&mut out);
         out.push(0);
         out
     }
 
     fn temp_file(bytes: &[u8], suffix: &str) -> std::path::PathBuf {
-        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let path = std::env::temp_dir().join(format!("craftdock-servers-{stamp}-{suffix}.dat"));
         fs::write(&path, bytes).unwrap();
         path
@@ -343,12 +375,15 @@ mod tests {
     #[test]
     fn parses_raw_servers_dat_with_renderer_shape() {
         let result = parse_server_list(&fixture()).unwrap();
-        assert_eq!(result, json!([{
-            "name": "Example Server",
-            "ip": "play.example.test:25565",
-            "icon": "data:image/png;base64,AAH/",
-            "hidden": true
-        }]));
+        assert_eq!(
+            result,
+            json!([{
+                "name": "Example Server",
+                "ip": "play.example.test:25565",
+                "icon": "data:image/png;base64,AAH/",
+                "hidden": true
+            }])
+        );
     }
 
     #[test]

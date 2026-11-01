@@ -75,7 +75,7 @@ function loadBridge({ tauri = true, invoke = () => undefined, electron = null } 
       instanceSource,
       openFolderMatch[0],
       settingsFolderMatch[0],
-      'globalThis.__api = { InstanceStore, tauriBridge, dataRootBridge, openActiveInstanceFolder, settingsOpenDataFolder };',
+      'globalThis.__api = { InstanceStore, tauriBridge, dataRootBridge, instanceBridge, openActiveInstanceFolder, settingsOpenDataFolder };',
     ].join('\n'),
     sandbox,
   );
@@ -93,6 +93,8 @@ test('Rust registers every instance and folder command the renderer uses', () =>
     'instance_get',
     'instance_update',
     'instance_delete',
+    'instance_list_worlds',
+    'instance_list_mods',
     'instance_open_folder',
     'open_folder',
     'get_data_root',
@@ -182,6 +184,60 @@ test('Tauri opens the data folder through the same bridge', async () => {
     ['get_data_root', null],
     ['open_folder', { path: 'C:\\Users\\me\\AppData\\com.craftdock.launcher.tauri\\data' }],
   ]);
+});
+
+test('Tauri lists worlds and mods through the Rust commands', async () => {
+  const worlds = [{ name: 'Survival', path: 'C:\\data\\instances\\Pack\\saves\\Survival', lastPlayed: 1_700_000_000_000 }];
+  const mods = [{ name: 'sodium.jar', enabled: true, path: 'C:\\data\\instances\\Pack\\mods\\sodium.jar' }];
+  const { api, calls } = loadBridge({
+    invoke: command => (command === 'instance_list_worlds' ? worlds : mods),
+  });
+
+  const instance = api.tauriBridge().instance;
+  assert.deepEqual(plain(await instance.listWorlds('inst_1')), worlds);
+  assert.deepEqual(plain(await instance.listMods('inst_1')), mods);
+  assert.deepEqual(plain(calls), [
+    ['instance_list_worlds', { id: 'inst_1' }],
+    ['instance_list_mods', { id: 'inst_1' }],
+  ]);
+});
+
+test('the worlds panel and mod list read through the bridge, not the Electron global', () => {
+  const worldsFn = renderer.match(/^async function loadActiveInstanceWorlds\(\) \{[\s\S]*?\r?\n\}/m)?.[0];
+  assert.ok(worldsFn, 'loadActiveInstanceWorlds() has a closing brace');
+  assert.match(worldsFn, /const instanceApi = instanceBridge\(\);/);
+  assert.match(worldsFn, /instanceApi\.listWorlds\(activeInstanceId\)/);
+  assert.doesNotMatch(worldsFn, /window\.craftdockInstance\.listWorlds/);
+
+  // Without a bridge at all the panel still says the desktop app is required.
+  assert.match(worldsFn, /World list available in the desktop app/);
+
+  const modsFn = renderer.match(/^async function renderInstalledMods\(inst\) \{[\s\S]*?\r?\n\}/m)?.[0];
+  assert.ok(modsFn, 'renderInstalledMods() has a closing brace');
+  assert.match(modsFn, /const instanceApi = instanceBridge\(\);/);
+  assert.match(modsFn, /if \(instanceApi\?\.listMods\)/);
+  assert.match(modsFn, /instanceApi\.listMods\(inst\.id\)/);
+
+  const overviewFn = renderer.match(/^async function loadInstanceOverview\(inst\) \{[\s\S]*?\r?\n\}/m)?.[0];
+  assert.ok(overviewFn, 'loadInstanceOverview() has a closing brace');
+  assert.match(overviewFn, /modsApi\.listMods\(inst\.id\)/);
+});
+
+test('Electron keeps its own world and mod listing', async () => {
+  const electronCalls = [];
+  const electron = {
+    listWorlds: id => { electronCalls.push(['listWorlds', id]); return Promise.resolve([{ name: 'Survival', path: 'p', lastPlayed: null }]); },
+    listMods: id => { electronCalls.push(['listMods', id]); return Promise.resolve([{ name: 'sodium.jar', enabled: false, path: 'p' }]); },
+  };
+  const { api, calls } = loadBridge({ tauri: false, electron });
+
+  const bridge = api.instanceBridge();
+  assert.equal(bridge, electron, 'the Electron preload wins when present');
+  await bridge.listWorlds('inst_9');
+  await bridge.listMods('inst_9');
+
+  assert.deepEqual(calls, [], 'no Rust command runs when Electron preload is present');
+  assert.deepEqual(electronCalls, [['listWorlds', 'inst_9'], ['listMods', 'inst_9']]);
 });
 
 test('Electron keeps its own instance and folder bridge', async () => {

@@ -59,7 +59,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 
 /* ── RAIL ── */
 .icon-rail{width:68px;background:var(--bg-darkest);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:4px;flex-shrink:0}
-.rail-btn{width:44px;height:44px;border-radius:var(--radius-sm);border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-muted);transition:all 0.15s;position:relative;flex-direction:column;gap:3px}
+.rail-btn{width:44px;height:44px;border-radius:var(--radius-sm);border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-muted);transition:background-color 0.08s ease, color 0.08s ease;position:relative;flex-direction:column;gap:3px}
 .rail-btn svg{width:20px;height:20px}
 .rail-btn span{font-size:9px;font-weight:600;letter-spacing:0.04em}
 .rail-btn:hover{background:var(--accent-subtle);color:var(--accent-bright)}
@@ -793,8 +793,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11" style="margin-right:4px"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>Change
             </button>
           </div>
-          <!-- World Tag + Server Tag + Resource Tag (side by side) -->
-          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <!-- World Tag + Server Tag + Resource Tag + Shader Tag (side by side) -->
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px">World Tag</div>
               <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">Shares <code style="font-size:9px;background:rgba(255,255,255,0.08);padding:1px 3px;border-radius:2px">saves/</code> with matching instances</div>
@@ -824,6 +824,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
                 <button id="ovResourceTagClear" onclick="clearResourceTag()" title="Clear" style="background:none;border:1px solid var(--border);border-radius:5px;padding:3px 7px;cursor:pointer;color:var(--text-muted);font-size:10px;white-space:nowrap;display:none;flex-shrink:0">✕</button>
               </div>
               <div id="resourceTagNote" style="font-size:10px;margin-top:4px;display:none"></div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:600;margin-bottom:4px">Shader Tag</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">Shares <code style="font-size:9px;background:rgba(255,255,255,0.08);padding:1px 3px;border-radius:2px">shaderpacks/</code> with matching instances</div>
+              <div style="display:flex;gap:4px;align-items:center">
+                <input id="ovShaderTag" class="settings-input" placeholder="e.g. our-shaders" style="flex:1;min-width:0" oninput="debounceSaveShaderTag()" list="shaderTagSuggestions">
+                <datalist id="shaderTagSuggestions"></datalist>
+                <button id="ovShaderTagClear" onclick="clearShaderTag()" title="Clear" style="background:none;border:1px solid var(--border);border-radius:5px;padding:3px 7px;cursor:pointer;color:var(--text-muted);font-size:10px;white-space:nowrap;display:none;flex-shrink:0">✕</button>
+              </div>
+              <div id="shaderTagNote" style="font-size:10px;margin-top:4px;display:none"></div>
             </div>
           </div>
         </div>
@@ -1199,7 +1209,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
             <div style="display:flex;align-items:center;gap:12px">
               <img id="skinDownloadPreviewImg" src="" alt="skin preview"
                 style="width:48px;height:48px;image-rendering:pixelated;border-radius:6px;background:var(--bg-panel);flex-shrink:0"
-                onerror="skinDownloadNotFound()">
+                >
               <div style="flex:1">
                 <div id="skinDownloadPreviewName" style="font-size:13px;font-weight:700;margin-bottom:2px">—</div>
                 <div style="font-size:11px;color:var(--text-muted)">Click Save to add to your library</div>
@@ -1511,9 +1521,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
         Java Management
         <button class="btn-ghost" style="width:auto;padding:3px 10px;font-size:10px;margin-left:auto" onclick="settingsScanJava()">↻ Scan</button>
+        <button class="btn-ghost" style="width:auto;padding:3px 10px;font-size:10px;margin-left:6px" id="javaInstallMissingBtn" onclick="settingsInstallMissingJava()" title="Download only the Java versions this PC doesn't already have">⤓ Install missing</button>
       </div>
       <div style="padding:10px 18px 4px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">
-        CraftDock automatically picks the correct Java for each Minecraft version. If a needed version isn't installed, it downloads it privately to the launcher folder — your system Java is never modified.
+        CraftDock uses the Java you already have. When an instance needs a version this PC is missing, it installs a private copy in the launcher folder and reuses it — your system Java is never modified.
       </div>
       <!-- MC → Java compatibility table -->
       <div style="padding:10px 18px 6px">
@@ -1535,6 +1546,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <!-- Detected / downloaded Java list -->
       <div id="settingsJavaList" style="padding:4px 0;border-top:1px solid var(--border)">
         <div style="padding:12px 18px;color:var(--text-muted);font-size:12px">Scanning for Java installations…</div>
+      </div>
+      <!-- Per-version install progress (one version at a time, cancellable) -->
+      <div id="settingsJavaProgress" style="display:none;padding:10px 18px 12px;border-top:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <span id="settingsJavaProgressLabel" style="font-size:11px;color:var(--text-secondary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Preparing…</span>
+          <button class="btn-ghost" id="settingsJavaCancelBtn" style="width:auto;padding:3px 10px;font-size:10px;flex-shrink:0" onclick="settingsCancelJavaInstall()">Cancel</button>
+        </div>
+        <div style="height:4px;border-radius:2px;background:rgba(255,255,255,0.07);overflow:hidden">
+          <div id="settingsJavaProgressBar" style="height:100%;width:0%;background:var(--accent);transition:width 0.15s"></div>
+        </div>
+        <div id="settingsJavaProgressDetail" style="font-size:10px;color:var(--text-muted);margin-top:6px"></div>
       </div>
     </div>
 
@@ -1592,6 +1614,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
           <div class="settings-label-text">Total servers</div>
         </div>
         <span id="settingsServerCount" style="font-size:12px;color:var(--text-muted)">—</span>
+      </div>
+      <div class="settings-row" style="align-items:center">
+        <div class="settings-label" style="flex:1;min-width:0">
+          <div class="settings-label-text">Browse cache</div>
+          <div class="settings-label-desc" id="settingsBrowseCacheStats" style="font-size:10px">Checking…</div>
+          <div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.07);overflow:hidden;margin-top:6px;max-width:220px">
+            <div id="settingsBrowseCacheBar" style="height:100%;width:0%;background:var(--accent);transition:width 0.2s"></div>
+          </div>
+        </div>
+        <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px;flex-shrink:0" onclick="settingsClearBrowseCache()">Clear</button>
       </div>
     </div>
 
@@ -1810,8 +1842,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       </div>
     </div>
 
-    <!-- World Tag + Server Tag + Resource Tag -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+    <!-- World Tag + Server Tag + Resource Tag + Shader Tag -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">
       <div>
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600">World Tag <span style="font-weight:400;opacity:0.6">(optional)</span></div>
         <input class="modal-input" id="niWorldTag" placeholder="e.g. survival-smp" style="margin-bottom:0;font-family:monospace;font-size:11px;width:100%" list="niWorldTagSuggestions">
@@ -1829,6 +1861,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         <input class="modal-input" id="niResourceTag" placeholder="e.g. our-pack" style="margin-bottom:0;font-family:monospace;font-size:11px;width:100%" list="niResourceTagSuggestions">
         <datalist id="niResourceTagSuggestions"></datalist>
         <div style="font-size:10px;color:var(--text-muted);margin-top:4px">Shares <code style="font-size:9px;background:rgba(255,255,255,0.08);padding:1px 3px;border-radius:2px">resourcepacks/</code></div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-weight:600">Shader Tag <span style="font-weight:400;opacity:0.6">(optional)</span></div>
+        <input class="modal-input" id="niShaderTag" placeholder="e.g. our-shaders" style="margin-bottom:0;font-family:monospace;font-size:11px;width:100%" list="niShaderTagSuggestions">
+        <datalist id="niShaderTagSuggestions"></datalist>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:4px">Shares <code style="font-size:9px;background:rgba(255,255,255,0.08);padding:1px 3px;border-radius:2px">shaderpacks/</code></div>
       </div>
     </div>
 
@@ -2345,6 +2383,8 @@ function tauriBridge() {
       delete: (id) => invoke('instance_delete', { id }),
       list: () => invoke('instance_list'),
       get: (id) => invoke('instance_get', { id }),
+      listWorlds: (id) => invoke('instance_list_worlds', { id }),
+      listMods: (id) => invoke('instance_list_mods', { id }),
       openFolder: (id, sub) => invoke('instance_open_folder', { id, sub: sub || null }),
     },
     openFolder: (path) => invoke('open_folder', { path }),
@@ -2362,6 +2402,13 @@ function tauriBridge() {
         }),
       getMinecraftVersions: () => invoke('cf_get_mc_versions'),
     },
+    // Same bounded cache file as the Electron build, written by Rust commands.
+    browseCache: {
+      read: (key) => invoke('browse_cache_read', { key }),
+      write: (key, entry) => invoke('browse_cache_write', { key, payload: entry }),
+      stats: () => invoke('browse_cache_stats'),
+      clear: () => invoke('browse_cache_clear'),
+    },
   };
 }
 
@@ -2374,6 +2421,12 @@ function resourceApi() {
 function dataRootBridge() {
   if (isCraftDock && window.craftdock?.getDataRoot) return window.craftdock;
   return tauriBridge();
+}
+
+// Instance APIs come from Electron's preload or from the Tauri commands. Only
+// the calls Rust implements are present, so everything else stays Electron-only.
+function instanceBridge() {
+  return window.craftdockInstance || tauriBridge()?.instance || null;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2445,7 +2498,7 @@ const AccountStore = {
 // InstanceStore — backed by real filesystem folders via IPC when in Electron,
 // falls back to localStorage-style store in browser/demo mode.
 const InstanceStore = {
-  get _api() { return window.craftdockInstance || tauriBridge()?.instance || null; },
+  get _api() { return instanceBridge(); },
 
   async getAll() {
     if (this._api) {
@@ -3267,9 +3320,10 @@ async function renderInstalledMods(inst) {
 
   // Merge disk files with saved metadata so update badges, source, versionId all work
   let mods = [];
-  if (window.craftdockInstance) {
+  const instanceApi = instanceBridge();
+  if (instanceApi?.listMods) {
     try {
-      const diskMods = await window.craftdockInstance.listMods(inst.id) || [];
+      const diskMods = await instanceApi.listMods(inst.id) || [];
       const metaMods = inst.mods || [];
       // Index metadata once so the per-file lookup is O(1)/cheap instead of a find per file
       const metaByFile = new Map();
@@ -3406,6 +3460,42 @@ let browseShowFavOnly = false;
 let browseDebounceTimer = null;
 let installedPackIds = new Set();
 let favouritePackIds = new Set();
+
+// ── Shared browse cache ────────────────────────────────────
+// One small on-disk cache backs the Browse tab and the per-instance browse
+// windows (mods, resource packs, shaders), so a panel paints the previous
+// results instantly and then refreshes them in the background.
+// Only result rows are cached — never installs or downloaded files.
+function browseCacheBridge() {
+  return window.craftdock?.browseCache || tauriBridge()?.browseCache || null;
+}
+
+// Identical filters produce an identical key in every browse surface.
+function browseCacheKey(parts = {}) {
+  const fields = [parts.source, parts.type, parts.query, parts.version,
+                  parts.loader, parts.env, parts.sort, parts.offset || 0];
+  return fields.map(value => String(value ?? '').trim().toLowerCase()).join('|');
+}
+
+async function browseCacheRead(parts) {
+  const bridge = browseCacheBridge();
+  if (!bridge?.read) return null;
+  try {
+    const entry = await bridge.read(browseCacheKey(parts));
+    if (!entry || !Array.isArray(entry.items) || !entry.items.length) return null;
+    return entry;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function browseCacheWrite(parts, items, total) {
+  const bridge = browseCacheBridge();
+  if (!bridge?.write || !Array.isArray(items) || !items.length) return;
+  try {
+    await bridge.write(browseCacheKey(parts), { items, total: Number(total) || items.length });
+  } catch (_) {}
+}
 
 async function loadFavourites() {
   const saved = await Store.get('craftdock:favourites');
@@ -3592,12 +3682,30 @@ async function fetchBrowsePacks(query, version, sort, append = false) {
   const instances = await InstanceStore.getAll();
   installedPackIds = new Set(instances.map(i => i.sourceId).filter(Boolean));
 
+  const offset = append ? browseOffset : 0;
+  const cacheParts = {
+    source: browseSource, type: browseType, query: query || '', version: version || '',
+    loader: browseLoader, env: browseEnv, sort, offset
+  };
+
+  // Paint whatever we cached for these filters before touching the network.
+  let showingCache = false;
   if (!append) {
+    const cached = await browseCacheRead(cacheParts);
+    if (cached) {
+      browseAllPacks  = cached.items;
+      browseTotalHits = cached.total || cached.items.length;
+      applyBrowseFavFilter();
+      showingCache = true;
+    }
+  }
+
+  if (!append && !showingCache) {
     list.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-muted)">
       <div class="launch-spinner" style="width:32px;height:32px;margin:0 auto 12px"></div>
       <div style="font-size:13px">Loading ${browseType}s...</div></div>`;
     // browseLoadMoreBar lives inside browseList, cleared with innerHTML above
-  } else {
+  } else if (append) {
     // Spinner at bottom for append
     const spinner = document.createElement('div');
     spinner.id = 'browseAppendSpinner';
@@ -3609,9 +3717,9 @@ async function fetchBrowsePacks(query, version, sort, append = false) {
   try {
     let packs;
     if (browseSource === 'modrinth') {
-      packs = await fetchModrinthItems(query, version, sort, append ? browseOffset : 0);
+      packs = await fetchModrinthItems(query, version, sort, offset);
     } else {
-      packs = await fetchCurseForgeItems(query, version, sort, append ? browseOffset : 0);
+      packs = await fetchCurseForgeItems(query, version, sort, offset);
     }
 
     const sp = document.getElementById('browseAppendSpinner');
@@ -3619,15 +3727,25 @@ async function fetchBrowsePacks(query, version, sort, append = false) {
 
     if (append) {
       browseAllPacks = [...browseAllPacks, ...packs];
-    } else {
-      browseAllPacks = packs;
+      if (browseShowFavOnly) { applyBrowseFavFilter(); return; }
+      // Append just the new page. Re-rendering every row already on screen
+      // rebuilt (and re-decoded) hundreds of rows per click, so each Load More
+      // got slower than the one before it.
+      renderBrowseList(packs, true);
+      const countEl = document.getElementById('browseResultCount');
+      if (countEl) countEl.textContent = browseAllPacks.length + (browseTotalHits > browseAllPacks.length ? ` of ${browseTotalHits.toLocaleString()}` : '') + ' results';
+      updateLoadMoreFooter(browseAllPacks.length < browseTotalHits);
+      return;
     }
 
+    browseAllPacks = packs;
+    browseCacheWrite(cacheParts, packs, browseTotalHits);
     applyBrowseFavFilter();
   } catch(err) {
     const sp = document.getElementById('browseAppendSpinner');
     if (sp) sp.remove();
-    if (!append) {
+    // A cache hit already filled the list — keep it rather than blanking it.
+    if (!append && !showingCache) {
       list.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-muted)">
         <div style="font-size:13px;margin-bottom:8px">Failed to load</div>
         <div style="font-size:11px;max-width:300px;margin:0 auto">${escHtml(err.message)}</div>
@@ -3910,8 +4028,30 @@ async function installPack(pack, btn) {
     } catch(e) {
       showNotif('Install Error', e.message, 7000);
     }
+  } else if (pack.source === 'curseforge' && isCraftDock && window.craftdockInstance?.installCurseForgeModpack) {
+    try {
+      showNotif('Installing modpack', `Downloading ${pack.name}…`);
+      // Switch to console tab to show install progress
+      const consoleTabBtn = document.getElementById('ctConsoleBtn');
+      if (consoleTabBtn) switchCtab(consoleTabBtn, 'ct-console');
+
+      const result = await window.craftdockInstance.installCurseForgeModpack(instId, pack.id, mcVersion, loader);
+      if (result.success) {
+        await renderInstanceList();
+        selectInstanceById(instId);
+        const skipped = result.modsFailed ? ` (${result.modsFailed} skipped)` : '';
+        showNotif('Modpack Installed!', `${pack.name} — ${result.modsInstalled} mods ready${skipped}`);
+      } else {
+        showNotif('Install Failed', result.error || 'Unknown error', 7000);
+        const insts = await InstanceStore.getAll();
+        const inst2 = insts.find(i => i.id === instId);
+        if (inst2) { inst2.downloadStatus = 'error'; await InstanceStore.save(inst2); }
+      }
+    } catch(e) {
+      showNotif('Install Error', e.message, 7000);
+    }
   } else {
-    // CurseForge or no API — just save the stub, user can manually add mods
+    // No install API in this build — keep the stub so mods can be added manually
     const insts = await InstanceStore.getAll();
     const inst2 = insts.find(i => i.id === instId);
     if (inst2) { inst2.downloadStatus = 'manual'; await InstanceStore.save(inst2); }
@@ -3926,7 +4066,23 @@ async function installPack(pack, btn) {
 }
 
 function showPackDetails(source, id, slug) {
-  // Switch to instances page — future: open detail modal
+  // No in-app detail modal: the row opens the project's own page in the system
+  // browser, where screenshots, changelogs and the full description live.
+  const types = {
+    modpack:      { modrinth: 'modpack',      curseforge: 'modpacks' },
+    mod:          { modrinth: 'mod',          curseforge: 'mc-mods' },
+    resourcepack: { modrinth: 'resourcepack', curseforge: 'texture-packs' },
+    shader:       { modrinth: 'shader',       curseforge: 'shaders' },
+    datapack:     { modrinth: 'datapack',     curseforge: 'customization' },
+    plugin:       { modrinth: 'plugin',       curseforge: 'bukkit-plugins' },
+  }[browseType] || { modrinth: 'modpack', curseforge: 'modpacks' };
+  const handle = encodeURIComponent(slug || id || '');
+  if (!handle) return;
+  const url = source === 'curseforge'
+    ? `https://www.curseforge.com/minecraft/${types.curseforge}/${handle}`
+    : `https://modrinth.com/${types.modrinth}/${handle}`;
+  if (window.craftdock?.openExternal) window.craftdock.openExternal(url);
+  else window.open(url, '_blank');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4618,13 +4774,23 @@ function debounceResSearch(q) {
 async function resSearchItems(query) {
   const list = document.getElementById('resList');
   if (!list) return;
-  list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted)">
-    <div class="launch-spinner" style="width:24px;height:24px;margin:0 auto 10px"></div>
-    <div style="font-size:12px">Searching…</div>
-  </div>`;
+  const projectType = _resBrowserType === 'shader' ? 'shader' : 'resourcepack';
+  // Same key shape the Browse tab uses, so both surfaces share one entry.
+  const cacheParts = {
+    source: 'modrinth', type: projectType, query: query || '', version: '',
+    loader: '', env: '', sort: query ? 'relevance' : 'downloads'
+  };
+  const cached = await browseCacheRead(cacheParts);
+  if (cached) {
+    renderResList(cached.items);
+  } else {
+    list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted)">
+      <div class="launch-spinner" style="width:24px;height:24px;margin:0 auto 10px"></div>
+      <div style="font-size:12px">Searching…</div>
+    </div>`;
+  }
 
   try {
-    const projectType = _resBrowserType === 'shader' ? 'shader' : 'resourcepack';
     const facets = [[`project_type:${projectType}`]];
     const params = new URLSearchParams({
       query: query || '',
@@ -4644,9 +4810,12 @@ async function resSearchItems(query) {
       projectType: h.project_type
     }));
     renderResList(items);
+    browseCacheWrite(cacheParts, items, items.length);
   } catch(err) {
-    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">
-      Search failed: ${escHtml(err.message)}</div>`;
+    if (!cached) {
+      list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">
+        Search failed: ${escHtml(err.message)}</div>`;
+    }
   }
 }
 
@@ -4931,17 +5100,43 @@ function debounceMbSearch(q) {
   mbDebounce = setTimeout(() => mbSearchMods(q), 350);
 }
 
+// The instance mod browser and the Browse tab resolve the same filters to the
+// same cache key, so one entry serves both windows.
+async function mbBrowseCacheParts(offset) {
+  const picked = document.getElementById('mbVersionFilter')?.value || '';
+  const inst = activeInstanceId ? await InstanceStore.get(activeInstanceId) : null;
+  const version = mbSource === 'modrinth' ? (picked || inst?.mcVersion || '') : '';
+  return {
+    source: mbSource, type: 'mod', query: mbCurrentQuery, version,
+    loader: mbLoader, env: '', sort: mbCurrentQuery ? 'relevance' : 'downloads', offset
+  };
+}
+
 async function mbSearchMods(query, append = false) {
   const list = document.getElementById('mbList');
   if (!list) return;
 
+  let showingCache = false;
+  let cacheParts = null;
+  let requestOffset = mbOffset;
   if (!append) {
     mbOffset = 0;
+    requestOffset = 0;
     mbCurrentQuery = query;
-    list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted)">
-      <div class="launch-spinner" style="width:24px;height:24px;margin:0 auto 10px"></div>
-      <div style="font-size:12px">Searching...</div>
-    </div>`;
+    cacheParts = await mbBrowseCacheParts(0);
+    const cached = await browseCacheRead(cacheParts);
+    if (cached) {
+      renderMbList(cached.items, false);
+      mbTotalHits = cached.total || cached.items.length;
+      mbOffset    = cached.items.length;
+      _mbUpdateLoadMore();
+      showingCache = true;
+    } else {
+      list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted)">
+        <div class="launch-spinner" style="width:24px;height:24px;margin:0 auto 10px"></div>
+        <div style="font-size:12px">Searching...</div>
+      </div>`;
+    }
   } else {
     // Show spinner at bottom while appending
     const sp = document.createElement('div');
@@ -4956,9 +5151,9 @@ async function mbSearchMods(query, append = false) {
   try {
     let result;
     if (mbSource === 'modrinth') {
-      result = await searchModrinthMods(mbCurrentQuery, mbLoader, mbOffset);
+      result = await searchModrinthMods(mbCurrentQuery, mbLoader, requestOffset);
     } else {
-      result = await searchCurseForgeMods(mbCurrentQuery, mbLoader, mbOffset);
+      result = await searchCurseForgeMods(mbCurrentQuery, mbLoader, requestOffset);
     }
     document.getElementById('mbAppendSpinner')?.remove();
 
@@ -4968,11 +5163,13 @@ async function mbSearchMods(query, append = false) {
       renderMbList(result.mods, false);
     }
     mbTotalHits = result.total;
-    mbOffset   += result.mods.length;
+    mbOffset   = requestOffset + result.mods.length;
     _mbUpdateLoadMore();
+    // Only the first page is cached; later pages extend the live list.
+    if (cacheParts) browseCacheWrite(cacheParts, result.mods, result.total);
   } catch(err) {
     document.getElementById('mbAppendSpinner')?.remove();
-    if (!append) {
+    if (!append && !showingCache) {
       list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted)">
         <div style="font-size:12px;margin-bottom:8px">Search failed</div>
         <div style="font-size:11px">${escHtml(err.message)}</div>
@@ -6381,6 +6578,9 @@ function appendInstConsole(id, text, cls) {
     span.className = entry.cls;
     span.textContent = text.trimEnd() + '\n';
     el.appendChild(span);
+    // Cap the console DOM like the popout console does; a long modded session
+    // would otherwise leave tens of thousands of spans for the renderer to lay out.
+    if (el.childElementCount > 3000) el.removeChild(el.firstChild);
     if (wasBottom) el.scrollTop = el.scrollHeight;
   }
 }
@@ -6701,6 +6901,7 @@ function openNewInstanceModal() {
   if (document.getElementById('niWorldTag'))    document.getElementById('niWorldTag').value    = '';
   if (document.getElementById('niServerTag'))  document.getElementById('niServerTag').value   = '';
   if (document.getElementById('niResourceTag')) document.getElementById('niResourceTag').value = '';
+  if (document.getElementById('niShaderTag'))   document.getElementById('niShaderTag').value   = '';
   loadWorldTagSuggestions();
   const img = document.getElementById('niIconImg'), ph = document.getElementById('niIconPh');
   if (img) { img.src=''; img.style.display='none'; }
@@ -6775,19 +6976,23 @@ async function createCustomInstance() {
   const worldTag    = (document.getElementById('niWorldTag')?.value     || '').trim().toLowerCase().replace(/\s+/g,'-') || null;
   const serverTag   = (document.getElementById('niServerTag')?.value    || '').trim().toLowerCase().replace(/\s+/g,'-') || null;
   const resourceTag = (document.getElementById('niResourceTag')?.value  || '').trim().toLowerCase().replace(/\s+/g,'-') || null;
+  const shaderTag   = (document.getElementById('niShaderTag')?.value    || '').trim().toLowerCase().replace(/\s+/g,'-') || null;
   const colorEl  = document.querySelector('.ni-color[style*="white"]');
   const color    = colorEl?.dataset.color || 'linear-gradient(135deg,#1a3a6b,#2563a0)';
 
   const instance = {
     id: 'inst_' + Date.now(), name, mcVersion: version, loader,
     iconUrl: _niIconDataUrl || null,
-    ramMin, ramMax, notes, color, worldTag, serverTag, resourceTag,
+    ramMin, ramMax, notes, color, worldTag, serverTag, resourceTag, shaderTag,
     addedAt: Date.now(), downloadStatus: 'custom'
   };
   await InstanceStore.save(instance);
-  // Apply resource tag symlink immediately if set
+  // Apply tag symlinks immediately if set
   if (resourceTag && isCraftDock && window.craftdockInstance?.applyResourceTag) {
     window.craftdockInstance.applyResourceTag(instance.id, resourceTag).catch(() => {});
+  }
+  if (shaderTag && isCraftDock && window.craftdockInstance?.applyShaderTag) {
+    window.craftdockInstance.applyShaderTag(instance.id, shaderTag).catch(() => {});
   }
   closeNewInstanceModal();
   await renderInstanceList();
@@ -6798,7 +7003,7 @@ async function createCustomInstance() {
 // ─── Instance folder/shared worlds management ─────────────
 async function openActiveInstanceFolder(sub) {
   if (!activeInstanceId) return;
-  const instanceApi = window.craftdockInstance || tauriBridge()?.instance;
+  const instanceApi = instanceBridge();
   if (instanceApi?.openFolder) {
     const result = await instanceApi.openFolder(activeInstanceId, sub || null);
     if (result && result.success === false) showNotif('Open Folder', result.error || 'Could not open this folder');
@@ -6920,6 +7125,10 @@ async function loadServerTagSuggestions() {
       const dl = document.getElementById(id);
       if (dl) dl.innerHTML = [...new Set(instances.map(i => i.resourceTag).filter(Boolean))].map(t => `<option value="${escHtml(t)}">`).join('');
     }
+    for (const id of ['shaderTagSuggestions','niShaderTagSuggestions']) {
+      const dl = document.getElementById(id);
+      if (dl) dl.innerHTML = [...new Set(instances.map(i => i.shaderTag).filter(Boolean))].map(t => `<option value="${escHtml(t)}">`).join('');
+    }
     for (const id of ['serverTagSuggestions','niServerTagSuggestions']) {
       const dl = document.getElementById(id);
       if (dl) dl.innerHTML = tags.map(t => `<option value="${escHtml(t)}">`).join('');
@@ -6981,6 +7190,60 @@ async function loadResourceTagSuggestions() {
   } catch {}
 }
 
+// ── Shader Tag ────────────────────────────────────────────────────────────────
+let _shaderTagTimer = null;
+function debounceSaveShaderTag() {
+  clearTimeout(_shaderTagTimer);
+  _shaderTagTimer = setTimeout(saveShaderTag, 600);
+}
+
+async function saveShaderTag() {
+  if (!activeInstanceId) return;
+  const tag = (document.getElementById('ovShaderTag')?.value || '').trim().toLowerCase().replace(/\s+/g, '-') || null;
+  const insts = await InstanceStore.getAll();
+  const inst  = insts.find(i => i.id === activeInstanceId);
+  if (!inst) return;
+  inst.shaderTag = tag || null;
+  await InstanceStore.save(inst);
+  if (isCraftDock && window.craftdockInstance?.applyShaderTag) {
+    await window.craftdockInstance.applyShaderTag(activeInstanceId, tag);
+  }
+  updateShaderTagUI(tag);
+  loadShaderTagSuggestions();
+  if (tag) showNotif('Shader Tag Set', `Shader packs shared with other "${tag}" instances`);
+  else showNotif('Shader Tag Cleared', 'This instance now has its own private shader packs');
+}
+
+function clearShaderTag() {
+  const tagInput = document.getElementById('ovShaderTag');
+  if (tagInput) tagInput.value = '';
+  saveShaderTag();
+}
+
+function updateShaderTagUI(tag) {
+  const clearBtn = document.getElementById('ovShaderTagClear');
+  const noteEl   = document.getElementById('shaderTagNote');
+  if (clearBtn) clearBtn.style.display = tag ? 'inline-block' : 'none';
+  if (noteEl) {
+    if (tag) {
+      noteEl.style.display = 'block';
+      noteEl.style.color   = 'var(--accent-bright)';
+      noteEl.textContent   = `Shared pool: "${tag}"`;
+    } else {
+      noteEl.style.display = 'none';
+    }
+  }
+}
+
+async function loadShaderTagSuggestions() {
+  try {
+    const instances = await InstanceStore.getAll();
+    const tags = [...new Set(instances.map(i => i.shaderTag).filter(Boolean))];
+    const dl = document.getElementById('shaderTagSuggestions');
+    if (dl) dl.innerHTML = tags.map(t => `<option value="${escHtml(t)}">`).join('');
+  } catch {}
+}
+
 async function saveInstanceSettings() {
   if (!activeInstanceId) return;
   const instances = await InstanceStore.getAll();
@@ -6995,13 +7258,14 @@ async function saveInstanceSettings() {
 async function loadActiveInstanceWorlds() {
   const listEl = document.getElementById('worldsList');
   if (!listEl || !activeInstanceId) return;
-  if (!isCraftDock || !window.craftdockInstance?.listWorlds) {
+  const instanceApi = instanceBridge();
+  if (!instanceApi?.listWorlds) {
     listEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:11px">World list available in the desktop app</div>';
     return;
   }
   listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;display:flex;align-items:center;justify-content:center;gap:8px"><div class="launch-spinner" style="width:13px;height:13px;border-width:2px"></div>Loading worlds...</div>';
   try {
-    const worlds = await window.craftdockInstance.listWorlds(activeInstanceId);
+    const worlds = await instanceApi.listWorlds(activeInstanceId);
     if (!worlds || !worlds.length) {
       listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" style="margin:0 auto 10px;display:block;opacity:0.4"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg><div style="font-size:13px;margin-bottom:4px">No worlds found</div><div style="font-size:11px">Launch the game to create worlds</div></div>';
       return;
@@ -7063,6 +7327,12 @@ async function loadInstanceOverview(inst) {
   updateResourceTagUI(inst.resourceTag || null);
   loadResourceTagSuggestions();
 
+  // Shader tag UI
+  const ovShaderTagInput = document.getElementById('ovShaderTag');
+  if (ovShaderTagInput) ovShaderTagInput.value = inst.shaderTag || '';
+  updateShaderTagUI(inst.shaderTag || null);
+  loadShaderTagSuggestions();
+
   // Disk usage (async)
   const diskEl = document.getElementById('ovDiskUsage');
   if (diskEl && isCraftDock && window.craftdockInstance?.getDiskSize) {
@@ -7076,8 +7346,9 @@ async function loadInstanceOverview(inst) {
 
   // Mod count (real from disk)
   const modsEl = document.getElementById('ovTotalMods');
-  if (modsEl && isCraftDock && window.craftdockInstance?.listMods) {
-    window.craftdockInstance.listMods(inst.id).then(mods => {
+  const modsApi = instanceBridge();
+  if (modsEl && modsApi?.listMods) {
+    modsApi.listMods(inst.id).then(mods => {
       modsEl.textContent = (mods||[]).filter(m=>m.enabled).length;
     }).catch(() => {});
   }
@@ -7710,6 +7981,7 @@ async function openServerDetail(id) {
                   <option value="spigot"   ${srv.software==='spigot'  ?'selected':''}>Spigot (→Paper)</option>
                   <option value="vanilla"  ${srv.software==='vanilla' ?'selected':''}>Vanilla</option>
                   <option value="fabric"   ${srv.software==='fabric'  ?'selected':''}>Fabric</option>
+                  <option value="forge"    ${srv.software==='forge'   ?'selected':''}>Forge</option>
                   <option value="quilt"    ${srv.software==='quilt'   ?'selected':''}>Quilt</option>
                   <option value="neoforge" ${srv.software==='neoforge'?'selected':''}>NeoForge</option>
                   <option value="purpur"   ${srv.software==='purpur'  ?'selected':''}>Purpur</option>
@@ -9457,13 +9729,17 @@ function initServerIpcListeners() {
   // Throttle install progress: only update DOM + save if pct OR msg actually changed
   const _lastInstallState = new Map(); // id → {pct, msg}
   let _installSaveTimer = null;
-  window.craftdockServer.onInstallProgress(async (id, pct, msg) => {
+  window.craftdockServer.onInstallProgress(async (id, pct, msg, stats) => {
     const bar   = document.getElementById('srvInstallBar');
     const msgEl = document.getElementById('srvInstallMsg');
     const pctEl = document.getElementById('srvInstallPct');
     if (bar)   bar.style.width   = pct + '%';
     if (msgEl) msgEl.textContent = msg;
-    if (pctEl) pctEl.textContent = pct + '%';
+    // "42% · 4.2 MB/s · 6s left" while a jar is streaming in.
+    if (pctEl) {
+      const speedLine = downloadSpeedLine(stats);
+      pctEl.textContent = speedLine ? `${pct}% · ${speedLine}` : pct + '%';
+    }
     // Deduplicate console lines — only log when pct or msg changes
     const prev = _lastInstallState.get(id);
     if (!prev || prev.pct !== pct || prev.msg !== msg) {
@@ -9928,6 +10204,10 @@ function startIdleTimer(id, idleMinutes) {
   }
   if (!idleMinutes || idleMinutes <= 0) { _idleTimers[id] = null; return; }
   _idleTimers[id] = { idleMinutes, timeout: null, warnTimeout: null, emptyAt: null, warned: false };
+  // Start the countdown right away: a server nobody ever joins never emits a
+  // player-count line, so waiting for one would leave it running forever.
+  // A join (or the automatic `list` query) cancels it as soon as someone is on.
+  updateIdleTimer(id, 0);
 }
 
 function stopIdleTimer(id) {
@@ -10915,6 +11195,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   await renderInstanceList();
   await loadFavourites();
 
+  // First-startup Java check: detect only, never install or prompt
+  runJavaStartupCheck();
+
+  // Per-version Java install progress (settings panel shows it, cancel stops it)
+  const javaInstallBridge = instanceBridge();
+  if (javaInstallBridge?.onJavaInstallProgress) {
+    javaInstallBridge.onJavaInstallProgress(payload => settingsJavaProgress(payload));
+  }
+
   // Wire up instance launch status events
   if (window.craftdockInstance) {
     window.craftdockInstance.onLaunchStatus((id, status, msg) => {
@@ -11097,6 +11386,10 @@ async function loadSettings() {
 
   // Java scan
   if (!_settingsLoaded) settingsScanJava();
+
+  // Shared browse cache usage
+  settingsRefreshBrowseCache();
+
   _settingsLoaded = true;
 }
 
@@ -11155,20 +11448,39 @@ async function settingsToggle(el, key) {
   await Store.set(SETTINGS_KEY, { ...s, [key]: on });
 }
 
+let _javaStatusCache = null;
+
+async function loadJavaStatus(force = false) {
+  if (_javaStatusCache && !force) return _javaStatusCache;
+  const bridge = instanceBridge();
+  if (!bridge?.javaStatus) return null;
+  try { _javaStatusCache = await bridge.javaStatus(); }
+  catch (_) { _javaStatusCache = null; }
+  return _javaStatusCache;
+}
+
+// First-startup check: does this machine already have Java? It never installs
+// anything — a missing version is only downloaded when an instance needs it.
+async function runJavaStartupCheck() {
+  const status = await loadJavaStatus(true);
+  if (status) window._craftdockJavaStatus = status;
+}
+
 async function settingsScanJava() {
   const listEl = document.getElementById('settingsJavaList');
   if (!listEl) return;
-  if (!isCraftDock || !window.craftdockInstance?.scanJava) {
+  const bridge = instanceBridge();
+  if (!bridge?.scanJava) {
     listEl.innerHTML = '<div style="padding:10px 18px;font-size:11px;color:var(--text-muted)">Java scanning available in the desktop app.</div>';
     return;
   }
   listEl.innerHTML = '<div style="padding:10px 18px;font-size:11px;color:var(--text-muted)">Scanning…</div>';
   try {
-    const javas = await window.craftdockInstance.scanJava();
+    const javas = await bridge.scanJava();
     // Also check launcher-managed Java via IPC
     let managed = [];
-    if (window.craftdockInstance?.listLauncherJava) {
-      managed = await window.craftdockInstance.listLauncherJava().catch(() => []);
+    if (bridge?.listLauncherJava) {
+      managed = await bridge.listLauncherJava().catch(() => []);
     }
 
     const allJavas = [
@@ -11176,15 +11488,15 @@ async function settingsScanJava() {
       ...(javas || []).map(j => ({ ...j, source: 'system' })),
     ];
 
-    if (!allJavas.length) {
-      listEl.innerHTML = '<div style="padding:10px 18px;font-size:11px;color:var(--text-muted)">No Java found — CraftDock will auto-download Java the first time you launch an instance.</div>';
-      return;
-    }
+    const status = await loadJavaStatus(true);
+    const preferred = status?.preferredSource === 'system'
+      ? 'using your own Java'
+      : status?.preferredSource === 'launcher'
+        ? "using CraftDock's private Java"
+        : 'no Java installed yet';
+    const missing = status?.missingMajors || [];
 
-    const needed = [21, 17, 16, 8];
-    const found  = new Set(allJavas.map(j => j.version));
-
-    listEl.innerHTML = allJavas.map(j => {
+    const rows = allJavas.length ? allJavas.map(j => {
       const isLauncher = j.source === 'launcher';
       const badge = isLauncher
         ? '<span style="font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(99,102,241,0.2);color:#a5b4fc;margin-left:5px">Launcher</span>'
@@ -11202,12 +11514,193 @@ async function settingsScanJava() {
         </span>
       </div>`;
     }).join('')
-    + `<div style="padding:8px 18px 10px;font-size:10px;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center">
-        <span>${allJavas.length} installation${allJavas.length!==1?'s':''} found · Auto-managed by CraftDock</span>
-      </div>`;
+      : '<div style="padding:10px 18px;font-size:11px;color:var(--text-muted)">No Java found yet — CraftDock installs a private copy the first time an instance needs one.</div>';
+
+    const missingRow = missing.length
+      ? `<div style="padding:10px 18px 12px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:11px;color:var(--text-muted);flex:1;min-width:180px">Missing: ${missing.map(v => 'Java ' + v).join(', ')} — installs privately, your system Java is untouched.</span>
+          <button class="java-install-btn" onclick="settingsInstallMissingJava()">Install missing</button>
+        </div>`
+      : '';
+
+    listEl.innerHTML = rows
+      + `<div style="padding:8px 18px 10px;font-size:10px;color:var(--text-muted);border-top:1px solid var(--border)">
+          ${allJavas.length} installation${allJavas.length!==1?'s':''} found · ${escHtml(preferred)}
+        </div>`
+      + missingRow;
   } catch(e) {
     listEl.innerHTML = `<div style="padding:10px 18px;font-size:11px;color:#f87171">Scan failed: ${escHtml(e.message)}</div>`;
   }
+}
+
+// "4.2 MB/s" — throughput for any download progress line.
+function formatDownloadSpeed(bytesPerSecond) {
+  const value = Number(bytesPerSecond) || 0;
+  if (value <= 0) return '';
+  if (value < 1024) return `${Math.round(value)} B/s`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10240 ? 1 : 0)} KB/s`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB/s`;
+}
+
+// "12s left" / "2m 5s left" — remaining time at the current rate.
+function formatDownloadEta(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  if (value < 1) return 'almost done';
+  if (value < 60) return `${Math.round(value)}s left`;
+  const mins = Math.floor(value / 60);
+  const secs = Math.round(value % 60);
+  return secs ? `${mins}m ${secs}s left` : `${mins}m left`;
+}
+
+// "4.2 MB/s · 6s left" for a progress update, or '' when no rate is known yet.
+function downloadSpeedLine(stats) {
+  if (!stats || typeof stats !== 'object') return '';
+  const speed = formatDownloadSpeed(stats.bytesPerSecond);
+  if (!speed) return '';
+  const total    = Number(stats.total) || 0;
+  const received = Number(stats.received) || 0;
+  if (!total || received >= total) return speed;
+  const eta = formatDownloadEta((total - received) / Number(stats.bytesPerSecond));
+  return eta ? `${speed} · ${eta}` : speed;
+}
+
+// Shows which Java version is being installed and how far its download got.
+function settingsJavaProgress(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  const wrap   = document.getElementById('settingsJavaProgress');
+  const label  = document.getElementById('settingsJavaProgressLabel');
+  const bar    = document.getElementById('settingsJavaProgressBar');
+  const detail = document.getElementById('settingsJavaProgressDetail');
+  if (!wrap) return;
+  if (payload.type === 'start') {
+    wrap.style.display = 'block';
+    if (label)  label.textContent = `Installing Java ${payload.major}…`;
+    if (detail) detail.textContent = '';
+    if (bar)    bar.style.width = '0%';
+    return;
+  }
+  if (payload.type === 'progress') {
+    if (detail) detail.textContent = payload.message || '';
+    return;
+  }
+  if (payload.type === 'percent') {
+    const percent = Math.max(0, Math.min(100, Number(payload.percent) || 0));
+    if (label) label.textContent = `Installing Java ${payload.major} — ${percent}%`;
+    if (bar)   bar.style.width = `${percent}%`;
+    // Replaces the "Downloading…" message with live throughput and time left.
+    if (detail) detail.textContent = downloadSpeedLine(payload);
+    return;
+  }
+  if (payload.type === 'done') {
+    if (label) label.textContent = payload.status === 'installed'
+      ? `Java ${payload.major} installed`
+      : payload.status === 'cancelled'
+        ? `Java ${payload.major} download cancelled`
+        : payload.status === 'error'
+          ? `Java ${payload.major} failed`
+          : `Java ${payload.major} already available`;
+    if (bar && payload.status === 'installed') bar.style.width = '100%';
+    if (detail) detail.textContent = '';
+  }
+}
+
+async function settingsCancelJavaInstall() {
+  const bridge = instanceBridge();
+  if (!bridge?.cancelJavaInstall) return;
+  const btn = document.getElementById('settingsJavaCancelBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Cancelling…'; }
+  const label = document.getElementById('settingsJavaProgressLabel');
+  if (label) label.textContent = 'Cancelling after the current file…';
+  try { await bridge.cancelJavaInstall(); } catch(_) {}
+}
+
+// Downloads only the Java majors this machine can't run today.
+async function settingsInstallMissingJava() {
+  const bridge = instanceBridge();
+  if (!bridge?.installMissingJava) return;
+  const progressWrap = document.getElementById('settingsJavaProgress');
+  // A second click while an install is running is ignored.
+  if (progressWrap && progressWrap.style && progressWrap.style.display === 'block') return;
+  const buttons = [document.getElementById('javaInstallMissingBtn'), ...document.querySelectorAll('.java-install-btn')].filter(Boolean);
+  buttons.forEach(btn => { btn.disabled = true; btn.textContent = 'Installing…'; });
+  if (progressWrap && progressWrap.style) progressWrap.style.display = 'block';
+  const cancelBtn = document.getElementById('settingsJavaCancelBtn');
+  if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }
+  const startLabel = document.getElementById('settingsJavaProgressLabel');
+  if (startLabel) startLabel.textContent = 'Checking which Java versions are missing…';
+  try {
+    const result = await bridge.installMissingJava();
+    const results   = result?.results || [];
+    const installed = results.filter(r => r.status === 'installed').length;
+    const failed    = results.filter(r => r.status === 'error');
+    const cancelled = Boolean(result?.cancelled) || results.some(r => r.status === 'cancelled');
+    if (result?.error && !results.length) {
+      showNotif('Java install failed', result.error, 9000);
+    } else if (cancelled) {
+      showNotif('Java install cancelled', installed
+        ? `Installed ${installed} version${installed === 1 ? '' : 's'} before stopping`
+        : 'Nothing was installed');
+    } else if (failed.length) {
+      showNotif('Java install failed', `Could not download ${failed.map(f => 'Java ' + f.major).join(', ')}`, 9000);
+    } else {
+      showNotif('Java Ready', installed
+        ? `Installed ${installed} Java version${installed === 1 ? '' : 's'}`
+        : 'Every required Java version is already available');
+    }
+  } catch(e) {
+    showNotif('Java install failed', e.message, 9000);
+  } finally {
+    if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }
+    buttons.forEach(btn => { btn.disabled = false; btn.textContent = '⤓ Install missing'; });
+    if (progressWrap && progressWrap.style) progressWrap.style.display = 'none';
+    _javaStatusCache = null;
+    await settingsScanJava();
+  }
+}
+
+// ── Browse cache indicator ─────────────────────────────────
+function formatBrowseCacheBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10240 ? 1 : 0)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function settingsRefreshBrowseCache() {
+  const label = document.getElementById('settingsBrowseCacheStats');
+  const bar   = document.getElementById('settingsBrowseCacheBar');
+  if (!label) return;
+  const bridge = browseCacheBridge();
+  if (!bridge?.stats) { label.textContent = 'Not available in this build'; return; }
+  try {
+    const stats  = await bridge.stats();
+    const entries = Number(stats?.entries) || 0;
+    const bytes   = Number(stats?.bytes) || 0;
+    const maxBytes = Number(stats?.maxBytes) || 0;
+    label.textContent = entries
+      ? `${entries} saved search${entries === 1 ? '' : 'es'} · ${formatBrowseCacheBytes(bytes)} of ${formatBrowseCacheBytes(maxBytes)}`
+      : 'Empty — the first browse fills it';
+    if (bar && bar.style) {
+      const percent = maxBytes ? Math.min(100, Math.round(bytes / maxBytes * 100)) : 0;
+      bar.style.width = `${percent}%`;
+      bar.style.background = percent >= 90 ? '#f59e0b' : 'var(--accent)';
+    }
+  } catch(_) {
+    label.textContent = 'Could not read cache size';
+  }
+}
+
+async function settingsClearBrowseCache() {
+  const bridge = browseCacheBridge();
+  if (!bridge?.clear) return;
+  try {
+    await bridge.clear();
+    showNotif('Browse Cache Cleared', 'Browsed results will download again next time');
+  } catch(e) {
+    showNotif('Could not clear browse cache', e.message);
+  }
+  await settingsRefreshBrowseCache();
 }
 
 function settingsOpenDataFolder() {
@@ -11640,7 +12133,8 @@ async function installResVersion(idx, versions) {
 // ═══════════════════════════════════════════════════════════
 //  SCREENSHOTS
 // ═══════════════════════════════════════════════════════════
-let _screenshotFiles  = [];
+let _screenshotFiles    = [];
+let _screenshotObserver = null;
 let _lightboxIdx      = 0;
 let _lightboxFilePath = null;
 
@@ -11677,9 +12171,27 @@ async function loadScreenshots() {
         <div style="position:absolute;bottom:0;left:0;right:0;padding:4px 6px;background:linear-gradient(transparent,rgba(0,0,0,0.7));font-size:9px;color:rgba(255,255,255,0.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(f.name)}</div>
       </div>`).join('');
 
-    // Load images progressively
-    for (let i = 0; i < _screenshotFiles.length; i++) {
-      loadScreenshotThumb(i);
+    // Load only the tiles that scroll into view. Loading every tile up front
+    // decodes every full-size PNG at once and keeps them all alive, which is
+    // hundreds of MB for a folder with a few hundred screenshots.
+    if (_screenshotObserver) { _screenshotObserver.disconnect(); _screenshotObserver = null; }
+    if (typeof IntersectionObserver === 'function') {
+      _screenshotObserver = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          _screenshotObserver.unobserve(entry.target);
+          const idx = Number(entry.target.dataset.ssIndex);
+          if (Number.isInteger(idx)) loadScreenshotThumb(idx);
+        }
+      }, { rootMargin: '300px' });
+      _screenshotFiles.forEach((f, i) => {
+        const tile = document.getElementById(`sstile-${i}`);
+        if (!tile) return;
+        tile.dataset.ssIndex = String(i);
+        _screenshotObserver.observe(tile);
+      });
+    } else {
+      for (let i = 0; i < _screenshotFiles.length; i++) loadScreenshotThumb(i);
     }
   } catch(e) {
     grid.innerHTML = `<div style="grid-column:1/-1;padding:20px;text-align:center;color:var(--text-muted);font-size:12px">Error loading screenshots: ${escHtml(e.message)}</div>`;

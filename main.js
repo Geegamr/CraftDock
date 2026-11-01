@@ -1,4 +1,29 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } = require('electron'); // safeStorage intentionally excluded — causes fatal BAD_DECRYPT crash on Electron 40+ Windows
+
+// Optional IPC timing trace, enabled with CRAFTDOCK_PERF=1. Records how long
+// every main-process handler takes so slow UI actions can be located.
+if (process.env.CRAFTDOCK_PERF) {
+  const perfLog = require('fs').createWriteStream(require('path').join(require('os').tmpdir(), 'craftdock-perf.log'));
+  const rawHandle = ipcMain.handle.bind(ipcMain);
+  ipcMain.handle = (channel, fn) => rawHandle(channel, async (event, ...args) => {
+    const t0 = process.hrtime.bigint();
+    try {
+      return await fn(event, ...args);
+    } finally {
+      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+      perfLog.write(channel + '\t' + ms.toFixed(1) + '\n');
+    }
+  });
+}
+// An uncaught error inside a main-process handler aborts that handler: quitting
+// half-way through used to leave a windowless process behind with no way back in.
+// Log the stack so the failure is visible instead of silent.
+if (typeof process.on === 'function') {
+  process.on('uncaughtException', error => {
+    console.error('[CraftDock] Uncaught exception in main process:', error && (error.stack || error.message || error));
+  });
+}
+
 // Set app identity at the very top — must be before app is ready for correct Windows taskbar icon
 if (process.platform === 'win32') app.setAppUserModelId('com.craftdock.launcher');
 app.setName('CraftDock');
@@ -20,11 +45,19 @@ const { createScreenshotListReader } = require('./screenshot-list');
 const { createConfigFileListReader } = require('./config-file-list');
 const { createServerPropertiesAccess } = require('./server-properties');
 const { createModpackMetadataReader } = require('./modpack-metadata');
+const { createBrowseCacheStore } = require('./browse-cache');
 
 // All data lives in craftdock-data/ next to the launcher so users can find it easily
 const isDev    = !app.isPackaged;
-const appRoot  = isDev ? __dirname : path.dirname(app.getPath('exe'));
+// The portable Windows build unpacks itself into a throwaway temp folder, so the
+// exe directory disappears on exit (taking instances and logins with it).
+// electron-builder tells us the folder the user launched it from instead.
+const portableDir = process.env.PORTABLE_EXECUTABLE_DIR || '';
+const appRoot  = isDev ? __dirname : (portableDir || path.dirname(app.getPath('exe')));
 const dataRoot = path.join(appRoot, 'craftdock-data');
+// Live server processes, keyed by server id. Declared here (module scope) because
+// the quit handler reads it long after the server section has finished running.
+const runningServers = new Map();
 const skinsDir = path.join(dataRoot, 'skins');
 const dataDir  = path.join(dataRoot, 'data');
 const serversBase = path.join(dataRoot, 'servers');
@@ -32,9 +65,14 @@ const instancesBase = path.join(dataRoot, 'instances');
 const sharedWorldsDir  = path.join(dataRoot, 'shared-worlds');
 const sharedServersDir    = path.join(dataRoot, 'shared-servers');
 const sharedResourcesDir  = path.join(dataRoot, 'shared-resources');
+const sharedShadersDir    = path.join(dataRoot, 'shared-shaders');
 [skinsDir, dataDir, serversBase, instancesBase, sharedWorldsDir, sharedServersDir].forEach(d => {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
+
+// One small on-disk cache shared by every browse surface (Browse tab and the
+// per-instance mod/resource/shader browsers) so panels paint instantly.
+const browseCache = createBrowseCacheStore({ filePath: path.join(dataDir, 'browse-cache.json') });
 
 // ── Slug map: id → folder name ─────────────────────────────
 // Keeps id stable (used in all JSON references) while folder = human-readable slug
@@ -409,7 +447,8 @@ function createWindow() {
 
   // When main window closes, destroy tray and quit
   mainWindow.on('closed', () => {
-    tray?.destroy();
+    // Teardown must never block the quit: a throwing tray would strand the app.
+    try { tray?.destroy(); } catch (e) { console.error('[CraftDock] tray teardown failed:', e && e.message); }
     tray = null;
     app.quit();
   });
@@ -428,18 +467,9 @@ function writeZipToFile(destPath, entries) {
   const centralDir = [];
   let offset = 0;
 
-  function crc32(buf) {
-    let crc = 0xFFFFFFFF;
-    for (const b of buf) {
-      crc ^= b;
-      for (let i = 0; i < 8; i++) crc = (crc & 1) ? (crc >>> 1) ^ 0xEDB88320 : crc >>> 1;
-    }
-    return (crc ^ 0xFFFFFFFF) >>> 0;
-  }
-
   for (const { name, data } of entries) {
     const nameB = Buffer.from(name, 'utf8');
-    const crc   = crc32(data);
+    const crc   = require('zlib').crc32(data) >>> 0;
     const lh    = Buffer.alloc(30 + nameB.length);
     lh.writeUInt32LE(0x04034b50, 0);
     lh.writeUInt16LE(20, 4);   // version needed
@@ -585,8 +615,26 @@ ipcMain.handle('dialog-open-skin', async () => {
 });
 
 // ── IPC: CurseForge API ────────────────────────────────────
-// Loaded from the developer's environment or .env in development; never bundled as a fallback.
-const CF_API_KEY = process.env.CF_API_KEY || '';
+// Development reads the environment or .env; packaged builds decode the key that
+// scripts/embed-cf-key.js embedded at build time, so an installed copy reaches
+// CurseForge without a .env. It is stored masked, so it is not readable inside
+// the app, and it never reaches the renderer.
+function readEmbeddedCfKey() {
+  try {
+    const payload = require('./cf-key') || {};
+    const { data, mask } = payload;
+    if (!Array.isArray(data) || !Array.isArray(mask) || !data.length || data.length !== mask.length) return '';
+    const plain = Buffer.alloc(data.length);
+    for (let index = 0; index < data.length; index += 1) plain[index] = data[index] ^ mask[index];
+    return plain.toString('utf8').trim();
+  } catch {
+    // Built without a key: CurseForge reports itself as unconfigured.
+    return '';
+  }
+}
+
+let CF_API_KEY = process.env.CF_API_KEY || '';
+if (!CF_API_KEY && app.isPackaged) CF_API_KEY = readEmbeddedCfKey();
 function requireCurseForgeApiKey() {
   if (!CF_API_KEY) throw new Error('CurseForge API key is not configured (CF_API_KEY).');
   return CF_API_KEY;
@@ -664,7 +712,27 @@ console.log('[CraftDock] Registering IPC handlers...');
 //  SERVER MANAGER IPC
 // ═══════════════════════════════════════════════════════════
 const { spawn } = require('child_process');
-const runningServers = new Map();
+
+// Sleep without blocking: a busy-wait loop freezes every window in the app.
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// Run an external command without stalling the main process. execFileSync holds
+// the event loop for the command's whole lifetime — the Forge installer takes
+// 20-60s — so anything that can run long goes through here and is awaited.
+function runCommandAsync(file, args, timeoutMs) {
+  const { execFile } = require('child_process');
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          if (stderr) error.message = `${error.message}\n${stderr}`.trim();
+          reject(error);
+          return;
+        }
+        resolve({ stdout, stderr });
+      });
+  });
+}
 
 // ── Open folder ────────────────────────────────────────────
 ipcMain.handle('open-folder',      (_, p)  => shell.openPath(p));
@@ -672,31 +740,17 @@ ipcMain.handle('get-data-root',    ()      => dataRoot);
 ipcMain.handle('get-server-path',  (_, id) => srvDir(id));
 
 // ── Resolve Paper build URL ────────────────────────────────
+// PaperMC retired the v2 API (it answers 410 now) in favour of Fill v3. A build
+// is addressed by number or the literal "latest", and the jar URL lives in the
+// build document, so there is no URL to assemble by hand any more.
 async function resolvePaperUrl(version, build) {
-  return new Promise((resolve, reject) => {
-    const path_ = build
-      ? `/v2/projects/paper/versions/${version}/builds/${build}`
-      : `/v2/projects/paper/versions/${version}`;
-    const req = require('https').get(
-      { hostname:'api.papermc.io', path: path_,
-        headers:{'User-Agent':'CraftDock/0.6.3 (contact@craftdock.app)'} }, res => {
-      if ([301,302,307,308].includes(res.statusCode)) {
-        res.resume();
-        return resolvePaperUrl(version, build).then(resolve).catch(reject);
-      }
-      if (res.statusCode !== 200) { res.resume(); return reject(new Error('PaperMC API HTTP ' + res.statusCode)); }
-      let raw=''; res.on('data',d=>raw+=d);
-      res.on('end',()=>{
-        try {
-          const d=JSON.parse(raw);
-          const b = build || d.builds[d.builds.length-1];
-          resolve(`https://api.papermc.io/v2/projects/paper/versions/${version}/builds/${b}/downloads/paper-${version}-${b}.jar`);
-        } catch(e) { reject(new Error('PaperMC API parse error: '+e.message)); }
-      });
-    });
-    req.setTimeout(20000, () => req.destroy(new Error('PaperMC API timeout')));
-    req.on('error', reject);
-  });
+  const target = build ? String(build) : 'latest';
+  const doc = await fetchJsonHttp(`https://fill.papermc.io/v3/projects/paper/versions/${version}/builds/${target}`);
+  const download = doc && doc.downloads && doc.downloads['server:default'];
+  if (!download || !download.url) {
+    throw new Error(`Paper has no downloadable build for Minecraft ${version} (build ${target})`);
+  }
+  return download.url;
 }
 
 async function resolvePurpurUrl(version) {
@@ -772,16 +826,7 @@ function readZipEntries(zipPath, limits = ZIP_LIMITS) {
     if (offset < 0 || offset + 4 > end) throw new Error('Invalid ZIP: truncated header');
     return buf.readUInt32LE(offset);
   };
-  const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
-    let crc = value;
-    for (let bit = 0; bit < 8; bit++) crc = (crc & 1) ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
-    return crc >>> 0;
-  });
-  const crc32 = data => {
-    let crc = 0xffffffff;
-    for (const byte of data) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-    return (crc ^ 0xffffffff) >>> 0;
-  };
+  const crc32 = data => zlib.crc32(data) >>> 0;
   const normalizeName = rawName => {
     if (!rawName || rawName.includes('\0')) throw new Error('Invalid ZIP: ambiguous entry name');
     const slashName = rawName.replace(/\\/g, '/');
@@ -938,6 +983,47 @@ function verifyZip(filePath) {
 }
 
 
+// ── Extract pack overrides without blocking the main process ──────────────
+// The per-file loop that used to live in the install handlers ran entirely
+// synchronously: every window froze and IPC stalled until the last file was
+// written. fs.promises hands each operation to libuv's threadpool, and the
+// awaits between batches let IPC and window messages through, so the app keeps
+// painting while a pack unpacks. Batches are small on purpose — 16 files in
+// flight keeps memory flat no matter how large the pack is.
+const OVERRIDE_PREFIXES = ['overrides/', 'client-overrides/'];
+
+function overrideRelativePath(entryName) {
+  for (const prefix of OVERRIDE_PREFIXES) {
+    if (!entryName.startsWith(prefix)) continue;
+    const rel = entryName.slice(prefix.length);
+    if (!rel.trim() || rel.endsWith('/')) return null;
+    return rel;
+  }
+  return null;
+}
+
+async function extractOverrides(rootDir, zipEntries, { batchSize = 16, ignoreErrors = false } = {}) {
+  const pending = [];
+  for (const [entryName, data] of zipEntries) {
+    const rel = overrideRelativePath(entryName);
+    if (rel) pending.push([rel, data]);
+  }
+  let written = 0;
+  for (let i = 0; i < pending.length; i += batchSize) {
+    await Promise.all(pending.slice(i, i + batchSize).map(async ([rel, data]) => {
+      try {
+        const dest = path.join(rootDir, rel);
+        await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+        await fs.promises.writeFile(dest, data);
+        written++;
+      } catch (error) {
+        if (!ignoreErrors) throw error;
+      }
+    }));
+  }
+  return written;
+}
+
 async function downloadServerJar(destPath, url, onProgress, send, label) {
   const MAX_TRIES = 3;
   for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
@@ -960,10 +1046,35 @@ async function downloadServerJar(destPath, url, onProgress, send, label) {
 }
 
 // ── Download with progress + redirect + timeout ────────────
-function downloadFile(url, dest, onProgress, timeoutMs = 120000) {
+// An AbortSignal cancels an in-flight download: the request is destroyed and
+// the promise rejects with "Download cancelled" so callers can skip extraction.
+// onProgress(percent, stats) also receives { received, total, bytesPerSecond }
+// so callers can show throughput and a time estimate; older callers that only
+// read the percent keep working.
+const DOWNLOAD_RATE_SAMPLE_MS = 500;
+function downloadFile(url, dest, onProgress, timeoutMs = 120000, signal = null) {
   return new Promise((resolve, reject) => {
     let settled = false;
-    const done = (fn, val) => { if (!settled) { settled = true; fn(val); } };
+    let activeReq = null;
+    let activeStream = null;
+    const onAbort = () => {
+      try { activeStream?.destroy(); } catch (_) {}
+      try { activeReq?.destroy(); } catch (_) {}
+      done(reject, new Error('Download cancelled'));
+    };
+    const done = (fn, val) => {
+      if (settled) return;
+      settled = true;
+      if (signal && typeof signal.removeEventListener === 'function') {
+        signal.removeEventListener('abort', onAbort);
+      }
+      fn(val);
+    };
+
+    if (signal) {
+      if (signal.aborted) { done(reject, new Error('Download cancelled')); return; }
+      signal.addEventListener('abort', onAbort);
+    }
 
     const go = (u, redirects = 0) => {
       if (redirects > 10) { done(reject, new Error('Too many redirects: ' + u)); return; }
@@ -988,12 +1099,29 @@ function downloadFile(url, dest, onProgress, timeoutMs = 120000) {
         const total = parseInt(res.headers['content-length'] || '0', 10);
         let recv = 0;
         const out = require('fs').createWriteStream(dest);
+        activeStream = out;
         let _lastPct = -1;
+        // Throughput is averaged over sample windows and smoothed, so the number
+        // stays readable instead of flickering with every chunk.
+        let rate = 0;
+        let sampleAt = Date.now();
+        let sampleBytes = 0;
         res.on('data', chunk => {
           recv += chunk.length;
+          const now = Date.now();
+          const elapsed = now - sampleAt;
+          if (elapsed >= DOWNLOAD_RATE_SAMPLE_MS) {
+            const instant = (recv - sampleBytes) / (elapsed / 1000);
+            rate = rate > 0 ? rate * 0.6 + instant * 0.4 : instant;
+            sampleAt = now;
+            sampleBytes = recv;
+          }
           if (total && onProgress) {
             const pct = Math.round(recv / total * 100);
-            if (pct !== _lastPct) { _lastPct = pct; onProgress(pct); }
+            if (pct !== _lastPct) {
+              _lastPct = pct;
+              onProgress(pct, { received: recv, total, bytesPerSecond: Math.round(rate) });
+            }
           }
         });
         res.pipe(out);
@@ -1001,6 +1129,7 @@ function downloadFile(url, dest, onProgress, timeoutMs = 120000) {
         out.on('error', e => done(reject, e));
         res.on('error',  e => done(reject, e));
       });
+      activeReq = req;
       req.on('error', e => done(reject, e));
       req.setTimeout(timeoutMs, () => {
         req.destroy(new Error(`Download timed out after ${timeoutMs/1000}s: ${u}`));
@@ -1216,6 +1345,58 @@ function applySharedResources(id, tag) {
   }
 }
 
+function applySharedShaders(id, tag) {
+  // tag = string → link shaderpacks/ to shared-shaders/<tag>/
+  // tag = null/'' → unlink shaderpacks/ back to a real folder
+  const instPath     = instDir(id);
+  const shadersDir   = path.join(instPath, 'shaderpacks');
+  const isWin        = process.platform === 'win32';
+
+  let currentlyLinked = false;
+  try {
+    const stat = fs.lstatSync(shadersDir);
+    currentlyLinked = stat.isSymbolicLink();
+  } catch {}
+
+  if (!tag) {
+    if (currentlyLinked) {
+      try { fs.unlinkSync(shadersDir); } catch {}
+    }
+    if (!fs.existsSync(shadersDir)) {
+      try { fs.mkdirSync(shadersDir, { recursive: true }); } catch {}
+    }
+    return;
+  }
+
+  const tagDir = path.join(sharedShadersDir, tag.replace(/[^a-z0-9_-]/gi, '-'));
+  if (!fs.existsSync(tagDir)) fs.mkdirSync(tagDir, { recursive: true });
+
+  if (currentlyLinked) {
+    try { fs.unlinkSync(shadersDir); } catch {}
+  } else if (fs.existsSync(shadersDir)) {
+    try {
+      // Move existing shader packs into the shared pool the first time it is used
+      if (fs.readdirSync(tagDir).length === 0) {
+        fs.readdirSync(shadersDir).forEach(f => {
+          try { fs.renameSync(path.join(shadersDir, f), path.join(tagDir, f)); } catch {}
+        });
+      }
+      fs.rmdirSync(shadersDir);
+    } catch {}
+  }
+
+  try {
+    if (isWin) {
+      const { execSync } = require('child_process');
+      execSync(`mklink /D "${shadersDir}" "${tagDir}"`, { windowsHide: true });
+    } else {
+      fs.symlinkSync(tagDir, shadersDir);
+    }
+  } catch(e) {
+    console.warn('[CraftDock] Could not create shaderpacks symlink:', e.message);
+  }
+}
+
 // List all instance IDs that have a folder
 function listInstanceIds() {
   if (!fs.existsSync(instancesBase)) return [];
@@ -1236,6 +1417,7 @@ ipcMain.handle('instance-create', (_, meta) => {
   if (meta.worldTag)    applySharedWorlds(id,    meta.worldTag);
   if (meta.serverTag)   applySharedServers(id,   meta.serverTag);
   if (meta.resourceTag) applySharedResources(id, meta.resourceTag);
+  if (meta.shaderTag)   applySharedShaders(id,   meta.shaderTag);
   return { success: true, id, dir: instDir(id) };
 });
 
@@ -1311,6 +1493,11 @@ ipcMain.handle('instance-apply-resource-tag', (_, id, tag) => {
   catch(e) { return { success: false, error: e.message }; }
 });
 
+ipcMain.handle('instance-apply-shader-tag', (_, id, tag) => {
+  try { applySharedShaders(id, tag || null); return { success: true }; }
+  catch(e) { return { success: false, error: e.message }; }
+});
+
 ipcMain.handle('instance-update', (_, meta) => {
   const id = meta.id;
   if (!id) return { success: false, error: 'No id' };
@@ -1325,10 +1512,13 @@ ipcMain.handle('instance-update', (_, meta) => {
   const wasResourceTag = (existing.resourceTag || null);
   const nowResourceTag = (meta.resourceTag    || null);
   if (wasResourceTag !== nowResourceTag) applySharedResources(id, nowResourceTag);
+  const wasShaderTag = (existing.shaderTag || null);
+  const nowShaderTag = (meta.shaderTag    || null);
+  if (wasShaderTag !== nowShaderTag) applySharedShaders(id, nowShaderTag);
   return { success: true };
 });
 
-ipcMain.handle('instance-delete', (_, id) => {
+ipcMain.handle('instance-delete', async (_, id) => {
   const dir = instDir(id);
   if (!fs.existsSync(dir)) return { success: true };
 
@@ -1348,7 +1538,7 @@ ipcMain.handle('instance-delete', (_, id) => {
     }
   } catch {}
 
-  rmSafe(dir);
+  await rmSafe(dir);
   return { success: true };
 });
 
@@ -1407,21 +1597,7 @@ ipcMain.handle('refresh-tokens-now', async () => {
 });
 
 // List launcher-managed Java installs (for settings display)
-ipcMain.handle('list-launcher-java', async () => {
-  const isWin   = process.platform === 'win32';
-  const exeName = isWin ? 'java.exe' : 'java';
-  const results = [];
-  if (!fs.existsSync(launcherJavaDir)) return results;
-  for (const subdir of fs.readdirSync(launcherJavaDir)) {
-    const exePath = path.join(launcherJavaDir, subdir, 'bin', exeName);
-    if (!fs.existsSync(exePath)) continue;
-    try {
-      const ver = await probeJava(exePath);
-      if (ver > 0) results.push({ exe: exePath, version: ver });
-    } catch(_) {}
-  }
-  return results;
-});
+ipcMain.handle('list-launcher-java', () => listLauncherJavaInstalls());
 
 ipcMain.handle('instance-read-screenshot', (_, filePath) => {
   try {
@@ -1469,19 +1645,28 @@ ipcMain.handle('instance-get-disk-size', async (_, id) => {
   const base = instDir(id);
   if (!fs.existsSync(base)) return 0;
   let total = 0;
-  const walk = async (dir) => {
-    let entries;
-    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      try {
-        if (e.isSymbolicLink()) continue; // don't double-count shared worlds
-        const p = path.join(dir, e.name);
-        if (e.isDirectory()) await walk(p);
-        else total += (await fs.promises.stat(p)).size;
-      } catch {}
+  // Walk the tree with a handful of workers instead of one stat at a time:
+  // a modded instance is thousands of files and serial awaits cost ~0.5ms each.
+  const pending = [base];
+  const worker = async () => {
+    while (pending.length) {
+      const dir = pending.pop();
+      let entries;
+      try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { continue; }
+      await Promise.all(entries.map(async e => {
+        try {
+          if (e.isSymbolicLink()) return; // don't double-count shared worlds
+          const p = path.join(dir, e.name);
+          if (e.isDirectory()) { pending.push(p); return; }
+          // Read the size into a local first: `total += await ...` would read
+          // total before awaiting and drop the other workers' additions.
+          const size = (await fs.promises.stat(p)).size;
+          total += size;
+        } catch {}
+      }));
     }
   };
-  await walk(base);
+  await Promise.all(Array.from({ length: 8 }, worker));
   diskSizeCache.set(id, { size: total, at: Date.now() });
   return total;
 });
@@ -1490,13 +1675,18 @@ ipcMain.handle('instance-get-disk-size', async (_, id) => {
 const clientsDir = path.join(dataRoot, 'client-cache'); // shared jar/lib cache
 if (!fs.existsSync(clientsDir)) fs.mkdirSync(clientsDir, { recursive: true });
 
-function fetchJsonHttp(url) {
+function fetchJsonHttp(url, hops = 0) {
   return new Promise((resolve, reject) => {
+    // Redirect chains must be bounded: a retired API that redirects to itself
+    // used to hang the caller forever instead of failing.
+    if (hops > 5) return reject(new Error('Too many redirects: ' + url));
     const req = require('https').get(url, {
       headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
     }, res => {
       if ([301,302,307,308].includes(res.statusCode)) {
-        res.resume(); return fetchJsonHttp(res.headers.location).then(resolve).catch(reject);
+        res.resume();
+        if (!res.headers.location) return reject(new Error('Redirect without location: ' + url));
+        return fetchJsonHttp(res.headers.location, hops + 1).then(resolve).catch(reject);
       }
       if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP '+res.statusCode+' '+url)); }
       let raw=''; res.on('data',d=>raw+=d);
@@ -1542,7 +1732,9 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
   send('starting', serverIp ? `Preparing to join ${serverIp}…` : 'Preparing launch…');
   writeInstMeta(inst.id, { ...meta, lastPlayed: playStartTime });
 
-  const mcVersion = meta.mcVersion || inst.mcVersion || '1.21.4';
+  // Some metadata writers store the game version as `version` (servers do), so
+  // accept both before falling back to the newest release.
+  const mcVersion = meta.mcVersion || meta.version || inst.mcVersion || inst.version || '1.21.4';
   const loader    = (meta.loader || inst.loader || '').toLowerCase();
   const ramMin    = meta.ramMin || inst.ramMin || 2048;
   const ramMax    = meta.ramMax || inst.ramMax || 4096;
@@ -1751,9 +1943,7 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
             const installerJar = path.join(forgeCacheDir, 'installer.jar');
             await downloadFile(installerUrl, installerJar, null, 120000);
             const javaInfo2 = await findBestJava(17, meta.javaPath || null, mcVersion, (msg) => send('progress', msg));
-            const { execFileSync } = require('child_process');
-            execFileSync(javaInfo2.exe, ['-jar', installerJar, '--installClient', forgeCacheDir],
-              { timeout: 180000, windowsHide: true, stdio: 'pipe' });
+            await runCommandAsync(javaInfo2.exe, ['-jar', installerJar, '--installClient', forgeCacheDir], 180000);
             fs.writeFileSync(forgeMarker, JSON.stringify({ mcVersion, loaderVersion, installedAt: Date.now() }));
           }
         } catch(e) {
@@ -2166,17 +2356,7 @@ ipcMain.handle('instance-install-modpack', async (event, instId, mrpackUrl) => {
 
     // Extract overrides/ into instance dir
     send(24, 'Extracting overrides…');
-    let overrideCount = 0;
-    for (const [entryName, buf] of zipEntries) {
-      let destRel = null;
-      if (entryName.startsWith('overrides/'))            destRel = entryName.slice('overrides/'.length);
-      else if (entryName.startsWith('client-overrides/')) destRel = entryName.slice('client-overrides/'.length);
-      if (!destRel || !destRel.trim()) continue;
-      const dest = path.join(dir, destRel);
-      if (!fs.existsSync(path.dirname(dest))) fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.writeFileSync(dest, buf);
-      overrideCount++;
-    }
+    const overrideCount = await extractOverrides(dir, zipEntries);
     send(30, `Extracted ${overrideCount} override files`);
 
     // Download mods
@@ -2212,14 +2392,138 @@ ipcMain.handle('instance-install-modpack', async (event, instId, mrpackUrl) => {
   }
 });
 
+// ── Install a CurseForge modpack into an instance (browse list) ─────────
+// Resolves the newest pack file for the project, downloads it, then resolves
+// every manifest fileID to a CDN URL and installs it under mods/.
+async function cfGetJson(pathname) {
+  const res = await fetch(`${CF_BASE_URL}${pathname}`, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'x-api-key': requireCurseForgeApiKey()
+    }
+  });
+  if (!res.ok) throw new Error(`CurseForge API ${res.status}: ${await res.text().catch(() => '')}`);
+  return await res.json();
+}
+
+// CF modLoaderType ids: 1=Forge, 4=Fabric, 5=Quilt, 6=NeoForge
+const CF_MODLOADER_TYPES = { forge: 1, fabric: 4, quilt: 5, neoforge: 6 };
+
+function cfCdnUrl(fileId, fileName) {
+  // Documented fallback layout: files/<id / 1000>/<id % 1000>/<fileName>
+  return `https://edge.forgecdn.net/files/${Math.floor(fileId / 1000)}/${fileId % 1000}/${fileName}`;
+}
+
+ipcMain.handle('instance-install-cf-modpack', async (event, instId, modId, mcVersion, loader) => {
+  const dir = ensureInstance(instId);
+  const send = (pct, msg) => {
+    if (!event.sender.isDestroyed()) event.sender.send('instance-install-progress', instId, pct, msg);
+  };
+
+  try {
+    send(2, 'Finding the newest pack file…');
+    const params = new URLSearchParams({ pageSize: '50' });
+    if (mcVersion) params.append('gameVersion', mcVersion);
+    const loaderType = CF_MODLOADER_TYPES[String(loader || '').toLowerCase()];
+    if (loaderType) params.append('modLoaderType', String(loaderType));
+
+    const listing = await cfGetJson(`/mods/${encodeURIComponent(modId)}/files?${params}`);
+    const packFiles = (listing.data || [])
+      .filter(file => file && file.id && String(file.fileName || '').toLowerCase().endsWith('.zip'))
+      .sort((a, b) => Number(b.id) - Number(a.id)); // CF file ids grow with each upload
+    const packFile = packFiles[0];
+    if (!packFile) {
+      throw new Error(mcVersion
+        ? `No CurseForge pack file for Minecraft ${mcVersion}`
+        : 'No pack file found on CurseForge');
+    }
+
+    const packUrl = packFile.downloadUrl || cfCdnUrl(packFile.id, packFile.fileName);
+    send(6, `Downloading ${packFile.fileName}…`);
+    const packPath = path.join(dir, '_modpack.zip');
+    await downloadFile(packUrl, packPath, pct =>
+      send(6 + Math.round(pct * 0.14), `Downloading modpack… ${pct}%`)
+    );
+    send(20, 'Reading pack manifest…');
+
+    let zipEntries;
+    try { zipEntries = readZipEntries(packPath); }
+    catch(e) { throw new Error('Failed to read CurseForge pack: ' + e.message); }
+
+    const metadata = await readModpackMetadata(packPath, 'cf', zipEntries);
+    const packVersion = metadata.mcVersion || mcVersion || '1.21';
+    send(22, `MC ${packVersion}${metadata.loader ? ' · ' + metadata.loader + ' ' + metadata.loaderVersion : ''}`);
+
+    const existing = readInstMeta(instId) || {};
+    writeInstMeta(instId, {
+      ...existing,
+      mcVersion: packVersion,
+      loader: metadata.loader || loader || '',
+      loaderVersion: metadata.loaderVersion || null,
+      source: 'curseforge',
+      sourceId: modId,
+      sourceVersionId: String(packFile.id),
+      sourceVersionName: packFile.displayName || packFile.fileName,
+      downloadStatus: 'installing'
+    });
+
+    // Overrides first, so manifest mods win over bundled copies.
+    send(24, 'Extracting overrides…');
+    const overrideCount = await extractOverrides(dir, zipEntries, { ignoreErrors: true });
+    send(30, `Extracted ${overrideCount} override files`);
+
+    // Manifest files carry only projectID/fileID — ask CF for each CDN URL.
+    const files = metadata.mods || [];
+    const total = files.length;
+    const modsDir = path.join(dir, 'mods');
+    fs.mkdirSync(modsDir, { recursive: true });
+    send(32, `Downloading ${total} mods…`);
+    let done = 0, failed = 0;
+    const BATCH = 4; // keep the per-file lookups gentle on the CF API
+    for (let i = 0; i < total; i += BATCH) {
+      await Promise.all(files.slice(i, i + BATCH).map(async mod => {
+        try {
+          const detail = await cfGetJson(`/mods/${mod.projectId}/files/${mod.fileId}`);
+          const file   = detail.data || {};
+          if (!file.fileName) throw new Error('CurseForge file name unavailable');
+          const url  = file.downloadUrl || cfCdnUrl(mod.fileId, file.fileName);
+          const dest = path.join(modsDir, file.fileName);
+          if (!fs.existsSync(dest)) await downloadFile(url, dest, null, 120000);
+          done++;
+        } catch {
+          failed++;
+        }
+      }));
+      send(32 + Math.round(((done + failed) / total) * 55), `Mods: ${done + failed}/${total}`);
+    }
+
+    try { fs.unlinkSync(packPath); } catch {}
+    writeInstMeta(instId, { ...readInstMeta(instId), downloadStatus: 'installed' });
+    send(100, failed ? `Done — ${done} mods installed, ${failed} skipped` : `Done — ${done} mods installed`);
+    return {
+      success: true, mcVersion: packVersion, loader: metadata.loader,
+      loaderVersion: metadata.loaderVersion, modsInstalled: done, modsFailed: failed
+    };
+
+  } catch(e) {
+    send(100, 'Error: ' + e.message);
+    try { writeInstMeta(instId, { ...readInstMeta(instId), downloadStatus: 'error' }); } catch {}
+    return { success: false, error: e.message };
+  }
+});
+
 ipcMain.handle('shared-worlds-path', () => sharedWorldsDir);
 
 // Fetch available builds for a specific MC version + software
 ipcMain.handle('server-get-builds', async (_, software, mcVersion) => {
   try {
     if (software === 'paper' || software === 'spigot') {
-      const d = await fetchJsonHttp(`https://api.papermc.io/v2/projects/paper/versions/${mcVersion}`);
-      const builds = (d.builds || []).reverse(); // newest first
+      const d = await fetchJsonHttp(`https://fill.papermc.io/v3/projects/paper/versions/${mcVersion}`);
+      const builds = (d.builds || [])
+        .map(build => Number(build))
+        .filter(build => Number.isFinite(build))
+        .sort((left, right) => right - left); // newest first
       return { success: true, builds: builds.map(b => ({ build: b, label: `Build #${b}` })) };
     }
     if (software === 'purpur') {
@@ -2256,18 +2560,128 @@ ipcMain.handle('server-get-builds', async (_, software, mcVersion) => {
   }
 });
 
+// ── Modded server install helpers ──────────────────────────
+// Resolve the loader build to install when the user didn't pick one.
+async function resolveLoaderVersion(software, mcVersion, preferred) {
+  if (preferred) return preferred;
+  if (software === 'forge') {
+    const d = await fetchJsonHttp('https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json');
+    const p = (d && d.promos) || {};
+    return p[`${mcVersion}-recommended`] || p[`${mcVersion}-latest`] || null;
+  }
+  if (software === 'neoforge') {
+    // NeoForge restarted its versioning at 1.20.2 (net/neoforged/neoforge).
+    // 1.20.1 only exists under the older net/neoforged/forge coordinates.
+    if (mcVersion === '1.20.1') {
+      const d = await fetchJsonHttp('https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/forge');
+      const m = ((d && d.versions) || []).filter(v => v.startsWith('1.20.1-'));
+      return m.length ? m[m.length - 1].replace(/^1\.20\.1-/, '') : null;
+    }
+    const d = await fetchJsonHttp('https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge');
+    const prefix = mcVersion.replace(/^1\./, '') + '.';
+    const m = ((d && d.versions) || []).filter(v => v.startsWith(prefix));
+    return m.length ? m[m.length - 1] : null;
+  }
+  if (software === 'quilt') {
+    const d = await fetchJsonHttp('https://meta.quiltmc.org/v3/versions/loader');
+    return (d && d[0] && d[0].version) || null;
+  }
+  if (software === 'fabric') {
+    const d = await fetchJsonHttp('https://meta.fabricmc.net/v2/versions/loader');
+    return (d && d[0] && d[0].version) || null;
+  }
+  return null;
+}
+
+function moddedInstallerUrl(software, mcVersion, loaderVersion) {
+  if (software === 'fabric') return 'https://maven.fabricmc.net/net/fabricmc/fabric-installer/1.0.1/fabric-installer-1.0.1.jar';
+  if (software === 'quilt')  return 'https://quiltmc.org/api/v1/download-latest-installer/java-universal';
+  if (software === 'forge')  return `https://maven.minecraftforge.net/net/minecraftforge/forge/${mcVersion}-${loaderVersion}/forge-${mcVersion}-${loaderVersion}-installer.jar`;
+  if (software === 'neoforge') {
+    if (mcVersion === '1.20.1') return `https://maven.neoforged.net/releases/net/neoforged/forge/1.20.1-${loaderVersion}/forge-1.20.1-${loaderVersion}-installer.jar`;
+    return `https://maven.neoforged.net/releases/net/neoforged/neoforge/${loaderVersion}/neoforge-${loaderVersion}-installer.jar`;
+  }
+  return null;
+}
+
+// Run an installer jar, collecting output. Resolves with exit code + output.
+function runInstallerJar(javaExe, args, cwd, onLine) {
+  return new Promise((resolve, reject) => {
+    const p = spawn(javaExe, ['-jar', ...args], { cwd, windowsHide: true, stdio: ['ignore','pipe','pipe'] });
+    let out = '', err = '';
+    const onData = d => { out += d; const l = d.toString().trim(); if (l) onLine(l.slice(0, 100)); };
+    p.stdout.on('data', onData);
+    p.stderr.on('data', d => { err += d; onData(d); });
+    p.on('error', e => reject(new Error('Installer could not start: ' + e.message)));
+    p.on('close', code => resolve({ code, out, err }));
+  });
+}
+
+// Modern Forge/NeoForge (1.17+) install no runnable jar: the installer writes
+// libraries/…/win_args.txt and the server is started with `java @win_args.txt`.
+function findForgeArgsFile(dir, software, mcVersion) {
+  if (software !== 'forge' && software !== 'neoforge') return null;
+  const bases = software === 'neoforge'
+    ? [path.join(dir,'libraries','net','neoforged','neoforge'), path.join(dir,'libraries','net','neoforged','forge')]
+    : [path.join(dir,'libraries','net','minecraftforge','forge')];
+  const names = process.platform === 'win32' ? ['win_args.txt','unix_args.txt'] : ['unix_args.txt','win_args.txt'];
+  for (const base of bases) {
+    if (!fs.existsSync(base)) continue;
+    // A folder can hold several installed loader versions after a version
+    // change; prefer the one for the server's current Minecraft version.
+    // Newest build first, current Minecraft version before older ones.
+    const dirs = fs.readdirSync(base).filter(entry => {
+      try { return fs.statSync(path.join(base, entry)).isDirectory(); } catch { return false; }
+    }).sort().reverse();
+    const matching = mcVersion
+      ? dirs.filter(d => d === mcVersion || d.startsWith(mcVersion + '-') || d.startsWith(mcVersion + '.'))
+      : [];
+    const ordered = [...matching, ...dirs.filter(d => !matching.includes(d))];
+    for (const entry of ordered) {
+      for (const n of names) {
+        const f = path.join(base, entry, n);
+        if (fs.existsSync(f)) return f;
+      }
+    }
+  }
+  return null;
+}
+
+// Install Forge/NeoForge server files into `dir` using the official installer.
+async function installForgeServer(javaExe, software, mcVersion, loaderVersion, dir, send, base) {
+  const url = moddedInstallerUrl(software, mcVersion, loaderVersion);
+  if (!url) throw new Error(`No ${software} installer available for Minecraft ${mcVersion}.`);
+  const installerPath = path.join(dir, `${software}-installer.jar`);
+  send(base, `Downloading ${software} ${loaderVersion} installer…`);
+  await downloadFile(url, installerPath, (pct, stats) =>
+    send(base + Math.round(pct * 0.2), `Downloading ${software} installer… ${pct}%`, stats));
+  send(base + 22, `Running ${software} installer (this takes a minute)…`);
+  const { code, out, err } = await runInstallerJar(javaExe, [installerPath, '--installServer', dir], dir,
+    l => send(base + 24, `[${software}] ${l}`));
+  const argsFile = findForgeArgsFile(dir, software, mcVersion);
+  const hasJar = fs.readdirSync(dir).some(f =>
+    /^(forge|neoforge)-.+\.jar$/.test(f) && !f.includes('installer'));
+  if (!argsFile && !hasJar) {
+    throw new Error(`${software} installer failed (exit ${code}).\n${out.slice(-400)}\n${err.slice(-200)}`);
+  }
+  try { fs.unlinkSync(installerPath); } catch {}
+  return argsFile;
+}
+
 // ── Install ────────────────────────────────────────────────
 ipcMain.handle('server-install', async (event, srv) => {
   // Register human-readable folder name for this server
   registerSlug(srv.id, srv.name || srv.id, serversBase);
   const dir = srvDir(srv.id);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir,{recursive:true});
-  const send = (pct,msg) => { event.sender.send('server-install-progress',srv.id,pct,msg); forwardToConsoleWindow(srv.id,'server-install-progress',pct,msg); };
+  // stats = { received, total, bytesPerSecond } while a jar is downloading, so
+  // the panel can show throughput and a time estimate next to the percentage.
+  const send = (pct,msg,stats) => { event.sender.send('server-install-progress',srv.id,pct,msg,stats||null); forwardToConsoleWindow(srv.id,'server-install-progress',pct,msg); };
 
   // forceReinstall: delete existing server JAR(s) so they're cleanly re-downloaded
   if (srv.forceReinstall) {
     send(1, 'Removing existing server JAR…');
-    for (const jar of ['server.jar','fabric-server-launch.jar','quilt-server-launch.jar','fabric-installer.jar','quilt-installer.jar']) {
+    for (const jar of ['server.jar','fabric-server-launch.jar','quilt-server-launch.jar','fabric-installer.jar','quilt-installer.jar','forge-installer.jar','neoforge-installer.jar']) {
       try { const p = path.join(dir,jar); if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
     }
   }
@@ -2281,56 +2695,70 @@ ipcMain.handle('server-install', async (event, srv) => {
     }
     send(8, `Using Java ${javaInfo.version}`);
     send(15,'Resolving download URL...');
-    const sw = srv.software;
-    let jarUrl;
-    if      (sw==='paper')  jarUrl = await resolvePaperUrl(srv.version, srv.build || null);
-    else if (sw==='purpur') jarUrl = srv.build
-      ? `https://api.purpurmc.org/v2/purpur/${srv.version}/${srv.build}/download`
-      : await resolvePurpurUrl(srv.version);
-    else if (sw==='spigot') jarUrl = await resolvePaperUrl(srv.version, srv.build || null);
-    else if (sw==='fabric') jarUrl = 'https://maven.fabricmc.net/net/fabricmc/fabric-installer/1.0.1/fabric-installer-1.0.1.jar';
-    else                    jarUrl = await resolveVanillaUrl(srv.version);
+    const sw = srv.software || 'vanilla';
+    const sv = srv.version || '1.21';
+    const MODDED = ['fabric','quilt','forge','neoforge'];
+    const isModded = MODDED.includes(sw);
+    // Loader build: an explicit pick from the version modal wins, otherwise
+    // resolve the recommended/latest build for this Minecraft version.
+    const loaderVersion = isModded ? await resolveLoaderVersion(sw, sv, srv.build || null) : null;
+    if (isModded && !loaderVersion) {
+      throw new Error(`No ${sw} build found for Minecraft ${sv}. Pick a different Minecraft version.`);
+    }
+    let jarUrl = null;
+    if      (sw==='paper')   jarUrl = await resolvePaperUrl(sv, srv.build || null);
+    else if (sw==='purpur')  jarUrl = srv.build
+      ? `https://api.purpurmc.org/v2/purpur/${sv}/${srv.build}/download`
+      : await resolvePurpurUrl(sv);
+    else if (sw==='spigot')  jarUrl = await resolvePaperUrl(sv, srv.build || null);
+    else if (sw==='vanilla') jarUrl = await resolveVanillaUrl(sv);
+    else if (!isModded)      throw new Error(`Unsupported server software "${sw}". Delete this server and create it again.`);
 
-    send(20,'Downloading JAR...');
-
-    if (sw === 'fabric') {
+    if (sw === 'forge' || sw === 'neoforge') {
+      // Forge/NeoForge: the installer writes libraries/ + run scripts instead
+      // of a directly runnable jar, so there is no jar to download here.
+      await installForgeServer(javaInfo.exe, sw, sv, loaderVersion, dir, send, 20);
+    } else if (sw === 'fabric' || sw === 'quilt') {
       // ── Fabric: download installer to a separate file so it never
       //   collides with server.jar which the installer downloads itself ──
-      const installerPath = path.join(dir, 'fabric-installer.jar');
-      send(20, 'Downloading Fabric installer...');
-      await downloadFile(jarUrl, installerPath, pct => send(20 + Math.round(pct * 0.45), 'Downloading installer... ' + pct + '%'));
+      const installerPath = path.join(dir, sw + '-installer.jar');
+      send(20, 'Downloading ' + sw + ' installer...');
+      await downloadFile(jarUrl, installerPath, (pct, stats) =>
+        send(20 + Math.round(pct * 0.45), 'Downloading installer... ' + pct + '%', stats));
 
-      send(66, 'Running Fabric loader installer...');
+      send(66, 'Running ' + sw + ' loader installer...');
       // Remove stub server.jar the Fabric installer creates — we always download it ourselves
       try { fs.unlinkSync(path.join(dir,'server.jar')); } catch {}
 
       // Step A: Install Fabric loader (WITHOUT -downloadMinecraft)
       await new Promise((resolve, reject) => {
-        const args = ['-jar', installerPath, 'server', '-mcversion', srv.version, '-dir', dir];
+        const args = ['-jar', installerPath, 'server', '-mcversion', sv, '-dir', dir];
+        if (loaderVersion) args.push('-loader', loaderVersion);
         send(67, 'java ' + args.slice(1).join(' '));
         const p = spawn(javaInfo.exe, args, { cwd: dir, windowsHide: true, stdio: ['ignore','pipe','pipe'] });
         let output = '', errOut = '';
-        const onData = d => { const l=d.toString().trim(); output+=d; if(l) send(68,'[Fabric] '+l.slice(0,100)); };
+        const onData = d => { const l=d.toString().trim(); output+=d; if(l) send(68,'[' + sw + '] '+l.slice(0,100)); };
         p.stdout.on('data', onData);
         p.stderr.on('data', d => { errOut+=d; onData(d); });
         p.on('error', err => reject(new Error('Fabric installer error: '+err.message)));
         p.on('close', code => {
-          if (fs.existsSync(path.join(dir,'fabric-server-launch.jar'))) resolve();
-          else reject(new Error('Fabric installer failed (exit '+code+').\nstdout: '+output.slice(-500)+'\nstderr: '+errOut.slice(-300)));
+          if (fs.existsSync(path.join(dir, sw + '-server-launch.jar'))) resolve();
+          else reject(new Error(sw + ' installer failed (exit '+code+').\nstdout: '+output.slice(-500)+'\nstderr: '+errOut.slice(-300)));
         });
       });
 
       // Step B: Always re-download server.jar (never trust any pre-existing file)
-      send(72, 'Downloading Minecraft ' + srv.version + ' server...');
+      send(72, 'Downloading Minecraft ' + sv + ' server...');
       const srvJarPath = path.join(dir,'server.jar');
       try { fs.unlinkSync(srvJarPath); } catch {}
-      const vanillaUrl = await resolveVanillaUrl(srv.version);
+      const vanillaUrl = await resolveVanillaUrl(sv);
       await downloadServerJar(srvJarPath, vanillaUrl,
-        pct => send(72 + Math.round(pct * 0.26), 'Downloading Minecraft ' + srv.version + '... ' + pct + '%'), send);
+        (pct, stats) => send(72 + Math.round(pct * 0.26), 'Downloading Minecraft ' + sv + '... ' + pct + '%', stats), send);
     } else {
-      // All other software: download directly to server.jar
+      // Paper/Purpur/Vanilla: a single self-contained jar goes to server.jar
       const jarPath = path.join(dir, 'server.jar');
-      await downloadServerJar(jarPath, jarUrl, pct => send(20 + Math.round(pct * 0.5), 'Downloading... ' + pct + '%'), send);
+      await downloadServerJar(jarPath, jarUrl,
+        (pct, stats) => send(20 + Math.round(pct * 0.5), 'Downloading... ' + pct + '%', stats), send);
     }
     send(75,'Writing eula.txt...');
     fs.writeFileSync(path.join(dir,'eula.txt'),'eula=true\n');
@@ -2356,14 +2784,14 @@ ipcMain.handle('server-install-modpack', async (event, srv, mrpackUrl) => {
   registerSlug(srv.id, srv.name || srv.id, serversBase);
   const dir  = srvDir(srv.id);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const send = (pct, msg) => { event.sender.send('server-install-progress', srv.id, pct, msg); forwardToConsoleWindow(srv.id,'server-install-progress',pct,msg); };
+  const send = (pct, msg, stats) => { event.sender.send('server-install-progress', srv.id, pct, msg, stats||null); forwardToConsoleWindow(srv.id,'server-install-progress',pct,msg); };
 
   try {
     // ── 1. Download the .mrpack ──────────────────────────────
     send(2, 'Downloading modpack…');
     const mrpackPath = path.join(dir, '_modpack.mrpack');
-    await downloadFile(mrpackUrl, mrpackPath, pct =>
-      send(2 + Math.round(pct * 0.15), `Downloading modpack… ${pct}%`)
+    await downloadFile(mrpackUrl, mrpackPath, (pct, stats) =>
+      send(2 + Math.round(pct * 0.15), `Downloading modpack… ${pct}%`, stats)
     );
     send(17, 'Reading modpack index…');
 
@@ -2408,8 +2836,8 @@ ipcMain.handle('server-install-modpack', async (event, srv, mrpackUrl) => {
         ? 'https://maven.fabricmc.net/net/fabricmc/fabric-installer/1.0.1/fabric-installer-1.0.1.jar'
         : 'https://quiltmc.org/api/v1/download-latest-installer/java-universal';
       const installerPath = path.join(dir, `${loader}-installer.jar`);
-      await downloadFile(installerUrl, installerPath, pct =>
-        send(20 + Math.round(pct * 0.2), `Downloading ${loader} installer… ${pct}%`)
+      await downloadFile(installerUrl, installerPath, (pct, stats) =>
+        send(20 + Math.round(pct * 0.2), `Downloading ${loader} installer… ${pct}%`, stats)
       );
       send(40, `Running ${loader} loader installer…`);
       // Step A: Install Fabric loader WITHOUT -downloadMinecraft
@@ -2437,7 +2865,7 @@ ipcMain.handle('server-install-modpack', async (event, srv, mrpackUrl) => {
       try { fs.unlinkSync(mpFabricJar); } catch {}
       const mpFabricVanillaUrl = await resolveVanillaUrl(mcVersion);
       await downloadServerJar(mpFabricJar, mpFabricVanillaUrl,
-        pct => send(44 + Math.round(pct * 0.11), `Downloading Minecraft ${mcVersion}… ${pct}%`), send);
+        (pct, stats) => send(44 + Math.round(pct * 0.11), `Downloading Minecraft ${mcVersion}… ${pct}%`, stats), send);
     } else if (loader === 'forge' || loader === 'neoforge') {
       // Forge/NeoForge: use the installer
       const loaderVersion = forgeVer || neoforgeVer;
@@ -2449,8 +2877,8 @@ ipcMain.handle('server-install-modpack', async (event, srv, mrpackUrl) => {
       }
       const installerPath = path.join(dir, `${loader}-installer.jar`);
       send(22, `Downloading ${loader} installer…`);
-      await downloadFile(installerUrl, installerPath, pct =>
-        send(22 + Math.round(pct * 0.2), `Downloading ${loader} installer… ${pct}%`)
+      await downloadFile(installerUrl, installerPath, (pct, stats) =>
+        send(22 + Math.round(pct * 0.2), `Downloading ${loader} installer… ${pct}%`, stats)
       );
       send(42, `Running ${loader} installer (this may take a minute)…`);
       await new Promise((resolve, reject) => {
@@ -2461,8 +2889,11 @@ ipcMain.handle('server-install-modpack', async (event, srv, mrpackUrl) => {
         p.stderr.on('data', d => { err += d; });
         p.on('error', e => reject(new Error(`Could not run ${loader} installer: ${e.message}`)));
         p.on('close', code => {
-          // Forge creates a run script; check for it or server.jar
+          // Modern Forge/NeoForge produce libraries/…/win_args.txt + run scripts,
+          // older ones a runnable jar — accept either as proof of success.
           const hasSrv = fs.existsSync(path.join(dir, 'server.jar'))
+                      || !!findForgeArgsFile(dir, loader, mcVersion)
+                      || fs.existsSync(path.join(dir, 'run.bat'))
                       || fs.readdirSync(dir).some(f => f.startsWith('forge-') && f.endsWith('.jar') && !f.includes('installer'))
                       || fs.readdirSync(dir).some(f => f.startsWith('neoforge-') && f.endsWith('.jar') && !f.includes('installer'));
           if (hasSrv) resolve();
@@ -2474,7 +2905,7 @@ ipcMain.handle('server-install-modpack', async (event, srv, mrpackUrl) => {
       const vanillaUrl  = await resolveVanillaUrl(mcVersion);
       const mpVanillaJar = path.join(dir, 'server.jar');
       await downloadServerJar(mpVanillaJar, vanillaUrl,
-        pct => send(20 + Math.round(pct * 0.3), `Downloading MC ${mcVersion}… ${pct}%`), send);
+        (pct, stats) => send(20 + Math.round(pct * 0.3), `Downloading MC ${mcVersion}… ${pct}%`, stats), send);
     }
 
     // ── 5. Create mods/ dir ──────────────────────────────────
@@ -2623,12 +3054,20 @@ function launcherJavaExe(majorVersion) {
   return path.join(launcherJavaDir, subdir, 'bin', isWin ? 'java.exe' : 'java');
 }
 
+// Background work has no per-server logger, so log through the console.
+const javaLog = message => { try { console.log(`[CraftDock] ${message}`); } catch (_) {} };
+
 // Download and extract Temurin JRE into <launcherJavaDir>/java{ver}/
-async function ensureLauncherJava(majorVersion, onProgress) {
+// options.signal cancels the download, options.onPercent(percent, stats) reports
+// download progress together with the measured throughput.
+async function ensureLauncherJava(majorVersion, onProgress, options = {}) {
+  const signal = options.signal || null;
+  const onPercent = typeof options.onPercent === 'function' ? options.onPercent : null;
   const exe = launcherJavaExe(majorVersion);
   if (fs.existsSync(exe)) return exe; // already installed
+  if (signal?.aborted) throw new Error('Download cancelled');
 
-  log(`[Java] Auto-installing Java ${majorVersion} for the launcher…`);
+  javaLog(`[Java] Auto-installing Java ${majorVersion} for the launcher…`);
   if (onProgress) onProgress(`Installing Java ${majorVersion}…`);
 
   const isWin  = process.platform === 'win32';
@@ -2654,81 +3093,61 @@ async function ensureLauncherJava(majorVersion, onProgress) {
 
   fs.mkdirSync(launcherJavaDir, { recursive: true });
 
-  if (onProgress) onProgress(`Downloading Java ${majorVersion} (~${Math.round((pkg.size||0)/1024/1024)}MB)…`);
-  await downloadFile(dlUrl, tmpFile, null, 300000);
+  try {
+    if (onProgress) onProgress(`Downloading Java ${majorVersion} (~${Math.round((pkg.size||0)/1024/1024)}MB)…`);
+    await downloadFile(dlUrl, tmpFile, onPercent, 300000, signal);
 
-  if (onProgress) onProgress(`Extracting Java ${majorVersion}…`);
-  fs.mkdirSync(destDir, { recursive: true });
+    if (onProgress) onProgress(`Extracting Java ${majorVersion}…`);
+    fs.mkdirSync(destDir, { recursive: true });
 
-  if (isWin) {
-    // .zip on Windows
-    const AdmZip = (() => { try { return require('adm-zip'); } catch { return null; } })();
-    if (AdmZip) {
-      const zip  = new AdmZip(tmpFile);
-      const entries = zip.getEntries();
-      // Temurin zips have a single top-level dir like jdk-21.0.3+9-jre — strip it
-      const topDir = entries[0]?.entryName.split('/')[0] || '';
-      zip.getEntries().forEach(e => {
-        if (e.isDirectory) return;
-        const rel  = topDir ? e.entryName.replace(topDir + '/', '') : e.entryName;
-        const dest = path.join(destDir, rel);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.writeFileSync(dest, e.getData());
-      });
-    } else {
-      // Fallback: PowerShell unzip
-      const { execFileSync } = require('child_process');
-      execFileSync('powershell', ['-Command', `Expand-Archive -Path "${tmpFile}" -DestinationPath "${destDir}" -Force`]);
-      // Move contents up if nested
-      const inner = fs.readdirSync(destDir).find(d => fs.statSync(path.join(destDir,d)).isDirectory());
-      if (inner) {
-        const innerPath = path.join(destDir, inner);
-        fs.readdirSync(innerPath).forEach(f => fs.renameSync(path.join(innerPath,f), path.join(destDir,f)));
-        fs.rmdirSync(innerPath);
+    if (isWin) {
+      // .zip on Windows
+      const AdmZip = (() => { try { return require('adm-zip'); } catch { return null; } })();
+      if (AdmZip) {
+        const zip  = new AdmZip(tmpFile);
+        const entries = zip.getEntries();
+        // Temurin zips have a single top-level dir like jdk-21.0.3+9-jre — strip it
+        const topDir = entries[0]?.entryName.split('/')[0] || '';
+        zip.getEntries().forEach(e => {
+          if (e.isDirectory) return;
+          const rel  = topDir ? e.entryName.replace(topDir + '/', '') : e.entryName;
+          const dest = path.join(destDir, rel);
+          fs.mkdirSync(path.dirname(dest), { recursive: true });
+          fs.writeFileSync(dest, e.getData());
+        });
+      } else {
+        // Fallback: PowerShell unzip
+        await runCommandAsync('powershell', ['-Command', `Expand-Archive -Path "${tmpFile}" -DestinationPath "${destDir}" -Force`], 300000);
+        // Move contents up if nested
+        const inner = fs.readdirSync(destDir).find(d => fs.statSync(path.join(destDir,d)).isDirectory());
+        if (inner) {
+          const innerPath = path.join(destDir, inner);
+          fs.readdirSync(innerPath).forEach(f => fs.renameSync(path.join(innerPath,f), path.join(destDir,f)));
+          fs.rmdirSync(innerPath);
+        }
       }
+    } else {
+      // .tar.gz on macOS/Linux
+      await runCommandAsync('tar', ['-xzf', tmpFile, '-C', destDir, '--strip-components=1'], 300000);
+      try { fs.chmodSync(exe, 0o755); } catch(_) {}
     }
-  } else {
-    // .tar.gz on macOS/Linux
-    const { execFileSync } = require('child_process');
-    execFileSync('tar', ['-xzf', tmpFile, '-C', destDir, '--strip-components=1']);
-    try { fs.chmodSync(exe, 0o755); } catch(_) {}
+  } catch (error) {
+    // A failed or cancelled download never leaves a partial archive behind.
+    try { fs.unlinkSync(tmpFile); } catch(_) {}
+    throw error;
   }
 
   try { fs.unlinkSync(tmpFile); } catch(_) {}
 
   if (!fs.existsSync(exe)) throw new Error(`Java ${majorVersion} install failed — executable not found at ${exe}`);
-  log(`[Java] Java ${majorVersion} installed at ${exe}`);
+  javaLog(`[Java] Java ${majorVersion} installed at ${exe}`);
   return exe;
 }
 
-// Scan common install locations and return the best java executable
-// preferredExe: optional path from per-server override — used first if valid
-async function findBestJava(minVersion, preferredExe, mcVersion, onProgress) {
+// Every location a user-installed Java can live in on this machine.
+function systemJavaCandidates() {
   const isWin = process.platform === 'win32';
   const exe   = isWin ? 'java.exe' : 'java';
-
-  // Compute the exact required version from MC version if given
-  const requiredVersion = mcVersion ? javaVersionForMc(mcVersion) : minVersion;
-
-  // 0a. Per-instance preferred exe (highest priority, user explicit override)
-  if (preferredExe && typeof preferredExe === 'string') {
-    try {
-      const pExists = preferredExe === 'java' || fs.existsSync(preferredExe);
-      if (pExists) {
-        const ver = await probeJava(preferredExe);
-        if (ver > 0) return { exe: preferredExe, version: ver, source: 'user-override' };
-      }
-    } catch(_) {}
-  }
-
-  // 0b. Launcher-local java dir (our own managed Java) — check exact required version first
-  const launcherExe = launcherJavaExe(requiredVersion);
-  if (fs.existsSync(launcherExe)) {
-    const ver = await probeJava(launcherExe);
-    if (ver >= requiredVersion) return { exe: launcherExe, version: ver, source: 'launcher-bundled' };
-  }
-
-  // Build system candidate list
   const candidates = [];
   if (process.env.JAVA_HOME) candidates.push(path.join(process.env.JAVA_HOME, 'bin', exe));
 
@@ -2760,24 +3179,151 @@ async function findBestJava(minVersion, preferredExe, mcVersion, onProgress) {
     candidates.push('/usr/bin/java');
   }
   candidates.push('java');
+  return candidates;
+}
 
-  let bestExe = null;
-  let bestVer = 0;
+// Find a *local* Java that satisfies `requiredVersion` without downloading anything.
+// The user's own installs win over the launcher's private copy.
+// Returns { suitable, best } — suitable is the pick, best is the closest fallback.
+async function resolveLocalJava(requiredVersion, preferredExe) {
+  let best = null;
+  const consider = async (exe, source) => {
+    const version = await probeJava(exe);
+    if (version > 0 && (!best || version > best.version)) best = { exe, version, source };
+    return version;
+  };
 
-  for (const cand of candidates) {
-    if (typeof cand === 'string' && cand !== 'java' && !fs.existsSync(cand)) continue;
-    const ver = await probeJava(cand);
-    if (ver >= requiredVersion) return { exe: cand, version: ver, source: 'system' };
-    if (ver > bestVer) { bestVer = ver; bestExe = cand; }
+  // 0. Per-instance / user explicit override
+  if (preferredExe && typeof preferredExe === 'string') {
+    try {
+      if (preferredExe === 'java' || fs.existsSync(preferredExe)) {
+        const version = await consider(preferredExe, 'user-override');
+        if (version > 0) {
+          if (version >= requiredVersion) return { suitable: { exe: preferredExe, version, source: 'user-override' }, best };
+          return { suitable: null, best };
+        }
+      }
+    } catch(_) {}
   }
 
-  // Nothing suitable found — auto-download the correct version into launcher dir
+  // 1. The user's own Java installs
+  for (const cand of systemJavaCandidates()) {
+    if (cand !== 'java' && !fs.existsSync(cand)) continue;
+    const version = await consider(cand, 'system');
+    if (version >= requiredVersion) return { suitable: { exe: cand, version, source: 'system' }, best };
+  }
+
+  // 2. Launcher-managed Java (installed by an earlier launch or from Settings)
+  const launcherExe = launcherJavaExe(requiredVersion);
+  if (fs.existsSync(launcherExe)) {
+    const version = await consider(launcherExe, 'launcher-bundled');
+    if (version >= requiredVersion) return { suitable: { exe: launcherExe, version, source: 'launcher-bundled' }, best };
+  }
+
+  return { suitable: null, best };
+}
+
+// Java majors the launcher knows how to install privately.
+const LAUNCHER_JAVA_MAJORS = [8, 16, 17, 21];
+
+async function listLauncherJavaInstalls() {
+  const isWin   = process.platform === 'win32';
+  const exeName = isWin ? 'java.exe' : 'java';
+  const results = [];
+  if (!fs.existsSync(launcherJavaDir)) return results;
+  for (const subdir of fs.readdirSync(launcherJavaDir)) {
+    const exePath = path.join(launcherJavaDir, subdir, 'bin', exeName);
+    if (!fs.existsSync(exePath)) continue;
+    try {
+      const version = await probeJava(exePath);
+      if (version > 0) results.push({ exe: exePath, version });
+    } catch(_) {}
+  }
+  return results;
+}
+
+// Install one Java major only if neither the user's Java nor the launcher copy covers it.
+// hooks: { signal, onProgress(message), onPercent(percent, stats) }
+async function ensureJavaMajor(major, hooks = {}) {
+  const { signal = null, onProgress, onPercent } = hooks || {};
+  if (signal?.aborted) return { major, status: 'cancelled' };
+  const local = await resolveLocalJava(major, null);
+  if (local.suitable) {
+    return {
+      major,
+      status: local.suitable.source === 'system' ? 'system' : 'launcher',
+      exe: local.suitable.exe,
+      version: local.suitable.version,
+    };
+  }
+  try {
+    const exe = await ensureLauncherJava(major, onProgress, { signal, onPercent });
+    return { major, status: 'installed', exe, version: major };
+  } catch (error) {
+    if (signal?.aborted) return { major, status: 'cancelled' };
+    javaLog(`[Java] Could not install Java ${major}: ${error.message}`);
+    return { major, status: 'error', error: error.message };
+  }
+}
+
+// Installs every supported major, reporting progress per version so the
+// settings panel can show which Java is downloading and how far along it is.
+async function ensureAllJavaMajors(hooks = {}) {
+  const { signal = null, onEvent } = hooks || {};
+  const emit = payload => { if (typeof onEvent === 'function') { try { onEvent(payload); } catch (_) {} } };
+  const results = [];
+  for (const major of LAUNCHER_JAVA_MAJORS) {
+    if (signal?.aborted) { results.push({ major, status: 'cancelled' }); continue; }
+    emit({ type: 'start', major });
+    const result = await ensureJavaMajor(major, {
+      signal,
+      onProgress: message => emit({ type: 'progress', major, message }),
+      onPercent: (percent, stats) => emit({
+        type: 'percent',
+        major,
+        percent,
+        received: Number(stats?.received) || 0,
+        total: Number(stats?.total) || 0,
+        bytesPerSecond: Number(stats?.bytesPerSecond) || 0,
+      }),
+    });
+    emit({ type: 'done', major, status: result.status });
+    results.push(result);
+  }
+  return results;
+}
+
+// First-startup view: which Java the launcher will prefer, and which majors are
+// missing entirely. Never downloads anything.
+async function javaStatus() {
+  const system   = await detectAllJava();
+  const launcher = await listLauncherJavaInstalls();
+  const versions = [...system, ...launcher].map(j => j.version);
+  return {
+    systemCount: system.length,
+    launcherCount: launcher.length,
+    preferredSource: system.length ? 'system' : launcher.length ? 'launcher' : 'none',
+    bestSystemVersion: system.reduce((max, j) => Math.max(max, j.version), 0),
+    bestLauncherVersion: launcher.reduce((max, j) => Math.max(max, j.version), 0),
+    missingMajors: LAUNCHER_JAVA_MAJORS.filter(major => !versions.some(version => version >= major)),
+  };
+}
+
+// Scan common install locations and return the best java executable.
+// preferredExe: optional path from per-instance override — used first if valid.
+// Only downloads a Java when no local install can run the requested version.
+async function findBestJava(minVersion, preferredExe, mcVersion, onProgress) {
+  const requiredVersion = mcVersion ? javaVersionForMc(mcVersion) : minVersion;
+  const local = await resolveLocalJava(requiredVersion, preferredExe);
+  if (local.suitable) return local.suitable;
+
+  // Nothing suitable installed — download it once, privately, and keep it.
   try {
     const downloaded = await ensureLauncherJava(requiredVersion, onProgress);
     return { exe: downloaded, version: requiredVersion, source: 'auto-downloaded' };
   } catch(dlErr) {
-    log(`[Java] Auto-install failed: ${dlErr.message}`);
-    if (bestExe) return { exe: bestExe, version: bestVer, warning: `Java ${bestVer} found but MC needs ${requiredVersion}+` };
+    javaLog(`[Java] Auto-install failed: ${dlErr.message}`);
+    if (local.best) return { ...local.best, warning: `Java ${local.best.version} found but MC needs ${requiredVersion}+` };
     return { exe: 'java', version: 0, warning: `Java not found — auto-install failed: ${dlErr.message}` };
   }
 }
@@ -2797,15 +3343,30 @@ ipcMain.handle('server-start', async (event, srv) => {
     '#Auto-accepted by CraftDock\neula=true\n'
   );
 
-  // ── Find correct jar ──────────────────────────────────────
+  // ── Find the launch target ────────────────────────────────
+  // Modern Forge/NeoForge (1.17+) install no runnable jar: the installer writes
+  // libraries/…/win_args.txt and the server starts as `java @win_args.txt`.
+  const forgeArgs = ['forge','neoforge'].includes(srv.software)
+    ? findForgeArgsFile(dir, srv.software, srv.version) : null;
+
   let jarName = srv.jarName || 'server.jar';
   let jarPath = path.join(dir, jarName);
-  const fabricLaunch = path.join(dir, 'fabric-server-launch.jar');
-  if (srv.software === 'fabric' && fs.existsSync(fabricLaunch)) jarPath = fabricLaunch;
 
-  if (!fs.existsSync(jarPath)) {
-    log('[ERROR] ' + jarName + ' not found. Please run Install first.');
-    return { success: false, error: jarName + ' not found' };
+  if (!forgeArgs) {
+    const launchJar = { fabric: 'fabric-server-launch.jar', quilt: 'quilt-server-launch.jar' }[srv.software];
+    if (launchJar && fs.existsSync(path.join(dir, launchJar))) {
+      jarPath = path.join(dir, launchJar);
+    } else if (['forge','neoforge'].includes(srv.software)) {
+      // Pre-1.17 Forge still ships a runnable forge-*.jar
+      let legacy = null;
+      try { legacy = fs.readdirSync(dir).find(f => /^(forge|neoforge)-.+\.jar$/.test(f) && !f.includes('installer')); } catch {}
+      if (legacy) jarPath = path.join(dir, legacy);
+    }
+
+    if (!fs.existsSync(jarPath)) {
+      log('[ERROR] ' + path.basename(jarPath) + ' not found. Please run Install first.');
+      return { success: false, error: path.basename(jarPath) + ' not found' };
+    }
   }
 
   // ── Detect correct Java version ───────────────────────────
@@ -2829,9 +3390,13 @@ ipcMain.handle('server-start', async (event, srv) => {
     `-Xms${srv.ramMin || 512}M`,
     `-Xmx${srv.ramMax || 2048}M`,
     ...extra,
-    '-jar', jarPath,
-    '--nogui'
   ];
+  if (forgeArgs) {
+    // The args file already carries the main class and Forge's launch target.
+    args.push('@' + path.relative(dir, forgeArgs), 'nogui');
+  } else {
+    args.push('-jar', jarPath, '--nogui');
+  }
 
   log(`[CraftDock] Starting: ${java.exe} ${args.join(' ')}`);
   log(`[CraftDock] Working dir: ${dir}`);
@@ -2890,7 +3455,7 @@ ipcMain.handle('server-pick-jar', async () => {
 });
 // ── Windows-safe recursive delete with retry ──────────────────────────────
 // Windows keeps file handles open after process exit; plain rmSync fails with ENOTEMPTY.
-function rmSafe(dir, retries = 5, delayMs = 400) {
+async function rmSafe(dir, retries = 5, delayMs = 400) {
   if (!fs.existsSync(dir)) return;
   let lastErr;
   for (let i = 0; i < retries; i++) {
@@ -2899,7 +3464,7 @@ function rmSafe(dir, retries = 5, delayMs = 400) {
       return;
     } catch(e) {
       lastErr = e;
-      if (i < retries - 1) { const end = Date.now() + delayMs; while (Date.now() < end) {} }
+      if (i < retries - 1) await sleep(delayMs);
     }
   }
   // Last resort: delete files individually then rmdir
@@ -2916,15 +3481,23 @@ function rmSafe(dir, retries = 5, delayMs = 400) {
   if (fs.existsSync(dir)) throw new Error('Could not delete ' + path.basename(dir) + ': ' + (lastErr?.message||'unknown'));
 }
 
-ipcMain.handle('server-delete', (_,id) => {
+ipcMain.handle('server-delete', async (_,id) => {
   // Kill running server first so Windows releases file handles
   const proc = runningServers.get(id);
   if (proc) {
     try { proc.kill('SIGKILL'); } catch {}
     runningServers.delete(id);
-    const end = Date.now() + 600; while (Date.now() < end) {} // wait 600ms for OS
+    await sleep(600); // let the OS release the jar's file handles
   }
-  try { rmSafe(srvDir(id)); } catch(e) { return { success: false, error: e.message }; }
+  // Drop per-server background work so a deleted server stops costing anything.
+  if (autoBackupTimers.has(id)) { clearInterval(autoBackupTimers.get(id)); autoBackupTimers.delete(id); }
+  if (consoleWindows.has(id)) {
+    const win = consoleWindows.get(id);
+    consoleWindows.delete(id);
+    try { if (win && !win.isDestroyed()) win.close(); } catch {}
+  }
+  playerListCache.delete(id);
+  try { await rmSafe(srvDir(id)); } catch(e) { return { success: false, error: e.message }; }
   return { success: true };
 });
 ipcMain.handle('server-remove-file', (_, id, sub, f) => {
@@ -2970,10 +3543,8 @@ ipcMain.handle('java-detect', async () => {
   const versions = [21, 17, 11, 8];
   const results  = [];
   for (const minVer of versions) {
-    const info = await findBestJava(minVer);
-    if (info.version >= minVer) {
-      if (!results.find(r => r.exe === info.exe)) results.push(info);
-    }
+    const local = await resolveLocalJava(minVer, null);
+    if (local.suitable && !results.find(r => r.exe === local.suitable.exe)) results.push(local.suitable);
   }
   const plain = await probeJava('java');
   if (plain > 0 && !results.find(r => r.exe === 'java')) {
@@ -3060,6 +3631,53 @@ ipcMain.handle('java-probe', async (_, exePath) => {
   const ver = await probeJava(exePath);
   return { version: ver, exe: exePath };
 });
+
+// Which Java the launcher will use, and which majors are missing (no downloads).
+ipcMain.handle('java-status', () => javaStatus());
+
+// "Install missing Java" — installs only the versions this machine can't run yet.
+// One install at a time; `java-install-cancel` aborts the download in flight.
+let javaInstallController = null;
+
+ipcMain.handle('java-install-missing', async (event) => {
+  if (javaInstallController) {
+    return { success: false, error: 'A Java install is already running', results: [] };
+  }
+  const controller = new AbortController();
+  javaInstallController = controller;
+  const emit = payload => {
+    if (!event.sender.isDestroyed()) event.sender.send('java-install-progress', payload);
+  };
+  try {
+    const results = await ensureAllJavaMajors({ signal: controller.signal, onEvent: emit });
+    const cancelled = results.some(result => result.status === 'cancelled');
+    return {
+      success: !cancelled && results.every(result => result.status !== 'error'),
+      cancelled,
+      results,
+    };
+  } finally {
+    javaInstallController = null;
+  }
+});
+
+ipcMain.handle('java-install-cancel', () => {
+  if (!javaInstallController) return { success: false, error: 'No Java install is running' };
+  javaInstallController.abort();
+  return { success: true };
+});
+
+// ── Browse result cache (shared by every browse surface) ────
+ipcMain.handle('browse-cache-read', (_, key) => browseCache.read(key));
+
+ipcMain.handle('browse-cache-write', (_, key, payload) => {
+  try { return browseCache.write(key, payload); }
+  catch(error) { return { success: false, error: error.message }; }
+});
+
+ipcMain.handle('browse-cache-stats', () => browseCache.stats());
+
+ipcMain.handle('browse-cache-clear', () => browseCache.clear());
 
 ipcMain.handle('dialog-open-java', async () => {
   const isWin = process.platform === 'win32';
@@ -3754,6 +4372,28 @@ app.whenReady().then(() => {
 
   // Start background token refresh — silently keeps all MS tokens perpetually fresh
   startBackgroundTokenRefresh();
+});
+// A Minecraft server must not outlive the launcher. Closing CraftDock used to
+// leave the Java process running for good, holding its port and RAM with no UI
+// left to stop it, so give each one a graceful 'stop' and a bounded grace period.
+let _stoppingServersForQuit = false;
+app.on('before-quit', event => {
+  if (_bgRefreshTimer) { clearInterval(_bgRefreshTimer); _bgRefreshTimer = null; }
+  console.log('[CraftDock] before-quit, running servers:', runningServers.size);
+  if (_stoppingServersForQuit || runningServers.size === 0) return;
+  event.preventDefault();
+  _stoppingServersForQuit = true;
+  const stops = [...runningServers.entries()].map(([id, proc]) => new Promise(resolve => {
+    const finish = () => resolve();
+    try { proc.once('exit', finish); } catch { resolve(); return; }
+    try { proc.stdin.write('stop\n'); } catch {}
+    // Never hang the quit: after 5s take the process down with the app.
+    setTimeout(() => { try { if (!proc.killed) proc.kill(); } catch {}; resolve(); }, 5000).unref?.();
+  }));
+  Promise.allSettled(stops).then(() => {
+    runningServers.clear();
+    app.quit();
+  });
 });
 app.on('window-all-closed', () => {
   // Only quit if mainWindow is destroyed — console popouts closing must NOT quit the app.

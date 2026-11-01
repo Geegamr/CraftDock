@@ -24,7 +24,9 @@ fn canonical_path(path: &Path) -> Option<PathBuf> {
     let canonical = fs::canonicalize(path).ok()?;
     #[cfg(windows)]
     {
-        return Some(PathBuf::from(normalize_windows_canonical_path(&canonical.to_string_lossy())));
+        return Some(PathBuf::from(normalize_windows_canonical_path(
+            &canonical.to_string_lossy(),
+        )));
     }
     #[cfg(not(windows))]
     Some(canonical)
@@ -69,13 +71,18 @@ fn list_worlds(saves_path: &Path) -> Vec<World> {
 }
 
 fn worlds_json(saves_path: &Path) -> serde_json::Value {
-    json!(list_worlds(saves_path).into_iter().map(|world| {
-        json!({
-            "name": world.name,
-            "path": world.path.to_string_lossy(),
-            "lastPlayed": world.last_played,
-        })
-    }).collect::<Vec<_>>())
+    json!(
+        list_worlds(saves_path)
+            .into_iter()
+            .map(|world| {
+                json!({
+                    "name": world.name,
+                    "path": world.path.to_string_lossy(),
+                    "lastPlayed": world.last_played,
+                })
+            })
+            .collect::<Vec<_>>()
+    )
 }
 
 fn main() {
@@ -125,7 +132,10 @@ mod tests {
 
     #[test]
     fn lists_shared_fixture_directories_with_millisecond_timestamps_and_newest_first() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!("../../../tests/fixtures/instance-world-list/worlds.json")).unwrap();
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/instance-world-list/worlds.json"
+        ))
+        .unwrap();
         let root = temp_dir();
         let saves = root.join("saves");
         for world in fixture["worlds"].as_array().unwrap() {
@@ -136,7 +146,11 @@ mod tests {
                 set_modified(&world_path.join("level.dat"), millis);
             }
         }
-        fs::write(saves.join(fixture["nonDirectory"].as_str().unwrap()), b"not a world directory").unwrap();
+        fs::write(
+            saves.join(fixture["nonDirectory"].as_str().unwrap()),
+            b"not a world directory",
+        )
+        .unwrap();
 
         let worlds = list_worlds(&saves);
         let expected = [
@@ -144,8 +158,13 @@ mod tests {
             ("older", Some(1_700_000_000_123.0)),
             ("never-played", None),
         ];
-        assert_eq!(worlds.iter().map(|world| world.name.as_str()).collect::<Vec<_>>(),
-            expected.iter().map(|(name, _)| *name).collect::<Vec<_>>());
+        assert_eq!(
+            worlds
+                .iter()
+                .map(|world| world.name.as_str())
+                .collect::<Vec<_>>(),
+            expected.iter().map(|(name, _)| *name).collect::<Vec<_>>()
+        );
         for (world, (name, last_played)) in worlds.iter().zip(expected) {
             assert_eq!(world.path, canonical_path(&saves.join(name)).unwrap());
             assert_eq!(world.last_played, last_played);
@@ -172,11 +191,14 @@ mod tests {
         std::os::unix::fs::symlink(&shared, &link).unwrap();
 
         let worlds = list_worlds(&link);
-        assert_eq!(worlds, vec![World {
-            name: "shared-world".into(),
-            path: canonical_path(&shared.join("shared-world")).unwrap(),
-            last_played: Some(1_700_000_000_555.0),
-        }]);
+        assert_eq!(
+            worlds,
+            vec![World {
+                name: "shared-world".into(),
+                path: canonical_path(&shared.join("shared-world")).unwrap(),
+                last_played: Some(1_700_000_000_555.0),
+            }]
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -198,11 +220,14 @@ mod tests {
         assert!(status.success(), "could not create test saves junction");
 
         let worlds = list_worlds(&link);
-        assert_eq!(worlds, vec![World {
-            name: "shared-world".into(),
-            path: canonical_path(&shared.join("shared-world")).unwrap(),
-            last_played: Some(1_700_000_000_555.0),
-        }]);
+        assert_eq!(
+            worlds,
+            vec![World {
+                name: "shared-world".into(),
+                path: canonical_path(&shared.join("shared-world")).unwrap(),
+                last_played: Some(1_700_000_000_555.0),
+            }]
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

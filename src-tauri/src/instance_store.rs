@@ -25,6 +25,7 @@ pub const INSTANCE_SUBDIRS: [&str; 7] = [
 
 const META_FILE: &str = "instance.json";
 const SLUG_MAP_FILE: &str = "slug-map.json";
+const LEVEL_DAT: &str = "level.dat";
 
 /// A path segment we are willing to join onto the data root: no separators, no
 /// drive letters, no `.`/`..`, and short enough for Windows.
@@ -84,6 +85,39 @@ pub fn slugify(name: &str) -> String {
     } else {
         limited
     }
+}
+
+/// Windows hands back `\\?\C:\...` from `canonicalize`; Electron's paths never
+/// carry that prefix, so strip it before the renderer sees a path.
+#[cfg(any(windows, test))]
+fn normalize_windows_canonical_path(path: &str) -> String {
+    if let Some(unc_path) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc_path}")
+    } else {
+        path.strip_prefix(r"\\?\").unwrap_or(path).to_owned()
+    }
+}
+
+/// Resolves symlinks/junctions so shared-world links report the real folder.
+fn canonical_path(path: &Path) -> Option<PathBuf> {
+    let canonical = std::fs::canonicalize(path).ok()?;
+    #[cfg(windows)]
+    {
+        return Some(PathBuf::from(normalize_windows_canonical_path(
+            &canonical.to_string_lossy(),
+        )));
+    }
+    #[cfg(not(windows))]
+    Some(canonical)
+}
+
+/// Milliseconds since the epoch, like JavaScript's `mtimeMs`.
+fn modified_millis(path: &Path) -> Option<f64> {
+    let modified = std::fs::metadata(path).and_then(|metadata| metadata.modified()).ok()?;
+    Some(match modified.duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_secs_f64() * 1000.0,
+        Err(error) => -(error.duration().as_secs_f64() * 1000.0),
+    })
 }
 
 pub fn now_millis() -> u64 {
@@ -315,6 +349,69 @@ impl InstanceStore {
         Ok(json!({ "success": true }))
     }
 
+    /// `instance-list-worlds`: folders under `<instance>/saves`, newest first.
+    ///
+    /// Mirrors Electron's handler, including returning an empty list (rather
+    /// than an error) when the folder is missing or unreadable.
+    pub fn list_worlds(&self, id: &str) -> Result<Vec<Value>, String> {
+        let saves = self.dir_for(id)?.join("saves");
+        let Some(real_saves) = canonical_path(&saves) else {
+            return Ok(Vec::new());
+        };
+        let Ok(entries) = std::fs::read_dir(&real_saves) else {
+            return Ok(Vec::new());
+        };
+
+        let mut worlds = entries
+            .flatten()
+            .filter_map(|entry| {
+                if !entry.file_type().ok()?.is_dir() {
+                    return None;
+                }
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let world = real_saves.join(&name);
+                let played = modified_millis(&world.join(LEVEL_DAT));
+                let path = canonical_path(&world).unwrap_or(world);
+                Some((
+                    json!({
+                        "name": name,
+                        "path": path.to_string_lossy(),
+                        "lastPlayed": played,
+                    }),
+                    played.unwrap_or(0.0),
+                ))
+            })
+            .collect::<Vec<_>>();
+
+        // Stable sort, so worlds that were never played keep folder order.
+        worlds.sort_by(|left, right| right.1.total_cmp(&left.1));
+        Ok(worlds.into_iter().map(|(world, _)| world).collect())
+    }
+
+    /// `instance-list-mods`: jar files in `<instance>/mods`, disabled ones
+    /// included with `enabled: false`, exactly as Electron reports them.
+    pub fn list_mods(&self, id: &str) -> Result<Vec<Value>, String> {
+        let mods_dir = self.dir_for(id)?.join("mods");
+        let Ok(entries) = std::fs::read_dir(&mods_dir) else {
+            return Ok(Vec::new());
+        };
+
+        let mut mods = Vec::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let disabled = name.ends_with(".jar.disabled");
+            if !disabled && !name.ends_with(".jar") {
+                continue;
+            }
+            mods.push(json!({
+                "name": name,
+                "enabled": !disabled,
+                "path": mods_dir.join(&name).to_string_lossy(),
+            }));
+        }
+        Ok(mods)
+    }
+
     /// Folder to open for `instance-open-folder`, created if missing.
     ///
     /// `sub` must stay inside the instance folder: relative, safe segments only.
@@ -505,6 +602,66 @@ mod tests {
         assert!(store.create(json!({ "id": "with space", "name": "Bad" })).is_err());
         assert!(store.update(json!({ "id": "../../etc" })).is_err());
         assert!(store.read_meta("../escape").is_none());
+    }
+
+    #[test]
+    fn lists_worlds_newest_first_with_null_for_missing_level_dat() {
+        let (store, root) = temp_store("worlds");
+        store.create(json!({ "id": "inst_1", "name": "Pack" })).unwrap();
+        let saves = root.join("instances").join("Pack").join("saves");
+
+        for (name, played) in [("older", 1_700_000_000_123u64), ("newer", 1_700_000_000_987), ("never-played", 0)] {
+            let world = saves.join(name);
+            std::fs::create_dir_all(&world).unwrap();
+            if played > 0 {
+                let level = std::fs::File::create(world.join(LEVEL_DAT)).unwrap();
+                level
+                    .set_modified(UNIX_EPOCH + Duration::from_millis(played))
+                    .unwrap();
+            }
+        }
+        std::fs::write(saves.join("notes.txt"), b"not a world").unwrap();
+
+        let worlds = store.list_worlds("inst_1").unwrap();
+        assert_eq!(
+            worlds.iter().map(|world| world["name"].as_str().unwrap()).collect::<Vec<_>>(),
+            vec!["newer", "older", "never-played"]
+        );
+        assert_eq!(worlds[0]["lastPlayed"], json!(1_700_000_000_987.0));
+        assert_eq!(worlds[2]["lastPlayed"], Value::Null);
+        assert_eq!(
+            worlds[0]["path"],
+            json!(canonical_path(&saves.join("newer")).unwrap().to_string_lossy())
+        );
+
+        // A missing instance or saves folder is an empty list, not an error.
+        assert!(store.list_worlds("inst_missing").unwrap().is_empty());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn lists_enabled_and_disabled_jars_like_electron() {
+        let (store, root) = temp_store("mods");
+        store.create(json!({ "id": "inst_1", "name": "Pack" })).unwrap();
+        let mods = root.join("instances").join("Pack").join("mods");
+        for file in ["sodium.jar", "old.jar.disabled", "readme.txt", "pack.mcmeta"] {
+            std::fs::write(mods.join(file), b"x").unwrap();
+        }
+
+        let mut listed = store.list_mods("inst_1").unwrap();
+        listed.sort_by_key(|entry| entry["name"].as_str().unwrap().to_string());
+        assert_eq!(listed.len(), 2, "only jars are reported");
+        assert_eq!(listed[0]["name"], json!("old.jar.disabled"));
+        assert_eq!(listed[0]["enabled"], json!(false));
+        assert_eq!(listed[1]["name"], json!("sodium.jar"));
+        assert_eq!(listed[1]["enabled"], json!(true));
+        assert_eq!(
+            listed[1]["path"],
+            json!(mods.join("sodium.jar").to_string_lossy())
+        );
+
+        assert!(store.list_mods("inst_missing").unwrap().is_empty());
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

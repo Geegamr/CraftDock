@@ -123,9 +123,11 @@ mod tests {
         let files = list_config_files(&directory);
         let files = files.as_array().unwrap();
         assert_eq!(files.len(), 3);
-        assert!(files.iter().any(|file| {
-            file["name"] == "server.YmL" && file["subdir"] == "nested/deeper"
-        }));
+        assert!(
+            files
+                .iter()
+                .any(|file| { file["name"] == "server.YmL" && file["subdir"] == "nested/deeper" })
+        );
         assert!(files.iter().all(|file| {
             file["path"]
                 .as_str()

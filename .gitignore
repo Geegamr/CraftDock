@@ -10,6 +10,8 @@ src-tauri/target/
 
 # ── Environment / Secrets ─────────────────────────────────────
 .env
+# Embedded at build time from .env by scripts/embed-cf-key.js
+cf-key.js
 # .env.example is intentionally NOT ignored (safe to commit)
 
 # ── User data ─────────────────────────────────────────────────
@@ -36,3 +38,7 @@ desktop.ini
 .electron-cache/
 *.bat
 main.js.bak
+
+# ── Local tooling / session artifacts ─────────────────────────
+.local-tauri-cli/
+.cloud-attachments/

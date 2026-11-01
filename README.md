@@ -49,8 +49,8 @@
 | Milestone | Target |
 |-----------|--------|
 | Closed Beta (current) | Now |
-| CurseForge Browsing | TBD |
-| Export / Import | TBD |
+| CurseForge Browsing | Shipped (v0.6.3) |
+| Export / Import | Shipped (v0.6.3) |
 | Bug fixes & polish before public release | Ongoing |
 | Public Beta | **June 30, 2026** |
 | v1.0 Release | TBD |

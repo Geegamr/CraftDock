@@ -44,8 +44,7 @@ fn serialize_properties(entries: &[(String, String)]) -> String {
 fn write_properties(path: &Path, payload: &str) -> Result<(), String> {
     let entries: Vec<(String, String)> = serde_json::from_str(payload)
         .map_err(|error| format!("Invalid server.properties payload: {error}"))?;
-    fs::write(path, serialize_properties(&entries).as_bytes())
-        .map_err(|error| error.to_string())
+    fs::write(path, serialize_properties(&entries).as_bytes()).map_err(|error| error.to_string())
 }
 
 fn main() {
@@ -95,13 +94,16 @@ mod tests {
         let result = parse_properties(
             "# comment\n\n  online-mode = true \nmessage=a=b=c\nempty=\n duplicate = first\nduplicate= last \n=ignored\n",
         );
-        assert_eq!(result, json!([
-            ["online-mode", "true"],
-            ["message", "a=b=c"],
-            ["empty", ""],
-            ["duplicate", "first"],
-            ["duplicate", "last"],
-        ]));
+        assert_eq!(
+            result,
+            json!([
+                ["online-mode", "true"],
+                ["message", "a=b=c"],
+                ["empty", ""],
+                ["duplicate", "first"],
+                ["duplicate", "last"],
+            ])
+        );
     }
 
     #[test]
@@ -109,7 +111,10 @@ mod tests {
         let path = temp_file();
         let payload = r#"[["motd","hello=world"],["online-mode","true"]]"#;
         write_properties(&path, payload).unwrap();
-        assert_eq!(fs::read(&path).unwrap(), b"motd=hello=world\nonline-mode=true\n");
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            b"motd=hello=world\nonline-mode=true\n"
+        );
         fs::remove_file(path).unwrap();
     }
 

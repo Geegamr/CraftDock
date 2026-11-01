@@ -86,6 +86,7 @@ function loadProductionIpc(tempRoot, handlers, skinModule = require('../skin-lib
     if (name === './server-properties') return require('../server-properties');
     if (name === './skin-library') return skinModule;
     if (name === './modpack-metadata') return { createModpackMetadataReader: () => async () => ({}) };
+    if (name === './browse-cache') return require('../browse-cache');
     if (name === './package.json') return packageConfig;
     return require(name);
   };

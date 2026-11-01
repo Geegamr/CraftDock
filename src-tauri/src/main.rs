@@ -9,6 +9,7 @@ use rand::RngCore;
 use serde_json::{json, Value};
 use tauri::Manager;
 
+mod browse_cache;
 mod instance_store;
 
 use instance_store::InstanceStore;
@@ -331,6 +332,24 @@ fn instance_get(app: tauri::AppHandle, id: String) -> Value {
         .unwrap_or(Value::Null)
 }
 
+/// Read-only views of what is inside an instance folder. Both return an empty
+/// list instead of failing, matching Electron's handlers for missing folders.
+#[tauri::command]
+fn instance_list_worlds(app: tauri::AppHandle, id: String) -> Value {
+    match instance_store(&app).and_then(|store| store.list_worlds(&id)) {
+        Ok(worlds) => Value::Array(worlds),
+        Err(_) => Value::Array(Vec::new()),
+    }
+}
+
+#[tauri::command]
+fn instance_list_mods(app: tauri::AppHandle, id: String) -> Value {
+    match instance_store(&app).and_then(|store| store.list_mods(&id)) {
+        Ok(mods) => Value::Array(mods),
+        Err(_) => Value::Array(Vec::new()),
+    }
+}
+
 #[tauri::command]
 fn instance_update(app: tauri::AppHandle, meta: Value) -> Value {
     match instance_store(&app).and_then(|store| store.update(meta)) {
@@ -413,9 +432,32 @@ fn read_env_key(file: &Path) -> Option<String> {
     None
 }
 
-// The developer key never enters the webview: it is read from the environment
-// or a .env file beside the working directory / executable, then sent only to
-// api.curseforge.com.
+// Developer key baked in by build.rs from the project .env at build time, so a
+// copied release exe reaches CurseForge without shipping a .env beside it. It is
+// stored masked, so it never appears in the binary as readable text, and is
+// decoded only in memory when a CurseForge request is made.
+mod embedded_key {
+    include!(concat!(env!("OUT_DIR"), "/embedded_key.rs"));
+}
+
+fn embedded_curseforge_key() -> Option<String> {
+    let data = embedded_key::KEY_DATA;
+    let mask = embedded_key::KEY_MASK;
+    if data.is_empty() || data.len() != mask.len() {
+        return None;
+    }
+    let decoded: Vec<u8> = data
+        .iter()
+        .zip(mask.iter())
+        .map(|(byte, mask)| byte ^ mask)
+        .collect();
+    let key = String::from_utf8(decoded).ok()?.trim().to_string();
+    (!key.is_empty()).then_some(key)
+}
+
+// The developer key never enters the webview: it is read from the environment,
+// a .env file beside the working directory / executable, or the key compiled
+// into the binary, then sent only to api.curseforge.com.
 fn curseforge_api_key() -> Option<String> {
     if let Ok(value) = std::env::var("CF_API_KEY") {
         let trimmed = value.trim();
@@ -431,14 +473,18 @@ fn curseforge_api_key() -> Option<String> {
             candidates.push(directory.join("craftdock.env"));
         }
     }
-    candidates.into_iter().find_map(|file| read_env_key(&file))
+    if let Some(key) = candidates.into_iter().find_map(|file| read_env_key(&file)) {
+        return Some(key);
+    }
+
+    embedded_curseforge_key()
 }
 
 async fn curseforge_get(path: &str, params: &[(&str, String)]) -> Value {
     let Some(api_key) = curseforge_api_key() else {
         return json!({
             "success": false,
-            "error": "CurseForge API key is not configured. Put CF_API_KEY in a .env file next to craftdock.exe or set the environment variable."
+            "error": "CurseForge API key is not configured. This build was made without one; set CF_API_KEY in the environment or a .env file to override it."
         });
     };
 
@@ -519,6 +565,30 @@ async fn cf_get_mc_versions() -> Value {
     curseforge_get("/minecraft/version", &[]).await
 }
 
+// ── Shared browse cache ────────────────────────────────────
+// Same bounded `browse-cache.json` file Electron writes, so the Tauri build
+// paints cached browse results too.
+
+#[tauri::command]
+fn browse_cache_read(app: tauri::AppHandle, key: String) -> Result<Option<Value>, String> {
+    Ok(browse_cache::BrowseCache::new(&data_root(&app)?).read(&key))
+}
+
+#[tauri::command]
+fn browse_cache_write(app: tauri::AppHandle, key: String, payload: Value) -> Result<Value, String> {
+    Ok(browse_cache::BrowseCache::new(&data_root(&app)?).write(&key, &payload))
+}
+
+#[tauri::command]
+fn browse_cache_stats(app: tauri::AppHandle) -> Result<Value, String> {
+    Ok(browse_cache::BrowseCache::new(&data_root(&app)?).stats())
+}
+
+#[tauri::command]
+fn browse_cache_clear(app: tauri::AppHandle) -> Result<Value, String> {
+    Ok(browse_cache::BrowseCache::new(&data_root(&app)?).clear())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -535,11 +605,17 @@ fn main() {
             instance_list,
             instance_get,
             instance_update,
+            instance_list_worlds,
+            instance_list_mods,
             instance_delete,
             instance_open_folder,
             open_folder,
             curseforge_search,
             cf_get_mc_versions,
+            browse_cache_read,
+            browse_cache_write,
+            browse_cache_stats,
+            browse_cache_clear,
         ])
         .run(tauri::generate_context!())
         .expect("error while running CraftDock Tauri");

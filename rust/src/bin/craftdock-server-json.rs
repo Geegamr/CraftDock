@@ -10,7 +10,10 @@ fn process(command: &str, path: &Path, input: &[u8]) -> io::Result<Vec<u8>> {
             fs::write(path, input)?;
             Ok(Vec::new())
         }
-        _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "Unknown command")),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Unknown command",
+        )),
     }
 }
 
@@ -28,9 +31,10 @@ fn main() {
     let command = command.to_string_lossy();
     let result = if command == "write" {
         let mut input = Vec::new();
-        io::stdin().lock().read_to_end(&mut input).and_then(|_| {
-            process(&command, Path::new(&path), &input)
-        })
+        io::stdin()
+            .lock()
+            .read_to_end(&mut input)
+            .and_then(|_| process(&command, Path::new(&path), &input))
     } else {
         process(&command, Path::new(&path), &[])
     };
@@ -56,7 +60,10 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_file() -> std::path::PathBuf {
-        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         std::env::temp_dir().join(format!("craftdock-server-json-{stamp}.json"))
     }
 

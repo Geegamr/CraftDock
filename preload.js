@@ -43,6 +43,14 @@ contextBridge.exposeInMainWorld('craftdock', {
     ipcRenderer.invoke('cf-get-mc-versions'),
   },
 
+  // Shared browse-result cache (Browse tab + per-instance browsers)
+  browseCache: {
+    read:  (key)         => ipcRenderer.invoke('browse-cache-read',    key),
+    write: (key, entry)  => ipcRenderer.invoke('browse-cache-write',   key, entry),
+    stats: ()            => ipcRenderer.invoke('browse-cache-stats'),
+    clear: ()            => ipcRenderer.invoke('browse-cache-clear'),
+  },
+
   // File system helpers
   openFolder:  (p)  => ipcRenderer.invoke('open-folder',    p),
   getDataRoot: ()   => ipcRenderer.invoke('get-data-root'),
@@ -73,7 +81,7 @@ contextBridge.exposeInMainWorld('craftdockServer', {
   openExternal:    (url)      => ipcRenderer.invoke('open-external',      url),
   onLog:             (cb) => ipcRenderer.on('server-log',             (_, id, line) => cb(id, line)),
   onStatusChange:    (cb) => ipcRenderer.on('server-status-change',   (_, id, s)    => cb(id, s)),
-  onInstallProgress: (cb) => ipcRenderer.on('server-install-progress',(_, id, p, m) => cb(id, p, m)),
+  onInstallProgress: (cb) => ipcRenderer.on('server-install-progress',(_, id, p, m, stats) => cb(id, p, m, stats)),
   onBackupCreated:   (cb) => ipcRenderer.on('backup-created',         (_, id, name) => cb(id, name)),
 
   // Players & JSON
@@ -112,6 +120,7 @@ contextBridge.exposeInMainWorld('craftdockInstance', {
   listScreenshots:(id)        => ipcRenderer.invoke('instance-list-screenshots', id),
   openFolder:     (id,sub)        => ipcRenderer.invoke('instance-open-folder',        id, sub),
   applyResourceTag:   (id, tag)  => ipcRenderer.invoke('instance-apply-resource-tag',  id, tag),
+  applyShaderTag:     (id, tag)  => ipcRenderer.invoke('instance-apply-shader-tag',    id, tag),
   listConfigFiles:    (id)       => ipcRenderer.invoke('instance-list-config-files',    id),
   readScreenshot:     (p)        => ipcRenderer.invoke('instance-read-screenshot',       p),
   listLauncherJava:   ()         => ipcRenderer.invoke('list-launcher-java'),
@@ -130,10 +139,16 @@ contextBridge.exposeInMainWorld('craftdockInstance', {
   listWorldTags:      ()              => ipcRenderer.invoke('instance-list-world-tags'),
   getBuilds:          (sw,ver)        => ipcRenderer.invoke('server-get-builds',            sw, ver),
   installModpack:     (id, url)       => ipcRenderer.invoke('instance-install-modpack',     id, url),
+  installCurseForgeModpack: (id, modId, mcVer, loader) =>
+    ipcRenderer.invoke('instance-install-cf-modpack', id, modId, mcVer, loader),
   onLaunchStatus:     (cb)            => ipcRenderer.on('instance-launch-status',     (_,id,st,msg) => cb(id, st, msg)),
   onInstallProgress:  (cb)            => ipcRenderer.on('instance-install-progress',  (_,id,pct,msg) => cb(id, pct, msg)),
   onConsoleLog:       (cb)            => ipcRenderer.on('instance-console-log',        (_,id,line) => cb(id, line)),
   scanJava:           ()              => ipcRenderer.invoke('java-scan'),
+  javaStatus:         ()              => ipcRenderer.invoke('java-status'),
+  installMissingJava: ()              => ipcRenderer.invoke('java-install-missing'),
+  cancelJavaInstall:  ()              => ipcRenderer.invoke('java-install-cancel'),
+  onJavaInstallProgress: (cb)         => ipcRenderer.on('java-install-progress', (_, payload) => cb(payload)),
   probeJava:          (p)             => ipcRenderer.invoke('java-probe', p),
   browseJava:         ()              => ipcRenderer.invoke('dialog-open-java'),
   readServersDat:     (id)            => ipcRenderer.invoke('instance-read-servers-dat', id),

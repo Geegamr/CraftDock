@@ -153,6 +153,7 @@ function loadProductionIpc(tempRoot, handlers, modpackMetadataModule, fsOverride
     if (name === './config-file-list') return require('../config-file-list');
     if (name === './server-properties') return require('../server-properties');
     if (name === './modpack-metadata') return modpackMetadataModule;
+    if (name === './browse-cache') return require('../browse-cache');
     if (name === './package.json') return require('../package.json');
     return require(name);
   };
@@ -265,7 +266,36 @@ test('Rust rejects missing or malformed manifests and import leaves no instance 
   });
 });
 
-test('preload-to-handler rejects normalized override paths before instance creation or writes', async () => {
+test('valid JSON with invalid manifest shapes is rejected by Rust, fallback, and the production import handler', async () => {
+  buildRustBinary();
+  const cases = [
+    ['null.mrpack', 'mr', 'modrinth.index.json', 'null'],
+    ['null-manifest.zip', 'cf', 'manifest.json', 'null'],
+    ['null-mr-file.mrpack', 'mr', 'modrinth.index.json', JSON.stringify({ files: [null] })],
+    ['null-cf-file.zip', 'cf', 'manifest.json', JSON.stringify({ files: [null] })],
+    ['mr-files-string.mrpack', 'mr', 'modrinth.index.json', JSON.stringify({ files: 'bad' })],
+    ['cf-files-string.zip', 'cf', 'manifest.json', JSON.stringify({ files: 'bad' })],
+    ['cf-loaders-string.zip', 'cf', 'manifest.json', JSON.stringify({ minecraft: { modLoaders: 'bad' } })],
+    ['cf-null-loader.zip', 'cf', 'manifest.json', JSON.stringify({ minecraft: { modLoaders: [null] } })],
+  ];
+  await withTempRoot(async root => {
+    const reader = createReader(root);
+    const handlers = new Map();
+    const { exposed } = loadProductionIpc(root, handlers, require('../modpack-metadata'));
+    for (const [name, type, manifestName, manifest] of cases) {
+      const archive = path.join(root, name);
+      fs.writeFileSync(archive, makeStoredZip([[manifestName, manifest]]));
+      const rust = spawnSync(binaryPath, ['inspect', archive, type], { encoding: 'utf8' });
+      assert.notEqual(rust.status, 0, `${name} is rejected by Rust`);
+      await assert.rejects(reader(archive, type, readFixtureEntries(archive)), `${name} is rejected by JS fallback`);
+      const result = await exposed.craftdockInstance.importPack(archive, type);
+      assert.equal(result.success, false, `${name} is rejected by the production handler`);
+      assert.deepEqual(instanceDirectories(root), [], 'invalid JSON shape creates no instance directory');
+    }
+  });
+});
+
+test('preload-to-handler rejects normalized override paths before instance creation', async () => {
   const variants = [
     ['dot-segment', './overrides/config/options.txt'],
     ['backslash-separators', 'overrides\\config\\options.txt'],
@@ -298,7 +328,7 @@ test('preload-to-handler rejects ambiguous ZIP entry names and corrupt or unsupp
     ['traversal', 'overrides/../../../escaped.txt', { expect: /traversing/ }],
     ['absolute', '/overrides/options.txt', { expect: /absolute/ }],
     ['drive', 'C:/overrides/options.txt', { expect: /absolute/ }],
-    ['nul-byte', 'overrides/options .txt', { expect: /ambiguous entry name/ }],
+    ['nul-byte', 'overrides/options\u0000.txt', { expect: /ambiguous entry name/ }],
     ['unsupported-compression', 'overrides/options.txt', { compression: 12, expect: /unsupported compression/ }],
     ['encrypted', 'overrides/options.txt', { flags: 1, expect: /encrypted/ }],
     ['corrupt-crc', 'overrides/options.txt', { corruptCrc: true, expect: /CRC mismatch/ }],
