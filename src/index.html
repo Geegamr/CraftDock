@@ -645,7 +645,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
     <img src="../assets/icon.svg" width="20" height="20" style="border-radius:4px;image-rendering:pixelated;flex-shrink:0" alt="CraftDock">
     CRAFTDOCK
   </div>
-  <div class="titlebar-center" data-tauri-drag-region>v0.6.3<span class="beta-badge">Closed Beta</span></div>
+  <div class="titlebar-center" data-tauri-drag-region>v0.7.0<span class="beta-badge">Closed Beta</span></div>
   <div class="titlebar-controls">
     <button class="tc-btn min" onclick="winCtrl('minimize')" aria-label="Minimize" title="Minimize">─</button>
     <button class="tc-btn max" onclick="winCtrl('maximize')" aria-label="Maximize" title="Maximize">□</button>
@@ -1523,7 +1523,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 <div class="page" id="page-settings">
   <div class="settings-view">
     <div style="font-size:18px;font-weight:800;margin-bottom:4px">Settings</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v0.6.3</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v0.7.0</div>
 
     <!-- Java Management -->
     <div class="settings-section">
@@ -1668,7 +1668,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Version</div></div>
-        <span style="font-size:12px;color:var(--text-muted)">CraftDock v0.6.3</span>
+        <span style="font-size:12px;color:var(--text-muted)">CraftDock v0.7.0</span>
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Electron version</div></div>
@@ -3610,7 +3610,7 @@ async function fetchAndShowAllFavourites() {
   try {
     const params = new URLSearchParams({ ids: JSON.stringify(ids) });
     const res = await fetch(`https://api.modrinth.com/v2/projects?${params}`, {
-      headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
+      headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
     });
     if (!res.ok) throw new Error(`Modrinth API ${res.status}`);
     const projects = await res.json();
@@ -3786,7 +3786,7 @@ async function fetchModrinthItems(query, version, sort, offset = 0) {
     limit: 100, offset: offset, index: sortMap[sort] || 'downloads'
   });
   const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, {
-    headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
+    headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
   });
   if (!res.ok) throw new Error(`Modrinth API ${res.status}`);
   const data = await res.json();
@@ -4169,7 +4169,7 @@ async function _itsLoadModpackVersions() {
   try {
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${_itsPackData.id}/version`,
-      { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
+      { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
     );
     const versions = res.ok ? await res.json() : [];
     if (!versions.length) { _itsShowVersionState('none'); return; }
@@ -4231,12 +4231,12 @@ async function selectItsServer(id) {
   try {
     let url = `https://api.modrinth.com/v2/project/${_itsPackData.id}/version?loaders=${JSON.stringify(loaders)}`;
     if (mcVer) url += `&game_versions=${JSON.stringify([mcVer])}`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } });
+    const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } });
     let versions = res.ok ? await res.json() : [];
     if (!versions.length && mcVer) {
       const res2 = await fetch(
         `https://api.modrinth.com/v2/project/${_itsPackData.id}/version?loaders=${JSON.stringify(loaders)}`,
-        { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
+        { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
       );
       versions = res2.ok ? await res2.json() : [];
     }
@@ -4416,7 +4416,7 @@ async function _confirmNormalInstall() {
                     : ['bukkit','spigot','paper','purpur','folia'];
       const res = await fetch(
         `https://api.modrinth.com/v2/project/${_itsPackData.id}/version?loaders=${JSON.stringify(loaders)}&featured=true`,
-        { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
+        { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
       );
       if (res.ok) {
         const versions = await res.json();
@@ -4545,7 +4545,7 @@ async function fetchPbModrinth(q, version, offset) {
   const facets = [['project_type:plugin']];
   if (version) facets.push([`versions:${version}`]);
   const params = new URLSearchParams({ query: q, facets: JSON.stringify(facets), limit: 20, offset, index: 'downloads' });
-  const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } });
+  const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } });
   if (!res.ok) throw new Error('Modrinth ' + res.status);
   const data = await res.json();
   return (data.hits || []).map(h => ({
@@ -4560,7 +4560,7 @@ async function fetchPbHangar(q, version, offset) {
   const params = new URLSearchParams({ q: q || '', platform: 'PAPER', limit: 20, offset });
   if (version) params.set('version', version);
   const res = await fetch(`https://hangar.papermc.io/api/v1/projects?${params}`, {
-    headers: { 'User-Agent': 'CraftDock/0.6.3' }
+    headers: { 'User-Agent': 'CraftDock/0.7.0' }
   });
   if (!res.ok) throw new Error('Hangar ' + res.status);
   const data = await res.json();
@@ -4579,7 +4579,7 @@ async function fetchPbSpiget(q, offset) {
   const url = q
     ? `https://api.spiget.org/v2/search/resources/${encodeURIComponent(q)}?${params}`
     : `https://api.spiget.org/v2/resources?${params}`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.6.3' } });
+  const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.7.0' } });
   if (!res.ok) throw new Error('SpigotMC ' + res.status);
   const data = await res.json();
   const arr = Array.isArray(data) ? data : (data.results || []);
@@ -4685,7 +4685,7 @@ async function installPluginFromBrowser(plugin, btn) {
   if (plugin.source === 'modrinth') {
     try {
       const vRes = await fetch(`https://api.modrinth.com/v2/project/${plugin.id}/version?loaders=["bukkit","spigot","paper","purpur","folia"]`,
-        { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } });
+        { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } });
       if (vRes.ok) { const vs = await vRes.json(); downloadUrl = vs[0]?.files?.[0]?.url; }
     } catch(e) {}
   } else if (plugin.source === 'spiget') {
@@ -4808,7 +4808,7 @@ async function resSearchItems(query) {
       index: query ? 'relevance' : 'downloads'
     });
     const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, {
-      headers: { 'User-Agent': 'CraftDock/0.6.3' }
+      headers: { 'User-Agent': 'CraftDock/0.7.0' }
     });
     if (!res.ok) throw new Error('Modrinth ' + res.status);
     const data = await res.json();
@@ -4889,7 +4889,7 @@ async function addResPackToInstance(item, btn) {
     const inst = await InstanceStore.get(activeInstanceId);
     const mcVer = inst?.mcVersion || '';
     const res = await fetch(`https://api.modrinth.com/v2/project/${item.slug}/version`, {
-      headers: { 'User-Agent': 'CraftDock/0.6.3' }
+      headers: { 'User-Agent': 'CraftDock/0.7.0' }
     });
     if (!res.ok) throw new Error('Modrinth version fetch failed: ' + res.status);
     const versions = await res.json();
@@ -5221,7 +5221,7 @@ async function searchModrinthMods(query, loader, offset = 0) {
   });
 
   const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, {
-    headers: { 'User-Agent': 'CraftDock/0.6.3 (craftdock@example.com)' }
+    headers: { 'User-Agent': 'CraftDock/0.7.0 (craftdock@example.com)' }
   });
   if (!res.ok) throw new Error(`Modrinth ${res.status}`);
   const data = await res.json();
@@ -5373,7 +5373,7 @@ async function mbToggleVersionPicker(mod, wrapper, verBtn) {
     if (loader) params.set('loaders', JSON.stringify([loader]));
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${mod.slug || mod.id}/version?${params}`,
-      { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
+      { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
     );
     const versions = res.ok ? await res.json() : [];
 
@@ -5452,7 +5452,7 @@ async function addModToInstance(mod, btn, chosenVersion) {
         if (inst.loader)    params.set('loaders',       JSON.stringify([inst.loader]));
         const vRes = await fetch(
           `https://api.modrinth.com/v2/project/${mod.slug || mod.id}/version?${params}`,
-          { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
+          { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
         );
         if (vRes.ok) {
           const versions = await vRes.json();
@@ -6789,7 +6789,7 @@ async function checkModpackUpdate(inst) {
   try {
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${inst.sourceId}/version?limit=1`,
-      { headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' } }
+      { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
     );
     if (res.ok) {
       checked = true;
@@ -10804,7 +10804,7 @@ async function confirmInstallResToInstance() {
     statusEl.textContent = 'Fetching download URL…';
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${_irtiItemData.slug||_irtiItemData.id}/version`,
-      { headers: { 'User-Agent': 'CraftDock/0.6.3' } }
+      { headers: { 'User-Agent': 'CraftDock/0.7.0' } }
     );
     if (!res.ok) throw new Error('Modrinth ' + res.status);
     const versions = await res.json();
@@ -10910,7 +10910,7 @@ async function _itiLoadVersions(instId) {
     // Always fetch ALL versions for this project (no filter) so user can pick any
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${_itiModData.slug||_itiModData.id}/version`,
-      { headers: { 'User-Agent': 'CraftDock/0.6.3' } }
+      { headers: { 'User-Agent': 'CraftDock/0.7.0' } }
     );
     _itiVersions = res.ok ? await res.json() : [];
 
@@ -11018,7 +11018,7 @@ async function confirmInstallToInstance() {
       statusEl.textContent = 'Fetching download URL…';
       const res = await fetch(
         `https://api.modrinth.com/v2/project/${_itiModData.slug||_itiModData.id}/version`,
-        { headers:{'User-Agent':'CraftDock/0.6.3'} }
+        { headers:{'User-Agent':'CraftDock/0.7.0'} }
       );
       const allVers = res.ok ? await res.json() : [];
       const fallbackFile = allVers[0]?.files?.find(f=>f.primary) || allVers[0]?.files?.[0];
@@ -11284,7 +11284,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Check main.js version matches what the HTML expects ────
   if (window.craftdockServer) {
-    const EXPECTED = '0.6.3';
+    const EXPECTED = '0.7.0';
     try {
       const ver = await window.craftdockServer.getMainVersion?.();
       if (ver !== EXPECTED) {
@@ -11752,7 +11752,7 @@ async function fetchModrinthLatestVersions(sourceIds, mcVersion, loader) {
     try {
       const params = new URLSearchParams({ ids: JSON.stringify(batch) });
       const res = await fetch(`https://api.modrinth.com/v2/projects?${params}`, {
-        headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
+        headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
       });
       if (!res.ok) continue;
       const projects = await res.json();
@@ -11770,7 +11770,7 @@ async function fetchModrinthLatestVersions(sourceIds, mcVersion, loader) {
       if (mcVersion) qs.push(`game_versions=["${mcVersion}"]`);
       if (loader)    qs.push(`loaders=["${loader}"]`);
       if (qs.length) url += '?' + qs.join('&');
-      const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.6.3' } });
+      const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.7.0' } });
       if (!res.ok) continue;
       const versions = await res.json();
       if (versions?.length) {

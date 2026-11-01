@@ -785,7 +785,7 @@ async function resolveVanillaUrl(version) {
   // Fetch the version manifest with a timeout + User-Agent to avoid Windows SSL issues
   const fetchJson = (url) => new Promise((resolve, reject) => {
     const req = require('https').get(url, {
-      headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
+      headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
     }, res => {
       // Follow redirects
       if ([301,302,307,308].includes(res.statusCode)) {
@@ -1108,7 +1108,7 @@ function downloadFile(url, dest, onProgress, timeoutMs = 120000, signal = null) 
       const agent = new proto.Agent({ keepAlive: false });
       const req = proto.get(u, {
         agent,
-        headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
+        headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
       }, res => {
         if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
           res.resume(); // drain response
@@ -1705,7 +1705,7 @@ function fetchJsonHttp(url, hops = 0) {
     // used to hang the caller forever instead of failing.
     if (hops > 5) return reject(new Error('Too many redirects: ' + url));
     const req = require('https').get(url, {
-      headers: { 'User-Agent': 'CraftDock/0.6.3 (contact@craftdock.app)' }
+      headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
     }, res => {
       if ([301,302,307,308].includes(res.statusCode)) {
         res.resume();
@@ -4148,14 +4148,14 @@ ipcMain.handle('server-download-to-folder', async (_, id, url, fileName, subfold
     await new Promise((resolve, reject) => {
       const client = url.startsWith('https') ? https : http;
       const file = fs.createWriteStream(dest);
-      client.get(url, { headers: { 'User-Agent': 'CraftDock/0.6.3' } }, res => {
+      client.get(url, { headers: { 'User-Agent': 'CraftDock/0.7.0' } }, res => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           // follow one redirect
           const redir = res.headers.location;
           file.close();
           const c2 = redir.startsWith('https') ? https : http;
           const file2 = fs.createWriteStream(dest);
-          c2.get(redir, { headers: { 'User-Agent': 'CraftDock/0.6.3' } }, r2 => {
+          c2.get(redir, { headers: { 'User-Agent': 'CraftDock/0.7.0' } }, r2 => {
             r2.pipe(file2);
             file2.on('finish', () => file2.close(resolve));
           }).on('error', reject);

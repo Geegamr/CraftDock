@@ -4,7 +4,7 @@
   <p>A lightweight, modern Minecraft launcher built with Electron.</p>
 
   <img src="https://img.shields.io/badge/status-Closed%20Beta-red?style=flat-square">
-  <img src="https://img.shields.io/badge/version-0.6.3-6366f1?style=flat-square">
+  <img src="https://img.shields.io/badge/version-0.7.0-6366f1?style=flat-square">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square">
   <img src="https://img.shields.io/badge/license-Apache 2.0-22c55e?style=flat-square">
 
