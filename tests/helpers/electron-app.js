@@ -284,6 +284,7 @@ function loadPreload(handlers, invocations, sender) {
 function loadApp(root, options = {}) {
   const handlers = new Map();
   const invocations = [];
+  const intervals = [];
   const events = [];
   const logs = [];
   const fetchCalls = [];
@@ -368,7 +369,11 @@ function loadApp(root, options = {}) {
     fetch: fetchMock,
     queueMicrotask,
     clearInterval: () => {},
-    setInterval: () => 0,
+    // Recorded rather than started, so a test can drive one scheduler tick itself.
+    setInterval: (callback, delay) => {
+      intervals.push({ callback, delay });
+      return intervals.length;
+    },
     clearTimeout: handle => global.clearTimeout(handle),
     setTimeout: (callback, delay) => {
       if (delay === 8000) { queueMicrotask(callback); return 0; }
@@ -401,6 +406,7 @@ function loadApp(root, options = {}) {
     logs,
     fetchCalls,
     dialogs,
+    intervals,
     network,
     spawnCalls: children.calls,
     children: children.children,

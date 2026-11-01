@@ -87,7 +87,7 @@ function runRustBinary(binary, args) {
       settled = true;
       clearTimeout(timeout);
       if (code === 0) resolve(stdout);
-      else reject(new Error(stderr || `Rust modpack metadata process exited with ${code}`));
+      else reject(Object.assign(new Error(stderr || `Rust modpack metadata process exited with ${code}`), { code }));
     });
   });
 }
@@ -109,7 +109,14 @@ function createModpackMetadataReader({ isPackaged, appDir, resourcesPath, platfo
           throw new Error('Rust modpack metadata returned an invalid result');
         }
         return result;
-      } catch {}
+      } catch (error) {
+        // Exit code 3 means the archive's own declared sizes are impossible:
+        // the JavaScript fallback would parse the very same bytes and pay the
+        // same cost, only in the slower path. Surface it instead.
+        if (error && error.code === 3) {
+          throw new Error(String(error.message).replace(/^Could not parse modpack metadata: Rejected: /, '').trim());
+        }
+      }
     }
     return parseModpackMetadataFallback(filePath, type, zipEntries);
   };

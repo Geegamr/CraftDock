@@ -112,9 +112,26 @@ function createServersDatReader({ isPackaged, appDir, resourcesPath, platform, l
         execFile(binary, [datFile], {
           windowsHide: true,
           timeout: 10000,
-          maxBuffer: 4 * 1024 * 1024,
+          // A record costs about six bytes of JSON per input byte at worst (a
+          // ten-byte entry renders as a ~60-byte object), so sizing the buffer
+          // from the file keeps legitimate dense lists on the native path
+          // instead of tripping the buffer limit and silently re-parsing the
+          // same bytes in the slower JavaScript fallback.
+          maxBuffer: Math.min(
+            128 * 1024 * 1024,
+            Math.max(4 * 1024 * 1024, (fs.statSync(datFile).size + 1) * 8),
+          ),
           encoding: 'utf8',
-        }, (error, output) => error ? reject(error) : resolve(output));
+        }, (error, output, errorOutput) => {
+          if (!error) {
+            resolve(output);
+            return;
+          }
+          // Node does not attach the child's stderr to the execFile error, and
+          // the rejection message is carried there.
+          if (errorOutput) error.stderr = errorOutput;
+          reject(error);
+        });
       });
       const servers = JSON.parse(stdout);
       if (!Array.isArray(servers) || servers.some(server =>
@@ -123,6 +140,19 @@ function createServersDatReader({ isPackaged, appDir, resourcesPath, platform, l
       )) throw new Error('Rust parser returned an invalid server list');
       return servers;
     } catch (error) {
+      // Exit code 3 means the parser rejected the file's own structure: a
+      // declared entry count its bytes cannot support. Re-parsing those same
+      // bytes in JavaScript would be far slower and allocate hundreds of times
+      // the file size, so surface the rejection instead of falling back.
+      if (error.code === 3) {
+        const message = String(error.stderr || '').split('\n')
+          .map(line => line.trim())
+          .find(line => line.startsWith('Rejected:'));
+        throw new Error(
+          (message || 'Rejected: servers.dat declares more entries than its size can hold')
+            .replace(/^Rejected:\s*/, '')
+        );
+      }
       logger.warn('[CraftDock] Rust servers.dat parser failed; using JavaScript fallback:', error.message);
       return readServersDatFallback(gameDir, logger);
     }

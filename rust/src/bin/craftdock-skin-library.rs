@@ -1,4 +1,5 @@
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{self, Read};
@@ -7,6 +8,16 @@ use std::path::{Path, PathBuf};
 fn meta_path(directory: &Path) -> PathBuf {
     directory.join("skins.json")
 }
+
+// Hydration is the one place a tiny metadata file can demand unbounded work:
+// every entry names an image that is read and base64-encoded, so N entries
+// pointing at one large file ask for that file N times over. The caller refuses
+// any response above this size anyway (skin-library.js caps native output at the
+// same number), so building one is pure waste.
+// The bound sits above one maximal legitimate skin (a 64 MiB image encodes to
+// 64 MiB plus the data-URL prefix) and far below what a metadata file full of
+// repeated references would ask for.
+const MAX_HYDRATED_BYTES: usize = 96 * 1024 * 1024;
 
 fn ensure_regular_metadata(directory: &Path) -> Result<PathBuf, String> {
     let path = meta_path(directory);
@@ -121,13 +132,34 @@ fn read_skins(directory: &Path) -> Result<Value, String> {
     let contents = fs::read_to_string(&metadata_path).map_err(|error| error.to_string())?;
     let mut skins: Vec<Value> =
         serde_json::from_str(&contents).map_err(|error| error.to_string())?;
+    // Cache by resolved path so a repeated image is read and encoded once, and
+    // stop as soon as the response can no longer be accepted.
+    let mut hydrated: HashMap<PathBuf, String> = HashMap::new();
+    let mut total = 0_usize;
     for skin in &mut skins {
         if let Some(file_path) = skin.get("filePath").and_then(Value::as_str) {
             let image = Path::new(file_path);
             if image.exists() && is_inside_directory(directory, image) {
-                let bytes = fs::read(image).map_err(|error| error.to_string())?;
-                skin["dataUrl"] =
-                    Value::String(format!("data:image/png;base64,{}", encode_base64(&bytes)));
+                // The metadata path string is the key: identical references
+                // collapse without another canonicalize on the hot path (the
+                // containment check already resolved the path once).
+                let key = image.to_path_buf();
+                let data_url = match hydrated.get(&key) {
+                    Some(cached) => cached.clone(),
+                    None => {
+                        let bytes = fs::read(image).map_err(|error| error.to_string())?;
+                        let encoded = format!("data:image/png;base64,{}", encode_base64(&bytes));
+                        hydrated.insert(key, encoded.clone());
+                        encoded
+                    }
+                };
+                total = total.saturating_add(data_url.len());
+                if total > MAX_HYDRATED_BYTES {
+                    return Err(format!(
+                        "skin images exceed the {MAX_HYDRATED_BYTES} byte render budget"
+                    ));
+                }
+                skin["dataUrl"] = Value::String(data_url);
             }
         }
     }

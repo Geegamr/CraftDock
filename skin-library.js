@@ -3,6 +3,10 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const MAX_NATIVE_OUTPUT = 64 * 1024 * 1024;
+// Matches the native helper's own budget (96 MiB, above one maximal 64 MiB
+// skin). A library whose hydrated images exceed it cannot be returned at all,
+// so it must fail instead of being rebuilt entry by entry.
+const MAX_FALLBACK_HYDRATED_BYTES = 96 * 1024 * 1024;
 const NATIVE_UNAVAILABLE = Symbol('native unavailable');
 
 function metadataPath(skinsDirectory) {
@@ -42,10 +46,21 @@ function getAllFallback(skinsDirectory) {
   const metaFile = metadataPath(skinsDirectory);
   if (!fs.existsSync(metaFile)) return [];
   const skins = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+  const hydrated = new Map();
+  let total = 0;
   return skins.map(skin => {
     // Stored paths are legacy metadata, but never hydrate bytes from outside this library.
     if (skin.filePath && fs.existsSync(skin.filePath) && isInsideSkinsDirectory(skinsDirectory, skin.filePath)) {
-      skin.dataUrl = 'data:image/png;base64,' + fs.readFileSync(skin.filePath).toString('base64');
+      let dataUrl = hydrated.get(skin.filePath);
+      if (dataUrl === undefined) {
+        dataUrl = 'data:image/png;base64,' + fs.readFileSync(skin.filePath).toString('base64');
+        hydrated.set(skin.filePath, dataUrl);
+      }
+      total += dataUrl.length;
+      if (total > MAX_FALLBACK_HYDRATED_BYTES) {
+        throw new Error(`Skin images exceed the ${MAX_FALLBACK_HYDRATED_BYTES} byte render budget`);
+      }
+      skin.dataUrl = dataUrl;
     }
     return skin;
   });

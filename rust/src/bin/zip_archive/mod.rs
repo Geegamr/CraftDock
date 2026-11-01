@@ -1,8 +1,18 @@
 use flate2::read::DeflateDecoder;
 use std::io::Read;
 
-const MAX_ARCHIVE_SIZE: usize = 512 * 1024 * 1024;
+pub(super) const MAX_ARCHIVE_SIZE: usize = 512 * 1024 * 1024;
 const MAX_MANIFEST_SIZE: usize = 16 * 1024 * 1024;
+
+// A deflate stream can expand far past the archive that carries it: a 15 KB
+// entry holds a 16 MiB manifest whose JSON tree costs ~600 MB and ~1 s to
+// inspect. Bound the inflation by what the compressed payload can plausibly
+// hold. The floor leaves every real manifest (tens to a few hundred KB)
+// untouched even when it happens to compress poorly; the ceiling stays the hard
+// limit. Decompressed bytes are proportional to the archive's own bytes, which
+// is what makes the cost of a tiny hostile archive proportional too.
+const MANIFEST_INFLATE_RATIO: usize = 128;
+const MANIFEST_INFLATE_FLOOR: usize = 2 * 1024 * 1024;
 
 fn u16_at(bytes: &[u8], offset: usize) -> Result<u16, String> {
     let value = bytes
@@ -94,13 +104,18 @@ pub(super) fn entry(bytes: &[u8], wanted: &str) -> Result<Option<Vec<u8>>, Strin
         let data = match compression {
             0 => compressed.to_vec(),
             8 => {
+                let limit = compressed_size
+                    .saturating_mul(MANIFEST_INFLATE_RATIO)
+                    .clamp(MANIFEST_INFLATE_FLOOR, MAX_MANIFEST_SIZE);
                 let mut output = Vec::new();
                 DeflateDecoder::new(compressed)
-                    .take((MAX_MANIFEST_SIZE + 1) as u64)
+                    .take((limit + 1) as u64)
                     .read_to_end(&mut output)
                     .map_err(|error| format!("Invalid ZIP: could not inflate manifest: {error}"))?;
-                if output.len() > MAX_MANIFEST_SIZE {
-                    return Err("Invalid modpack manifest: exceeds size limit".into());
+                if output.len() > limit {
+                    return Err(format!(
+                        "Rejected: modpack manifest inflates past the {limit} bytes its {compressed_size} compressed bytes can hold"
+                    ));
                 }
                 output
             }

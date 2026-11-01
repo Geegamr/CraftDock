@@ -137,9 +137,30 @@ function registerSlug(id, name, base) {
 }
 
 // ── Module-scope dir helpers (also redefined inside registerIpcHandlers for use there) ──
+// Joins renderer-supplied parts onto a trusted folder and refuses anything that
+// resolves outside it. Purely lexical (no fs round-trip), so hot paths stay fast.
+function resolveInside(base, ...parts) {
+  const root = path.resolve(base);
+  const target = path.resolve(root, ...parts.map(part => String(part == null ? '' : part)));
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    throw new Error(`Refused path outside ${path.basename(root)}: ${parts.join('/')}`);
+  }
+  return target;
+}
+
+// An id arrives over IPC. Anything that is not a plain folder name ('..', an
+// absolute path, a nested path) would resolve to a sibling folder or the data root.
+function folderForId(base, id) {
+  const mapped = typeof slugMap[id] === 'string' && slugMap[id] ? slugMap[id] : String(id == null ? '' : id);
+  if (!mapped || mapped === '.' || mapped === '..' || path.isAbsolute(mapped) || /[\\/]/.test(mapped)) {
+    throw new Error('Invalid id: ' + mapped);
+  }
+  return resolveInside(base, mapped);
+}
+
 const INST_SUBDIRS = ['mods','saves','config','resourcepacks','screenshots','shaderpacks','logs'];
-function instDir(id) { return path.join(instancesBase, slugMap[id] || id); }
-function srvDir(id)  { return path.join(serversBase,   slugMap[id] || id); }
+function instDir(id) { return folderForId(instancesBase, id); }
+function srvDir(id)  { return folderForId(serversBase,   id); }
 
 const nativeReaderOptions = {
   isPackaged: app.isPackaged,
@@ -1203,6 +1224,7 @@ function sharedWorldsDirForTag(tag) {
 }
 
 function applySharedWorlds(id, tag) {
+  tag = tag == null ? tag : String(tag);
   // tag = string (non-empty) → link saves/ to shared-worlds/<tag>/
   // tag = null/'' → unlink saves/ back to a real dir
   const savesPath = path.join(instDir(id), 'saves');
@@ -1271,6 +1293,7 @@ function sharedServersDirForTag(tag) {
 }
 
 function applySharedServers(id, tag) {
+  tag = tag == null ? tag : String(tag);
   // tag = string → link servers.dat to shared-servers/<tag>/servers.dat
   // tag = null/'' → restore to real file in instance folder
   const instPath    = instDir(id);
@@ -1320,6 +1343,7 @@ function applySharedServers(id, tag) {
 }
 
 function applySharedResources(id, tag) {
+  tag = tag == null ? tag : String(tag);
   const instPath       = instDir(id);
   const resourcesDir   = path.join(instPath, 'resourcepacks');
   const isWin          = process.platform === 'win32';
@@ -1370,6 +1394,7 @@ function applySharedResources(id, tag) {
 }
 
 function applySharedShaders(id, tag) {
+  tag = tag == null ? tag : String(tag);
   // tag = string → link shaderpacks/ to shared-shaders/<tag>/
   // tag = null/'' → unlink shaderpacks/ back to a real folder
   const instPath     = instDir(id);
@@ -1453,20 +1478,20 @@ ipcMain.handle('instance-list-config-files', (_, id) => {
 
 ipcMain.handle('instance-open-config-file', (_, filePath) => {
   // Open in system default editor (fallback/external)
-  try { shell.openPath(filePath); return { success: true }; }
+  try { shell.openPath(resolveInside(instancesBase, filePath)); return { success: true }; }
   catch(e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('instance-read-config-file', (_, filePath) => {
   try {
-    const text = fs.readFileSync(filePath, 'utf8');
+    const text = fs.readFileSync(resolveInside(instancesBase, filePath), 'utf8');
     return { success: true, text };
   } catch(e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('instance-write-config-file', (_, filePath, text) => {
   try {
-    fs.writeFileSync(filePath, text, 'utf8');
+    fs.writeFileSync(resolveInside(instancesBase, filePath), text, 'utf8');
     return { success: true };
   } catch(e) { return { success: false, error: e.message }; }
 });
@@ -1601,7 +1626,7 @@ ipcMain.handle('instance-toggle-mod', (_, id, filename, enable) => {
 });
 
 ipcMain.handle('instance-delete-mod', (_, id, filename) => {
-  try { fs.unlinkSync(path.join(instDir(id), 'mods', filename)); return { success: true }; }
+  try { fs.unlinkSync(resolveInside(path.join(instDir(id), 'mods'), filename)); return { success: true }; }
   catch(e) { return { success: false, error: e.message }; }
 });
 
@@ -1625,7 +1650,7 @@ ipcMain.handle('list-launcher-java', () => listLauncherJavaInstalls());
 
 ipcMain.handle('instance-read-screenshot', (_, filePath) => {
   try {
-    const data = fs.readFileSync(filePath);
+    const data = fs.readFileSync(resolveInside(instancesBase, filePath));
     const ext  = path.extname(filePath).toLowerCase().replace('.', '');
     const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
     return { success: true, dataUrl: `data:${mime};base64,${data.toString('base64')}` };
@@ -1635,7 +1660,9 @@ ipcMain.handle('instance-read-screenshot', (_, filePath) => {
 ipcMain.handle('instance-download-mod', async (_, id, url, filename) => {
   const modsDir = path.join(instDir(id), 'mods');
   if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
-  const dest = path.join(modsDir, filename);
+  let dest;
+  try { dest = resolveInside(modsDir, filename); }
+  catch (e) { return { success: false, error: e.message }; }
   // Remove any existing/partial file before downloading
   try { if (fs.existsSync(dest)) fs.unlinkSync(dest); } catch {}
   try {
@@ -1650,7 +1677,9 @@ ipcMain.handle('instance-download-mod', async (_, id, url, filename) => {
 
 ipcMain.handle('instance-open-folder', (_, id, sub) => {
   const base = ensureInstance(id);
-  const target = sub ? path.join(base, sub) : base;
+  let target;
+  try { target = sub ? resolveInside(base, sub) : base; }
+  catch (e) { return { success: false, error: e.message }; }
   if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
   shell.openPath(target);
   return { success: true };
@@ -2286,30 +2315,40 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
 });
 
 ipcMain.handle('instance-list-folder', (_, id, sub) => {
-  const dir = path.join(instDir(id), sub);
+  let dir;
+  try { dir = resolveInside(instDir(id), sub); } catch { return []; }
   if (!fs.existsSync(dir)) return [];
   try {
     return fs.readdirSync(dir)
       .filter(n => !n.startsWith('.'))
-      .map(name => {
+      .flatMap(name => {
         const p = path.join(dir, name);
-        const stat = fs.statSync(p);
-        return { name, size: stat.size, mtime: stat.mtimeMs };
+        let stat;
+        try { stat = fs.statSync(p); } catch { return []; }
+        return [{ name, size: stat.size, mtime: stat.mtimeMs }];
       });
   } catch { return []; }
 });
 
 ipcMain.handle('instance-download-respack', async (_, id, url, filename, subdir) => {
-  const destDir = path.join(instDir(id), subdir);
+  let destDir;
+  try { destDir = resolveInside(instDir(id), subdir); }
+  catch (e) { return { success: false, error: e.message }; }
   if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-  const dest = path.join(destDir, filename);
+  let dest;
+  try { dest = resolveInside(destDir, filename); }
+  catch (e) { return { success: false, error: e.message }; }
   await downloadFile(url, dest, null, 120000);
   return { success: true, path: dest };
 });
 
 ipcMain.handle('instance-toggle-resfile', (_, id, subdir, filename, enable) => {
-  const dir = path.join(instDir(id), subdir);
-  const src = path.join(dir, filename);
+  let dir;
+  try { dir = resolveInside(instDir(id), subdir); }
+  catch (e) { return { success: false, error: e.message }; }
+  let src;
+  try { src = resolveInside(dir, filename); }
+  catch (e) { return { success: false, error: e.message }; }
   let dst;
   if (enable) {
     dst = src.endsWith('.disabled') ? src.slice(0, -9) : src;
@@ -2321,7 +2360,9 @@ ipcMain.handle('instance-toggle-resfile', (_, id, subdir, filename, enable) => {
 });
 
 ipcMain.handle('instance-delete-resfile', (_, id, subdir, filename) => {
-  const p = path.join(instDir(id), subdir, filename);
+  let p;
+  try { p = resolveInside(instDir(id), subdir, filename); }
+  catch (e) { return { success: false, error: e.message }; }
   try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
   return { success: true };
 });
@@ -2392,7 +2433,9 @@ ipcMain.handle('instance-install-modpack', async (event, instId, mrpackUrl) => {
     for (let i = 0; i < files.length; i += BATCH) {
       const batch = files.slice(i, i + BATCH);
       await Promise.all(batch.map(async mf => {
-        const dest = path.join(dir, mf.path.replace(/\//g, path.sep));
+        let dest;
+        try { dest = resolveInside(dir, String(mf.path || '').replace(/\//g, path.sep)); }
+        catch { throw new Error(`Refusing modpack file outside the instance: ${mf.path}`); }
         if (!fs.existsSync(path.dirname(dest))) fs.mkdirSync(path.dirname(dest), { recursive: true });
         if (!fs.existsSync(dest)) {
           const urls = mf.downloads || [];
@@ -2955,7 +2998,9 @@ ipcMain.handle('server-install-modpack', async (event, srv, mrpackUrl) => {
     const workers = Array.from({ length: Math.min(4, files.length || 1) }, async () => {
       while (queue.length) {
         const file = queue.shift();
-        const dest = path.join(dir, file.path.replace(/\//g, path.sep));
+        let dest;
+        try { dest = resolveInside(dir, String(file.path || '').replace(/\//g, path.sep)); }
+        catch { failedFiles.push({ path: file.path, error: 'Refused path outside the server folder' }); done++; continue; }
         const destDir = path.dirname(dest);
         if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
         // Try each download URL in order, first success wins
@@ -3379,7 +3424,9 @@ ipcMain.handle('server-start', async (event, srv) => {
     ? findForgeArgsFile(dir, srv.software, srv.version) : null;
 
   let jarName = srv.jarName || 'server.jar';
-  let jarPath = path.join(dir, jarName);
+  let jarPath;
+  try { jarPath = resolveInside(dir, jarName); }
+  catch { log('[ERROR] Invalid JAR name: ' + jarName); return { success: false, error: 'Invalid JAR name' }; }
 
   if (!forgeArgs) {
     const launchJar = { fabric: 'fabric-server-launch.jar', quilt: 'quilt-server-launch.jar' }[srv.software];
@@ -3532,7 +3579,7 @@ ipcMain.handle('server-delete', async (_,id) => {
 ipcMain.handle('server-remove-file', (_, id, sub, f) => {
   try {
     // Try exact name first, then .disabled variant
-    const base = path.join(srvDir(id), sub, f);
+    const base = resolveInside(srvDir(id), sub, f);
     const dis  = base + '.disabled';
     if (fs.existsSync(base)) fs.unlinkSync(base);
     else if (fs.existsSync(dis)) fs.unlinkSync(dis);
@@ -3543,7 +3590,7 @@ ipcMain.handle('server-remove-file', (_, id, sub, f) => {
 // Rename .jar <-> .jar.disabled to enable/disable without deleting
 ipcMain.handle('server-toggle-file', (_, id, sub, fileName, enable) => {
   try {
-    const dir      = path.join(srvDir(id), sub);
+    const dir      = resolveInside(srvDir(id), sub);
     const active   = path.join(dir, fileName);
     const disabled = path.join(dir, fileName + '.disabled');
     if (enable) {
@@ -3784,7 +3831,7 @@ ipcMain.handle('java-set-override', (_, javaPath) => {
 
 ipcMain.handle('server-read-json', async (_, id, filename) => {
   try {
-    const p = path.join(srvDir(id), filename);
+    const p = resolveInside(srvDir(id), filename);
     return await getServerJsonAccess().read(p);
   } catch { return []; }
 });
@@ -3793,7 +3840,7 @@ ipcMain.handle('server-patch-json', async (_, id, filename, serializedFn) => {
   // We can't pass functions over IPC, so we accept the patched array directly
   // (renderer sends the result, not a fn — see preload)
   try {
-    const p = path.join(srvDir(id), filename);
+    const p = resolveInside(srvDir(id), filename);
     await getServerJsonAccess().write(p, serializedFn);
     return { success: true };
   } catch(e) { return { success: false, error: e.message }; }
@@ -3905,7 +3952,10 @@ ipcMain.handle('server-list-backups', (_, id) => {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 });
 
-ipcMain.handle('server-create-backup', async (_, id) => {
+// Shared by the IPC handler and the auto-backup timer. The timer must call this
+// directly: ipcMain.handle() stores a handler, it does not register an event
+// listener, so emitting the channel never ran the backup at all.
+async function createWorldBackup(id) {
   const dir      = srvDir(id);
   const worldDir = path.join(dir, 'world');
   if (!fs.existsSync(worldDir)) return { success: false, error: 'World folder not found (server may not have run yet)' };
@@ -3942,10 +3992,14 @@ ipcMain.handle('server-create-backup', async (_, id) => {
 
   const stat = fs.statSync(destPath);
   return { success: true, name, filename: name + '.zip', sizeMB: (stat.size/1024/1024).toFixed(1) };
-});
+}
+
+ipcMain.handle('server-create-backup', (_, id) => createWorldBackup(id));
 
 ipcMain.handle('server-restore-backup', async (event, id, filename) => {
-  const destPath = path.join(backupDir(id), filename);
+  let destPath;
+  try { destPath = resolveInside(backupDir(id), filename); }
+  catch (e) { return { success: false, error: e.message }; }
   if (!fs.existsSync(destPath)) return { success: false, error: 'Backup file not found' };
 
   let entries;
@@ -3987,7 +4041,7 @@ ipcMain.handle('server-restore-backup', async (event, id, filename) => {
 
 ipcMain.handle('server-delete-backup', (_, id, filename) => {
   try {
-    const p = path.join(backupDir(id), filename);
+    const p = resolveInside(backupDir(id), filename);
     if (fs.existsSync(p)) fs.unlinkSync(p);
     return { success: true };
   } catch(e) { return { success: false, error: e.message }; }
@@ -4009,7 +4063,7 @@ ipcMain.handle('server-set-backup-config', (event, id, intervalMin, keepCount) =
     await new Promise(r => setTimeout(r, 2000));
 
     // Create backup
-    const result = await new Promise(r => ipcMain.emit('server-create-backup', { sender: { send: ()=>{}, isDestroyed: ()=>false } }, id));
+    const result = await createWorldBackup(id);
     if (!result?.success) return;
 
     // Prune old backups if keepCount > 0
@@ -4051,11 +4105,13 @@ ipcMain.handle('server-reset-world', (_, id, newLevelType, newSeed, bonusChest) 
       let content = fs.readFileSync(propsPath, 'utf8');
       const set = (key, val) => {
         const re = new RegExp(`^${key}=.*$`, 'm');
-        if (re.test(content)) content = content.replace(re, `${key}=${val}`);
+        // A replacer function, not a string: a seed containing $& or $' would
+        // otherwise be expanded as a replacement pattern and corrupt the file.
+        if (re.test(content)) content = content.replace(re, () => `${key}=${val}`);
         else content += `\n${key}=${val}`;
       };
-      if (newLevelType) set('level-type', newLevelType);
-      set('level-seed', newSeed || '');
+      if (newLevelType) set('level-type', String(newLevelType).replace(/[\r\n]/g, ' '));
+      set('level-seed', String(newSeed || '').replace(/[\r\n]/g, ' '));
       set('generate-structures', 'true');
       // bonus chest is a bukkit/spigot feature — write to bukkit.yml if it exists, else no-op
       if (bonusChest) {
@@ -4086,7 +4142,7 @@ ipcMain.handle('server-copy-mod', async (_, id, srcPath, fileName) => {
   try {
     const modsDir = path.join(srvDir(id), 'mods');
     if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
-    const dest = path.join(modsDir, fileName);
+    const dest = resolveInside(modsDir, fileName);
     if (srcPath && fs.existsSync(srcPath)) {
       fs.copyFileSync(srcPath, dest);
     }
@@ -4098,7 +4154,7 @@ ipcMain.handle('server-copy-plugin', async (_, id, srcPath, fileName) => {
   try {
     const pluginsDir = path.join(srvDir(id), 'plugins');
     if (!fs.existsSync(pluginsDir)) fs.mkdirSync(pluginsDir, { recursive: true });
-    const dest = path.join(pluginsDir, fileName);
+    const dest = resolveInside(pluginsDir, fileName);
     if (srcPath && fs.existsSync(srcPath)) {
       fs.copyFileSync(srcPath, dest);
     }
@@ -4142,25 +4198,33 @@ ipcMain.handle('server-download-to-folder', async (_, id, url, fileName, subfold
   try {
     const https = require('https');
     const http  = require('http');
-    const targetDir = path.join(srvDir(id), subfolder || 'plugins');
+    const targetDir = resolveInside(srvDir(id), subfolder || 'plugins');
     if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
-    const dest = path.join(targetDir, fileName.replace(/[/\\?%*:|"<>]/g, '_'));
+    const dest = resolveInside(targetDir, fileName.replace(/[/\\?%*:|"<>]/g, '_'));
     await new Promise((resolve, reject) => {
       const client = url.startsWith('https') ? https : http;
-      const file = fs.createWriteStream(dest);
+      let file;
       client.get(url, { headers: { 'User-Agent': 'CraftDock/0.7.0' } }, res => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           // follow one redirect
           const redir = res.headers.location;
-          file.close();
+          file?.close?.();
           const c2 = redir.startsWith('https') ? https : http;
           const file2 = fs.createWriteStream(dest);
           c2.get(redir, { headers: { 'User-Agent': 'CraftDock/0.7.0' } }, r2 => {
+            if (r2.statusCode !== 200) { r2.resume(); return reject(new Error(`HTTP ${r2.statusCode} for ${redir}`)); }
             r2.pipe(file2);
             file2.on('finish', () => file2.close(resolve));
           }).on('error', reject);
           return;
         }
+        if (res.statusCode !== 200) {
+          res.resume();
+          file?.close?.();
+          try { fs.unlinkSync(dest); } catch {}
+          return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+        }
+        file = fs.createWriteStream(dest);
         res.pipe(file);
         file.on('finish', () => file.close(resolve));
       }).on('error', reject);
