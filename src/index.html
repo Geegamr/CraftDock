@@ -623,6 +623,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .srv-install-bar-bg { background:rgba(255,255,255,0.06); border-radius:4px; height:6px; overflow:hidden; margin-top:8px; }
 .srv-install-bar    { height:6px; border-radius:4px; background:var(--accent); transition:width 0.4s ease; width:0%; }
 
+/* Highlights snap instead of fading. A colour transition only advances when the
+   window renders a frame, so on a page that is not repainting the fade starts late
+   and then stretches across the next frames, which reads as a highlight lagging
+   behind the pointer. Colours therefore change in a single frame; movement,
+   shadows and opacity still animate normally. */
+*{transition-property:transform,box-shadow,opacity,filter,width,height,max-height,max-width,top,left,right,bottom,border-radius,visibility !important}
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
