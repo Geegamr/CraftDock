@@ -3,7 +3,7 @@
   <h1>CraftDock</h1>
   <p>A lightweight, modern Minecraft launcher built with Electron.</p>
 
-  <img src="https://img.shields.io/badge/status-Closed%20Beta-red?style=flat-square">
+  <img src="https://img.shields.io/badge/status-Public%20Beta-22c55e?style=flat-square">
   <img src="https://img.shields.io/badge/version-0.7.0-6366f1?style=flat-square">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square">
   <img src="https://img.shields.io/badge/license-Apache 2.0-22c55e?style=flat-square">
@@ -17,8 +17,8 @@
 
 ---
 
-> ⚠️ **This project is currently in Closed Beta.**
-> Public beta is planned for **June 30, 2026**. Features may change and bugs are expected.
+> 🟢 **CraftDock is now in Public Beta.** Anyone can download it — no invite or tester access needed.
+> Features may still change and bugs are expected. Grab the latest build from [Releases](https://github.com/Geegamr/CraftDock/releases).
 > Found something broken? [Open an issue](https://github.com/Geegamr/CraftDock/issues) or [join the Discord](https://discord.gg/pNKnKNdDc4).
 
 ---
@@ -48,14 +48,14 @@
 
 | Milestone | Target |
 |-----------|--------|
-| Closed Beta (current) | Now |
+| Closed Beta | Done |
 | CurseForge Browsing | Shipped (v0.6.3) |
 | Export / Import | Shipped (v0.6.3) |
-| Bug fixes & polish before public release | Ongoing |
-| Public Beta | **June 30, 2026** |
+| Bug fixes & polish before public release | Shipped (v0.7.0) |
+| Public Beta (current) | **Now** |
 | v1.0 Release | TBD |
 
-During closed beta, access is limited to testers. Join the [Discord](https://discord.gg/pNKnKNdDc4) to request access or follow progress.
+Public beta is open to everyone — install from [Releases](https://github.com/Geegamr/CraftDock/releases), report issues on GitHub, and follow progress on the [Discord](https://discord.gg/pNKnKNdDc4).
 
 ---
 
