@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('craftdock', {
 
   // App info
   getElectronVersion: () => ipcRenderer.invoke('get-electron-version'),
+  // The shipped version, read once from package.json by the main process.
+  getAppVersion:      () => ipcRenderer.invoke('get-main-version'),
 
   // Microsoft auth — real device code flow via Node (no CORS)
   auth: {
@@ -155,4 +157,12 @@ contextBridge.exposeInMainWorld('craftdockInstance', {
   registerSlug:       (id,name,type)  => ipcRenderer.invoke('register-slug', id, name, type),
   exportPack:         (id, fmt)       => ipcRenderer.invoke('instance-export', id, fmt),
   checkAppUpdate:     ()              => ipcRenderer.invoke('check-app-update'),
+  appUpdateDownload:  ()              => ipcRenderer.invoke('app-update-download'),
+  appUpdateInstall:   ()              => ipcRenderer.invoke('app-update-install'),
+  onAppUpdateProgress: (cb)           => ipcRenderer.on('app-update-progress',  (_,payload) => cb(payload)),
+  setBanner:          (id, dataUrl)   => ipcRenderer.invoke('instance-set-banner',      id, dataUrl),
+  getBanner:          (id)            => ipcRenderer.invoke('instance-get-banner',      id),
+  clearBanner:        (id)            => ipcRenderer.invoke('instance-clear-banner',    id),
+  listTagPools:       ()              => ipcRenderer.invoke('tag-pools-list'),
+  deleteTagPool:      (kind, name)    => ipcRenderer.invoke('tag-pool-delete',          kind, name),
 });

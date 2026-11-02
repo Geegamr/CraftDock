@@ -119,6 +119,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .instance-hero{height:180px;position:relative;flex-shrink:0;overflow:hidden;background:var(--bg-darkest)}
 #heroIcon:hover #heroIconEditHint{opacity:1!important}
 .hero-bg{position:absolute;inset:0;background:linear-gradient(135deg,#0d1f3c 0%,#112244 50%,#0a1628 100%)}
+.hero-bg.has-banner{background-size:cover;background-position:center;background-repeat:no-repeat}
 .hero-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(8,12,20,0) 0%,rgba(8,12,20,0.7) 100%)}
 .hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(59,130,246,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(59,130,246,0.04) 1px,transparent 1px);background-size:40px 40px}
 .hero-content{position:absolute;bottom:0;left:0;right:0;padding:20px 24px;display:flex;align-items:flex-end;gap:16px}
@@ -645,7 +646,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
     <img src="../assets/icon.svg" width="20" height="20" style="border-radius:4px;image-rendering:pixelated;flex-shrink:0" alt="CraftDock">
     CRAFTDOCK
   </div>
-  <div class="titlebar-center" data-tauri-drag-region>v0.7.0<span class="beta-badge">Public Beta</span></div>
+  <div class="titlebar-center" data-tauri-drag-region>v<span class="app-version">0.8.0</span><span class="beta-badge">Public Beta</span></div>
   <div class="titlebar-controls">
     <button class="tc-btn min" onclick="winCtrl('minimize')" aria-label="Minimize" title="Minimize">─</button>
     <button class="tc-btn max" onclick="winCtrl('maximize')" aria-label="Maximize" title="Maximize">□</button>
@@ -717,6 +718,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <span class="tabs-title">Instances</span>
       <div style="display:flex;gap:4px">
         <button class="tabs-add" onclick="openNewCategoryModal()" title="New category" style="font-size:10px;width:auto;padding:2px 6px;letter-spacing:0.04em">CAT</button>
+        <button class="tabs-add" onclick="openImportModal()" title="Import modpack (.zip / .mrpack) as a new instance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
         <button class="tabs-add" onclick="openNewInstanceModal()" title="New instance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
       </div>
     </div>
@@ -756,6 +758,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
     </div>
     <!-- Hidden file input for instance icon change -->
     <input type="file" id="instIconFileInput" accept="image/*" style="display:none" onchange="handleInstIconFile(event)">
+    <input type="file" id="instBannerFileInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="handleInstBannerFile(event)">
 
     <!-- Blank state shown when no instance is selected -->
     <div id="instanceBlankState" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:40px;background:var(--bg-darkest)">
@@ -780,6 +783,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <button class="ctab" onclick="switchCtab(this,'ct-servers');InstanceStore.getAll().then(insts=>{const inst=insts.find(i=>i.id===activeInstanceId);if(inst)renderInstanceServers(inst);})">Servers</button>
       <button class="ctab" onclick="switchCtab(this,'ct-config');loadConfigFiles()">Config</button>
       <button class="ctab" id="ctConsoleBtn" onclick="switchCtab(this,'ct-console')">Console</button>
+      <button class="ctab" id="ctSettingsBtn" onclick="switchCtab(this,'ct-settings');loadInstanceSettingsTab()">Settings</button>
+      <button class="ctab" id="ctTagsBtn" onclick="switchCtab(this,'ct-tags');loadTagPools()">Tags</button>
     </div>
     <div class="content-area">
       <div id="ct-overview" class="ctab-panel active">
@@ -854,9 +859,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
           </button>
           <button class="btn-secondary" style="padding:8px 12px" onclick="openExport()" title="Export instance">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          </button>
-          <button class="btn-secondary" style="padding:8px 12px" onclick="openImportModal()" title="Import modpack (CurseForge zip / Modrinth mrpack)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </button>
           <button class="btn-secondary" style="padding:8px 12px;color:var(--red);border-color:rgba(239,68,68,0.3)" title="Reinstall — resets mods, configs and loader (keeps worlds)" onclick="reinstallActiveInstance()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 1 0 .49-3.21"/></svg>
@@ -975,6 +977,57 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
           </div>
         </div>
         <div id="configFileList"></div>
+      </div>
+      <div id="ct-settings" class="ctab-panel">
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-header">Instance Details</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div style="flex:1;min-width:200px">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Name</div>
+              <input id="isName" class="settings-input" style="width:100%" placeholder="Instance name" onkeydown="if(event.key==='Enter')saveInstanceIdentity()">
+            </div>
+            <div style="flex:1;min-width:200px">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Notes <span style="opacity:0.6">(optional)</span></div>
+              <input id="isNotes" class="settings-input" style="width:100%" placeholder="e.g. Hardcore run with friends" onkeydown="if(event.key==='Enter')saveInstanceIdentity()">
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+            <button class="btn-launch" style="padding:7px 16px;font-size:11px" onclick="saveInstanceIdentity()">Save Changes</button>
+            <span id="isSaveNote" style="font-size:10px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-header">Icon</div>
+          <div style="display:flex;align-items:center;gap:14px">
+            <div onclick="openInstIconPicker()" title="Change icon" style="width:64px;height:64px;border-radius:12px;background:var(--bg-card);border:2px solid var(--border);overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <img id="isIconImg" style="width:100%;height:100%;object-fit:cover;display:none">
+              <svg id="isIconSvg" viewBox="0 0 24 24" fill="none" stroke="var(--accent-bright)" stroke-width="2" width="32" height="32"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <div style="flex:1">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Hovering the icon in the header still changes it. This does the same thing.</div>
+              <button class="btn-secondary" style="padding:6px 12px;font-size:11px" onclick="openInstIconPicker()">Change Icon</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">Banner</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Sits behind the title and the Launch button. Without one you get the blue grid.</div>
+          <div id="isBannerPreview" style="height:110px;border-radius:10px;border:1px solid var(--border);background-size:cover;background-position:center;background-repeat:no-repeat;margin-bottom:10px"></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn-secondary" style="padding:6px 12px;font-size:11px" onclick="document.getElementById('instBannerFileInput').click()">Choose Banner</button>
+            <button id="isBannerClearBtn" class="btn-secondary" style="padding:6px 12px;font-size:11px;color:var(--red);border-color:rgba(239,68,68,0.3);display:none" onclick="removeInstanceBanner()">Remove Banner</button>
+            <span style="font-size:10px;color:var(--text-muted)">PNG, JPEG, WebP or GIF, up to 8 MB</span>
+          </div>
+        </div>
+      </div>
+      <div id="ct-tags" class="ctab-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+          <span style="font-size:12px;color:var(--text-secondary)">Shared tag folders in <code style="font-size:10px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:3px">craftdock-data/shared-*</code>. Deleting the last instance of a tag clears its folder automatically.</span>
+          <button class="btn-ghost" style="width:auto;padding:5px 10px;font-size:11px;flex-shrink:0" onclick="loadTagPools()">Refresh</button>
+        </div>
+        <div id="tagPoolList"></div>
       </div>
       <!-- ── Instance Console ── -->
     </div>
@@ -1523,7 +1576,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 <div class="page" id="page-settings">
   <div class="settings-view">
     <div style="font-size:18px;font-weight:800;margin-bottom:4px">Settings</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v0.7.0</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v<span class="app-version">0.8.0</span></div>
 
     <!-- Java Management -->
     <div class="settings-section">
@@ -1600,6 +1653,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         <div id="settingsShowConsole" class="toggle on" onclick="settingsToggle(this,'showConsoleOnLaunch')"></div>
       </div>
 
+      <div class="settings-row">
+        <div class="settings-label"><div class="settings-label-text">Check for updates on launch</div><div class="settings-label-desc">Ask when a newer CraftDock has been released</div></div>
+        <div id="settingsUpdateOnLaunch" class="toggle on" onclick="settingsToggle(this,'checkUpdatesOnStartup')"></div>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-label"><div class="settings-label-text">Install updates automatically</div><div class="settings-label-desc">Download and restart without asking. Skipped while a game or server is running.</div></div>
+        <div id="settingsUpdateAutoInstall" class="toggle" onclick="settingsToggle(this,'autoInstallUpdates')"></div>
+      </div>
+
 
     </div>
 
@@ -1624,6 +1687,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
           <div class="settings-label-text">Total servers</div>
         </div>
         <span id="settingsServerCount" style="font-size:12px;color:var(--text-muted)">—</span>
+      </div>
+      <div style="padding:10px 18px 4px;border-top:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="flex:1;min-width:0">
+            <div class="settings-label-text">Shared tag folders</div>
+            <div class="settings-label-desc">Worlds, server lists and packs shared between tagged instances. A tag folder is cleared on its own when its last instance goes, and anything left can be deleted here.</div>
+          </div>
+          <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px;flex-shrink:0" onclick="loadTagPools('settingsTagPoolList')">Refresh</button>
+        </div>
+        <div id="settingsTagPoolList"></div>
       </div>
       <div class="settings-row" style="align-items:center">
         <div class="settings-label" style="flex:1;min-width:0">
@@ -1668,7 +1741,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Version</div></div>
-        <span style="font-size:12px;color:var(--text-muted)">CraftDock v0.7.0</span>
+        <span style="font-size:12px;color:var(--text-muted)">CraftDock v<span class="app-version">0.8.0</span></span>
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Electron version</div></div>
@@ -2177,6 +2250,26 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 </div>
 
 <!-- ══════════════════════════════════════════════════════ -->
+<!-- APP UPDATE MODAL                                       -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="appUpdateModal">
+  <div class="modal" style="width:420px">
+    <div class="modal-title" id="appUpdateTitle">Update available</div>
+    <div class="modal-sub" id="appUpdateMsg" style="margin-bottom:18px">A newer CraftDock has been released.</div>
+    <div id="appUpdateProgressWrap" style="display:none;margin-bottom:18px">
+      <div style="height:6px;border-radius:3px;background:rgba(255,255,255,0.08);overflow:hidden">
+        <div id="appUpdateProgressBar" style="height:100%;width:0%;background:var(--accent);transition:width 0.15s"></div>
+      </div>
+      <div id="appUpdateProgressDetail" style="font-size:10px;color:var(--text-muted);margin-top:6px"></div>
+    </div>
+    <div class="modal-actions" style="justify-content:flex-end">
+      <button class="btn-secondary" id="appUpdateLater">Later</button>
+      <button class="btn-launch" id="appUpdateNow" style="background:var(--accent)">Install &amp; Restart</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
 <!-- CAPE CHANGER MODAL                                     -->
 <!-- ══════════════════════════════════════════════════════ -->
 <div class="modal-overlay" id="capeModal" style="align-items:center;justify-content:center">
@@ -2356,6 +2449,28 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 // ═══════════════════════════════════════════════════════════
 const isCraftDock = typeof window.craftdock !== 'undefined';
 const hasCraftDockInstances = typeof window.craftdockInstance !== 'undefined';
+
+// The one version string: everything the UI shows and every API call it makes
+// reads this. Startup refreshes it from package.json through the main process,
+// so the literal here only has to cover the browser fallback and the first paint.
+let APP_VERSION = '0.8.0';
+
+// Everything that prints the version reads .app-version, and the main process
+// owns the value, so bumping package.json is the only edit a release needs.
+function applyAppVersion(version) {
+  if (!version) return;
+  APP_VERSION = String(version).replace(/^v/, '');
+  document.querySelectorAll('.app-version').forEach(el => { el.textContent = APP_VERSION; });
+}
+
+function refreshAppVersion() {
+  applyAppVersion(APP_VERSION); // first paint, and the only value in a plain browser
+  const read = window.craftdock?.getAppVersion;
+  if (typeof read !== 'function') return;
+  Promise.resolve(read())
+    .then(version => applyAppVersion(version))
+    .catch(() => {});
+}
 function winCtrl(action) {
   const tauriCommands = {
     minimize: 'window_minimize',
@@ -2570,12 +2685,13 @@ const InstanceStore = {
   async remove(id) {
     if (this._api) {
       try {
-        await this._api.delete(id);
+        const result = await this._api.delete(id);
         const localMeta = (await Store.get('craftdock:inst-meta')) || {};
         delete localMeta[id];
         await Store.set('craftdock:inst-meta', localMeta);
         await renderInstanceList();
-        return;
+        // Carries the shared tag folders that were cleared with it, if any
+        return result;
       } catch(e) {
         console.error('InstanceStore.remove IPC error:', e);
         showNotif('Error', 'Could not delete instance: ' + (e.message || e));
@@ -3235,6 +3351,12 @@ function resetHero() {
   if (iconImg) iconImg.style.display = 'none';
   if (iconSvg) iconSvg.style.display = 'block';
 
+  // Drop the previous instance's banner
+  const heroBg   = document.querySelector('#instanceHero .hero-bg');
+  const heroGrid = document.querySelector('#instanceHero .hero-grid');
+  if (heroBg) { heroBg.style.backgroundImage = ''; heroBg.classList.remove('has-banner'); }
+  if (heroGrid) heroGrid.style.display = '';
+
   // Reset tabs back to Overview so console wrapper is hidden on next instance select
   const firstTab = document.querySelector('.content-tabs .ctab');
   if (firstTab) {
@@ -3303,6 +3425,9 @@ async function selectInstanceById(id) {
     if (iconImg) iconImg.style.display = 'none';
     if (iconSvg) iconSvg.style.display = 'block';
   }
+
+  // Banner behind the title and launch button (blue grid stays when there is none)
+  applyHeroBanner(inst.id);
 
   // Tags
   const tags = document.getElementById('heroTags');
@@ -3610,7 +3735,7 @@ async function fetchAndShowAllFavourites() {
   try {
     const params = new URLSearchParams({ ids: JSON.stringify(ids) });
     const res = await fetch(`https://api.modrinth.com/v2/projects?${params}`, {
-      headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
+      headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` }
     });
     if (!res.ok) throw new Error(`Modrinth API ${res.status}`);
     const projects = await res.json();
@@ -3786,7 +3911,7 @@ async function fetchModrinthItems(query, version, sort, offset = 0) {
     limit: 100, offset: offset, index: sortMap[sort] || 'downloads'
   });
   const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, {
-    headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
+    headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` }
   });
   if (!res.ok) throw new Error(`Modrinth API ${res.status}`);
   const data = await res.json();
@@ -4169,7 +4294,7 @@ async function _itsLoadModpackVersions() {
   try {
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${_itsPackData.id}/version`,
-      { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
+      { headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` } }
     );
     const versions = res.ok ? await res.json() : [];
     if (!versions.length) { _itsShowVersionState('none'); return; }
@@ -4231,12 +4356,12 @@ async function selectItsServer(id) {
   try {
     let url = `https://api.modrinth.com/v2/project/${_itsPackData.id}/version?loaders=${JSON.stringify(loaders)}`;
     if (mcVer) url += `&game_versions=${JSON.stringify([mcVer])}`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } });
+    const res = await fetch(url, { headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` } });
     let versions = res.ok ? await res.json() : [];
     if (!versions.length && mcVer) {
       const res2 = await fetch(
         `https://api.modrinth.com/v2/project/${_itsPackData.id}/version?loaders=${JSON.stringify(loaders)}`,
-        { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
+        { headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` } }
       );
       versions = res2.ok ? await res2.json() : [];
     }
@@ -4416,7 +4541,7 @@ async function _confirmNormalInstall() {
                     : ['bukkit','spigot','paper','purpur','folia'];
       const res = await fetch(
         `https://api.modrinth.com/v2/project/${_itsPackData.id}/version?loaders=${JSON.stringify(loaders)}&featured=true`,
-        { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
+        { headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` } }
       );
       if (res.ok) {
         const versions = await res.json();
@@ -4545,7 +4670,7 @@ async function fetchPbModrinth(q, version, offset) {
   const facets = [['project_type:plugin']];
   if (version) facets.push([`versions:${version}`]);
   const params = new URLSearchParams({ query: q, facets: JSON.stringify(facets), limit: 20, offset, index: 'downloads' });
-  const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } });
+  const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, { headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` } });
   if (!res.ok) throw new Error('Modrinth ' + res.status);
   const data = await res.json();
   return (data.hits || []).map(h => ({
@@ -4560,7 +4685,7 @@ async function fetchPbHangar(q, version, offset) {
   const params = new URLSearchParams({ q: q || '', platform: 'PAPER', limit: 20, offset });
   if (version) params.set('version', version);
   const res = await fetch(`https://hangar.papermc.io/api/v1/projects?${params}`, {
-    headers: { 'User-Agent': 'CraftDock/0.7.0' }
+    headers: { 'User-Agent': `CraftDock/${APP_VERSION}` }
   });
   if (!res.ok) throw new Error('Hangar ' + res.status);
   const data = await res.json();
@@ -4579,7 +4704,7 @@ async function fetchPbSpiget(q, offset) {
   const url = q
     ? `https://api.spiget.org/v2/search/resources/${encodeURIComponent(q)}?${params}`
     : `https://api.spiget.org/v2/resources?${params}`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.7.0' } });
+  const res = await fetch(url, { headers: { 'User-Agent': `CraftDock/${APP_VERSION}` } });
   if (!res.ok) throw new Error('SpigotMC ' + res.status);
   const data = await res.json();
   const arr = Array.isArray(data) ? data : (data.results || []);
@@ -4685,7 +4810,7 @@ async function installPluginFromBrowser(plugin, btn) {
   if (plugin.source === 'modrinth') {
     try {
       const vRes = await fetch(`https://api.modrinth.com/v2/project/${plugin.id}/version?loaders=["bukkit","spigot","paper","purpur","folia"]`,
-        { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } });
+        { headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` } });
       if (vRes.ok) { const vs = await vRes.json(); downloadUrl = vs[0]?.files?.[0]?.url; }
     } catch(e) {}
   } else if (plugin.source === 'spiget') {
@@ -4808,7 +4933,7 @@ async function resSearchItems(query) {
       index: query ? 'relevance' : 'downloads'
     });
     const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, {
-      headers: { 'User-Agent': 'CraftDock/0.7.0' }
+      headers: { 'User-Agent': `CraftDock/${APP_VERSION}` }
     });
     if (!res.ok) throw new Error('Modrinth ' + res.status);
     const data = await res.json();
@@ -4889,7 +5014,7 @@ async function addResPackToInstance(item, btn) {
     const inst = await InstanceStore.get(activeInstanceId);
     const mcVer = inst?.mcVersion || '';
     const res = await fetch(`https://api.modrinth.com/v2/project/${item.slug}/version`, {
-      headers: { 'User-Agent': 'CraftDock/0.7.0' }
+      headers: { 'User-Agent': `CraftDock/${APP_VERSION}` }
     });
     if (!res.ok) throw new Error('Modrinth version fetch failed: ' + res.status);
     const versions = await res.json();
@@ -5221,7 +5346,7 @@ async function searchModrinthMods(query, loader, offset = 0) {
   });
 
   const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, {
-    headers: { 'User-Agent': 'CraftDock/0.7.0 (craftdock@example.com)' }
+    headers: { 'User-Agent': `CraftDock/${APP_VERSION} (craftdock@example.com)` }
   });
   if (!res.ok) throw new Error(`Modrinth ${res.status}`);
   const data = await res.json();
@@ -5373,7 +5498,7 @@ async function mbToggleVersionPicker(mod, wrapper, verBtn) {
     if (loader) params.set('loaders', JSON.stringify([loader]));
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${mod.slug || mod.id}/version?${params}`,
-      { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
+      { headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` } }
     );
     const versions = res.ok ? await res.json() : [];
 
@@ -5452,7 +5577,7 @@ async function addModToInstance(mod, btn, chosenVersion) {
         if (inst.loader)    params.set('loaders',       JSON.stringify([inst.loader]));
         const vRes = await fetch(
           `https://api.modrinth.com/v2/project/${mod.slug || mod.id}/version?${params}`,
-          { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
+          { headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` } }
         );
         if (vRes.ok) {
           const versions = await vRes.json();
@@ -6789,7 +6914,7 @@ async function checkModpackUpdate(inst) {
   try {
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${inst.sourceId}/version?limit=1`,
-      { headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' } }
+      { headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` } }
     );
     if (res.ok) {
       checked = true;
@@ -10616,8 +10741,178 @@ function handleInstIconFile(e) {
     // Reset file input so same file can be picked again
     e.target.value = '';
     showNotif('Icon Updated', 'Instance icon changed');
+    refreshSettingsIconPreview(dataUrl);
   };
   reader.readAsDataURL(file);
+}
+
+// ── Instance banner ───────────────────────────────────────
+const HERO_GRADIENT = 'linear-gradient(135deg,#0d1f3c 0%,#112244 50%,#0a1628 100%)';
+const BANNER_MAX_FILE_BYTES = 8 * 1024 * 1024;
+
+async function applyHeroBanner(id) {
+  const bg   = document.querySelector('#instanceHero .hero-bg');
+  const grid = document.querySelector('#instanceHero .hero-grid');
+  if (!bg) return;
+  bg.style.backgroundImage = '';
+  bg.classList.remove('has-banner');
+  if (grid) grid.style.display = '';
+  if (!id || !isCraftDock || !window.craftdockInstance?.getBanner) return;
+  try {
+    const dataUrl = await window.craftdockInstance.getBanner(id);
+    // A slow read must not paint a banner onto a different instance.
+    if (!dataUrl || activeInstanceId !== id) return;
+    bg.style.backgroundImage = `url("${dataUrl}")`;
+    bg.classList.add('has-banner');
+    if (grid) grid.style.display = 'none';
+  } catch {}
+}
+
+function handleInstBannerFile(e) {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file || !activeInstanceId) return;
+  if (file.size > BANNER_MAX_FILE_BYTES) {
+    showNotif('Banner Too Large', 'Pick an image under 8 MB', 6000);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = ev => saveInstanceBanner(ev.target.result);
+  reader.readAsDataURL(file);
+}
+
+async function saveInstanceBanner(dataUrl) {
+  if (!activeInstanceId || !window.craftdockInstance?.setBanner) return;
+  const result = await window.craftdockInstance.setBanner(activeInstanceId, dataUrl);
+  if (!result?.success) {
+    showNotif('Banner Not Saved', result?.error || 'Could not save the image', 6000);
+    return;
+  }
+  await loadSettingsBannerPreview(activeInstanceId);
+  applyHeroBanner(activeInstanceId);
+  showNotif('Banner Set', 'This instance has a banner now');
+}
+
+async function removeInstanceBanner() {
+  if (!activeInstanceId || !window.craftdockInstance?.clearBanner) return;
+  const ok = await showConfirm('Remove banner?', 'The instance goes back to the plain blue background.', 'Remove', '#ef4444');
+  if (!ok) return;
+  await window.craftdockInstance.clearBanner(activeInstanceId);
+  await loadSettingsBannerPreview(activeInstanceId);
+  applyHeroBanner(activeInstanceId);
+  showNotif('Banner Removed', 'Back to the blue grid');
+}
+
+async function loadSettingsBannerPreview(id) {
+  const preview  = document.getElementById('isBannerPreview');
+  const clearBtn = document.getElementById('isBannerClearBtn');
+  if (!preview) return;
+  let dataUrl = null;
+  if (id && isCraftDock && window.craftdockInstance?.getBanner) {
+    try { dataUrl = await window.craftdockInstance.getBanner(id); } catch {}
+  }
+  preview.style.backgroundImage = dataUrl ? `url("${dataUrl}")` : HERO_GRADIENT;
+  if (clearBtn) clearBtn.style.display = dataUrl ? 'inline-flex' : 'none';
+}
+
+// ── Instance settings tab ─────────────────────────────────
+function refreshSettingsIconPreview(dataUrl) {
+  const img = document.getElementById('isIconImg');
+  const svg = document.getElementById('isIconSvg');
+  if (!img || !svg) return;
+  if (dataUrl) { img.src = dataUrl; img.style.display = 'block'; svg.style.display = 'none'; }
+  else { img.style.display = 'none'; svg.style.display = 'block'; }
+}
+
+async function loadInstanceSettingsTab() {
+  if (!activeInstanceId) return;
+  const inst = await InstanceStore.get(activeInstanceId);
+  if (!inst) return;
+  const nameEl  = document.getElementById('isName');
+  const notesEl = document.getElementById('isNotes');
+  const noteEl  = document.getElementById('isSaveNote');
+  if (nameEl)  nameEl.value  = inst.name  || '';
+  if (notesEl) notesEl.value = inst.notes || '';
+  if (noteEl)  noteEl.textContent = '';
+  refreshSettingsIconPreview(inst.iconUrl || null);
+  loadSettingsBannerPreview(activeInstanceId);
+}
+
+async function saveInstanceIdentity() {
+  if (!activeInstanceId) return;
+  const name = (document.getElementById('isName')?.value || '').trim();
+  if (!name) { showNotif('Name Needed', 'An instance needs a name', 5000); return; }
+  const notes = (document.getElementById('isNotes')?.value || '').trim();
+  const inst = await InstanceStore.get(activeInstanceId);
+  if (!inst) return;
+  inst.name  = name;
+  inst.notes = notes;
+  await InstanceStore.save(inst);
+
+  // The header is already on screen, so update it without reloading the view.
+  const heroTitle = document.getElementById('heroTitle');
+  if (heroTitle) heroTitle.textContent = name;
+  const heroSub = document.getElementById('heroSub');
+  if (heroSub) {
+    const subParts = [inst.mcVersion, inst.loader || null, inst.author ? `By ${inst.author}` : null].filter(Boolean).join(' • ');
+    heroSub.innerHTML = subParts
+      + (notes ? `<span style="display:block;font-size:10px;color:var(--text-muted);margin-top:3px;font-style:italic">${escHtml(notes)}</span>` : '');
+  }
+  await renderInstanceList(true);
+  const noteEl = document.getElementById('isSaveNote');
+  if (noteEl) noteEl.textContent = 'Saved';
+  showNotif('Saved', 'Instance details updated');
+}
+
+// ── Tag folders tab ───────────────────────────────────────
+const TAG_KIND_LABELS = { world: 'Worlds', server: 'Server list', resource: 'Resource packs', shader: 'Shaders' };
+
+function formatPoolSize(bytes) {
+  if (!bytes) return '0 MB';
+  const mb = bytes / 1024 / 1024;
+  return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb.toFixed(mb < 10 ? 1 : 0) + ' MB';
+}
+
+async function loadTagPools(containerId = 'tagPoolList') {
+  const list = document.getElementById(containerId);
+  if (!list) return;
+  if (!isCraftDock || !window.craftdockInstance?.listTagPools) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:11px;border:1px dashed var(--border);border-radius:var(--radius)">Tag folders are only available in the desktop app</div>';
+    return;
+  }
+  list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:11px">Loading…</div>';
+  let pools = [];
+  try { pools = (await window.craftdockInstance.listTagPools()) || []; } catch {}
+  if (!pools.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:11px;border:1px dashed var(--border);border-radius:var(--radius)">No shared tag folders. They appear here when you tag an instance.</div>';
+    return;
+  }
+  list.innerHTML = pools.map(p => {
+    const shared = p.instances.length;
+    const status = shared ? `${shared} instance${shared > 1 ? 's' : ''}` : 'nothing using it';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;background:var(--bg-card)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:var(--text-primary)">${escHtml(p.name)}</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${TAG_KIND_LABELS[p.kind] || p.kind} · ${formatPoolSize(p.size)} · ${escHtml(status)}</div>
+      </div>
+      <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px;color:var(--red)" onclick="deleteTagPool('${escHtml(p.kind)}','${encodeURIComponent(p.name)}')">Delete</button>
+    </div>`;
+  }).join('');
+}
+
+async function deleteTagPool(kind, encodedName) {
+  const name = decodeURIComponent(encodedName);
+  const ok = await showConfirm(`Delete the "${name}" folder?`, 'Everything inside it is deleted. Instances still using this tag keep their own copy of nothing — none use it right now.', 'Delete', '#ef4444');
+  if (!ok) return;
+  const result = await window.craftdockInstance.deleteTagPool(kind, name);
+  if (!result?.success) {
+    showNotif('Could Not Delete', result?.error || 'Unknown error', 6000);
+    return;
+  }
+  showNotif('Deleted', `Removed ${name}`);
+  // Both surfaces show the same folders
+  loadTagPools();
+  loadTagPools('settingsTagPoolList');
 }
 
 // ── Instance reinstall ────────────────────────────────────
@@ -10707,15 +11002,21 @@ async function deleteActiveInstance() {
   const instances = await InstanceStore.getAll();
   const inst = instances.find(i => i.id === activeInstanceId);
   const name = inst ? inst.name : 'instance';
+  const hasTags = inst && (inst.worldTag || inst.serverTag || inst.resourceTag || inst.shaderTag);
+  const sharedNote = hasTags
+    ? ' Shared tag folders it was the last user of are removed as well.'
+    : '';
   const ok = await showConfirm(`Delete "${name}"?`,
-    'This will permanently delete the instance folder and ALL its contents (mods, worlds, configs, screenshots). This cannot be undone.',
+    'This will permanently delete the instance folder and ALL its contents (mods, worlds, configs, screenshots). This cannot be undone.' + sharedNote,
     'Delete', '#ef4444');
   if (!ok) return;
-  await InstanceStore.remove(activeInstanceId);
+  const result = await InstanceStore.remove(activeInstanceId);
   activeInstanceId = null;
   resetHero();
   await refreshHomePage();
-  showNotif('Instance Deleted', `"${name}" and its folder have been removed`);
+  const poolsGone = Array.isArray(result?.removedPools) ? result.removedPools.length : 0;
+  showNotif('Instance Deleted', `"${name}" and its folder have been removed`
+    + (poolsGone ? ` — ${poolsGone} shared tag folder${poolsGone > 1 ? 's' : ''} cleaned up too` : ''));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -10804,7 +11105,7 @@ async function confirmInstallResToInstance() {
     statusEl.textContent = 'Fetching download URL…';
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${_irtiItemData.slug||_irtiItemData.id}/version`,
-      { headers: { 'User-Agent': 'CraftDock/0.7.0' } }
+      { headers: { 'User-Agent': `CraftDock/${APP_VERSION}` } }
     );
     if (!res.ok) throw new Error('Modrinth ' + res.status);
     const versions = await res.json();
@@ -10910,7 +11211,7 @@ async function _itiLoadVersions(instId) {
     // Always fetch ALL versions for this project (no filter) so user can pick any
     const res = await fetch(
       `https://api.modrinth.com/v2/project/${_itiModData.slug||_itiModData.id}/version`,
-      { headers: { 'User-Agent': 'CraftDock/0.7.0' } }
+      { headers: { 'User-Agent': `CraftDock/${APP_VERSION}` } }
     );
     _itiVersions = res.ok ? await res.json() : [];
 
@@ -11018,7 +11319,7 @@ async function confirmInstallToInstance() {
       statusEl.textContent = 'Fetching download URL…';
       const res = await fetch(
         `https://api.modrinth.com/v2/project/${_itiModData.slug||_itiModData.id}/version`,
-        { headers:{'User-Agent':'CraftDock/0.7.0'} }
+        { headers:{'User-Agent':`CraftDock/${APP_VERSION}`} }
       );
       const allVers = res.ok ? await res.json() : [];
       const fallbackFile = allVers[0]?.files?.find(f=>f.primary) || allVers[0]?.files?.[0];
@@ -11199,6 +11500,8 @@ async function saveInstJava() {
 //  INIT
 // ═══════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
+  refreshAppVersion();
+
   // Init instance list
   await renderInstanceList();
   await loadFavourites();
@@ -11284,7 +11587,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Check main.js version matches what the HTML expects ────
   if (window.craftdockServer) {
-    const EXPECTED = '0.7.0';
+    // The page's own build number is the expectation: a main.js from a different
+    // build is the thing being detected, so it cannot supply the value.
+    const EXPECTED = APP_VERSION;
     try {
       const ver = await window.craftdockServer.getMainVersion?.();
       if (ver !== EXPECTED) {
@@ -11308,6 +11613,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.body.appendChild(banner);
     }
   }
+
+  // Updater: progress arrives from the main process, and the first check runs a
+  // few seconds in so it never competes with start-up work.
+  if (window.craftdockInstance?.onAppUpdateProgress) {
+    window.craftdockInstance.onAppUpdateProgress(updateProgressUI);
+  }
+  setTimeout(() => { _startupUpdateCheck(); }, 5000);
 
   // Keyboard shortcuts
   document.addEventListener('keydown', e => {
@@ -11352,7 +11664,8 @@ async function loadSettings() {
 
   // Toggles
   _applyToggle('settingsShowConsole',  s.showConsoleOnLaunch  !== false); // default ON
-  _applyToggle('settingsAutoUpdate',   s.checkUpdatesOnStartup !== false); // default ON
+  _applyToggle('settingsUpdateOnLaunch',    s.checkUpdatesOnStartup !== false); // default ON
+  _applyToggle('settingsUpdateAutoInstall', s.autoInstallUpdates === true);      // default OFF
 
   // Data path — resolve once and cache
   const pathEl = document.getElementById('settingsDataPath');
@@ -11378,6 +11691,9 @@ async function loadSettings() {
     const el = document.getElementById('settingsServerCount');
     if (el) el.textContent = srvs.length;
   });
+
+  // Shared tag folders, reachable even with no instances left
+  loadTagPools('settingsTagPoolList');
 
   // Electron version — via IPC (process.versions not available in contextIsolated renderer)
   const evEl = document.getElementById('settingsElectronVer');
@@ -11752,7 +12068,7 @@ async function fetchModrinthLatestVersions(sourceIds, mcVersion, loader) {
     try {
       const params = new URLSearchParams({ ids: JSON.stringify(batch) });
       const res = await fetch(`https://api.modrinth.com/v2/projects?${params}`, {
-        headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
+        headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` }
       });
       if (!res.ok) continue;
       const projects = await res.json();
@@ -11770,7 +12086,7 @@ async function fetchModrinthLatestVersions(sourceIds, mcVersion, loader) {
       if (mcVersion) qs.push(`game_versions=["${mcVersion}"]`);
       if (loader)    qs.push(`loaders=["${loader}"]`);
       if (qs.length) url += '?' + qs.join('&');
-      const res = await fetch(url, { headers: { 'User-Agent': 'CraftDock/0.7.0' } });
+      const res = await fetch(url, { headers: { 'User-Agent': `CraftDock/${APP_VERSION}` } });
       if (!res.ok) continue;
       const versions = await res.json();
       if (versions?.length) {
@@ -12628,8 +12944,25 @@ function _openExportFolder(filePath) {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  APP UPDATE CHECKER
+//  APP UPDATER
 // ══════════════════════════════════════════════════════════════
+// The whole update lives in the main process: it finds the build made for this
+// install, downloads it and hands it to the installer. The page only asks, shows
+// progress and decides whether the user gets a say.
+let _updateInfo = null;
+
+function _updaterBridge() {
+  return (isCraftDock && window.craftdockInstance?.appUpdateDownload && window.craftdockInstance?.appUpdateInstall)
+    ? window.craftdockInstance
+    : null;
+}
+
+// A restart in the middle of a game or a server would end it, so automatic
+// updates wait instead of taking the choice away.
+function _gameRunning() {
+  return Object.values(_instRunningStatus || {}).includes('running');
+}
+
 async function settingsCheckUpdate() { await manualCheckUpdate(); }
 async function manualCheckUpdate() {
   const statusEl = document.getElementById('settingsUpdateStatus');
@@ -12637,44 +12970,161 @@ async function manualCheckUpdate() {
   await _runUpdateCheck(true);
 }
 
+// Runs a few seconds after the window is usable, so a slow network never delays
+// start-up. Respects the "check for updates on launch" switch.
+async function _startupUpdateCheck() {
+  try {
+    const settings = await getSettings();
+    if (settings.checkUpdatesOnStartup === false) return;
+    await _runUpdateCheck(false);
+  } catch(e) { /* a check that cannot run must stay quiet at launch */ }
+}
+
 async function _runUpdateCheck(showResult) {
   const statusEl = document.getElementById('settingsUpdateStatus');
+  const bridge = _updaterBridge();
   try {
-    if (!isCraftDock || !window.craftdockInstance?.checkAppUpdate) {
+    if (!bridge) {
       if (statusEl) statusEl.textContent = 'Available in desktop app';
       return;
     }
-    const r = await window.craftdockInstance.checkAppUpdate();
+    const r = await bridge.checkAppUpdate();
     if (!r.success) {
       if (statusEl) statusEl.textContent = 'Check failed: ' + r.error;
       return;
     }
-    if (r.hasUpdate) {
-      if (statusEl) statusEl.textContent = 'Update available: v' + r.latest;
-      if (!document.getElementById('appUpdateBanner')) {
-        const banner = document.createElement('div');
-        banner.id = 'appUpdateBanner';
-        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:#4f46e5;color:#fff;font-size:12px;font-weight:600;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px';
-        const safeUrl = escHtml(r.url || 'https://github.com/Geegamr/CraftDock/releases');
-        banner.innerHTML = `<span>&#127881; CraftDock v${escHtml(r.latest)} is available! (current: v${escHtml(r.current)})</span>
-          <div style="display:flex;gap:8px;flex-shrink:0">
-            <button onclick="if(window.craftdock?.openExternal)window.craftdock.openExternal('${safeUrl}');else window.open('${safeUrl}','_blank')"
-              style="background:rgba(255,255,255,0.25);border:none;color:#fff;padding:3px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700">Download</button>
-            <button onclick="document.getElementById('appUpdateBanner').remove()"
-              style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px">Dismiss</button>
-          </div>`;
-        document.body.appendChild(banner);
-      }
-    } else {
+    _updateInfo = r;
+    if (!r.hasUpdate) {
       if (statusEl) statusEl.textContent = 'Up to date (v' + r.current + ')';
       if (showResult) showNotif('Up to Date \u2713', 'CraftDock v' + r.current + ' is the latest version');
+      return;
     }
+    if (statusEl) statusEl.textContent = 'Update available: v' + r.latest;
+    const settings = await getSettings();
+    if (settings.autoInstallUpdates === true && r.canInstall && !_gameRunning()) {
+      return startAppUpdate(true);
+    }
+    openUpdatePrompt(r);
   } catch(e) {
-    if (statusEl) statusEl.textContent = 'Check failed';
+    if (statusEl) statusEl.textContent = 'Check failed: ' + e.message;
   }
 }
 
-// Update check only runs when the "Check Now" button is clicked (settingsCheckUpdate)
+function _updateBytes(n) {
+  if (!n) return '';
+  const mb = n / (1024 * 1024);
+  return mb >= 1 ? mb.toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB';
+}
+
+function updateProgressUI(payload) {
+  const bar    = document.getElementById('appUpdateProgressBar');
+  const detail = document.getElementById('appUpdateProgressDetail');
+  const percent = Math.max(0, Math.min(100, Number(payload?.percent) || 0));
+  if (bar) bar.style.width = Math.max(2, percent) + '%';
+  if (detail) {
+    const parts = [percent + '%'];
+    if (payload?.total) parts.push(_updateBytes(payload.received) + ' of ' + _updateBytes(payload.total));
+    if (payload?.bytesPerSecond) parts.push(_updateBytes(payload.bytesPerSecond) + '/s');
+    detail.textContent = parts.join('  \u00b7  ');
+  }
+}
+
+function openUpdatePrompt(info) {
+  const modal = document.getElementById('appUpdateModal');
+  if (!modal) return;
+  const title   = document.getElementById('appUpdateTitle');
+  const msg     = document.getElementById('appUpdateMsg');
+  const nowBtn  = document.getElementById('appUpdateNow');
+  const laterBtn = document.getElementById('appUpdateLater');
+  const wrap    = document.getElementById('appUpdateProgressWrap');
+  if (title) title.textContent = 'CraftDock v' + info.latest + ' is available';
+  if (msg) {
+    msg.textContent = 'You are running v' + info.current + '. '
+      + (info.canInstall
+          ? 'The update installs itself and reopens CraftDock. Instances, accounts and settings stay where they are.'
+          : 'This release has no automatic build for this version of CraftDock, so it has to be downloaded by hand.');
+  }
+  if (wrap) wrap.style.display = 'none';
+  const bar = document.getElementById('appUpdateProgressBar');
+  if (bar) bar.style.width = '0%';
+  if (nowBtn) {
+    nowBtn.disabled = false;
+    nowBtn.textContent = info.canInstall ? 'Install & Restart' : 'Open Release Page';
+    nowBtn.onclick = () => {
+      if (!info.canInstall) {
+        if (window.craftdock?.openExternal) window.craftdock.openExternal(info.url);
+        return;
+      }
+      startAppUpdate(false);
+    };
+  }
+  if (laterBtn) {
+    laterBtn.disabled = false;
+    laterBtn.textContent = 'Later';
+    laterBtn.onclick = () => modal.classList.remove('open');
+  }
+  modal.classList.add('open');
+}
+
+async function startAppUpdate(auto) {
+  const bridge = _updaterBridge();
+  if (!bridge) return;
+  const modal  = document.getElementById('appUpdateModal');
+  const title  = document.getElementById('appUpdateTitle');
+  const msg    = document.getElementById('appUpdateMsg');
+  const nowBtn = document.getElementById('appUpdateNow');
+  const laterBtn = document.getElementById('appUpdateLater');
+  const wrap   = document.getElementById('appUpdateProgressWrap');
+  const bar    = document.getElementById('appUpdateProgressBar');
+  const detail = document.getElementById('appUpdateProgressDetail');
+
+  if (modal) modal.classList.add('open');
+  if (title) title.textContent = 'Downloading update\u2026';
+  if (msg) msg.textContent = 'CraftDock closes and reopens on the new version when this finishes.';
+  if (wrap) wrap.style.display = 'block';
+  if (bar) bar.style.width = '2%';
+  if (detail) detail.textContent = 'Starting\u2026';
+  if (nowBtn) nowBtn.disabled = true;
+  if (laterBtn) { laterBtn.disabled = true; laterBtn.textContent = 'Please wait'; }
+
+  const failed = (error) => {
+    const statusEl = document.getElementById('settingsUpdateStatus');
+    if (statusEl) statusEl.textContent = 'Update failed: ' + error;
+    if (auto) {
+      if (modal) modal.classList.remove('open');
+      showNotif('Update Failed', error, 9000);
+      return;
+    }
+    if (title) title.textContent = 'Update failed';
+    if (msg) msg.textContent = error;
+    if (wrap) wrap.style.display = 'none';
+    if (nowBtn) { nowBtn.disabled = false; nowBtn.textContent = 'Try Again'; }
+    if (laterBtn) { laterBtn.disabled = false; laterBtn.textContent = 'Close'; }
+  };
+
+  const dl = await bridge.appUpdateDownload();
+  if (!dl.success) return failed(dl.error);
+
+  updateProgressUI({ percent: 100, received: dl.size || 0, total: dl.size || 0 });
+  if (title) title.textContent = 'Installing update\u2026';
+  if (msg) msg.textContent = 'CraftDock closes now and reopens on v' + dl.version + '.';
+  if (detail) detail.textContent = 'Handing over to the installer\u2026';
+
+  const inst = await bridge.appUpdateInstall();
+  if (!inst.success) {
+    if (inst.busy) {
+      // Nothing is lost: the download stays on disk and Settings can finish it.
+      if (modal) modal.classList.remove('open');
+      const statusEl = document.getElementById('settingsUpdateStatus');
+      if (statusEl) statusEl.textContent = 'Update downloaded \u2014 restart CraftDock to finish';
+      showNotif('Update Ready', inst.error + '. Use Check Now in Settings once it is closed.', 10000);
+      return;
+    }
+    return failed(inst.error);
+  }
+  if (title) title.textContent = 'Restarting\u2026';
+  if (msg) msg.textContent = 'CraftDock is reopening on v' + inst.version + '.';
+}
 
 </script>
 

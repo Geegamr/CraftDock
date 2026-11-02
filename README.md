@@ -4,7 +4,7 @@
   <p>A lightweight, modern Minecraft launcher built with Electron.</p>
 
   <img src="https://img.shields.io/badge/status-Public%20Beta-22c55e?style=flat-square">
-  <img src="https://img.shields.io/badge/version-0.7.0-6366f1?style=flat-square">
+  <img src="https://img.shields.io/badge/version-0.8.0-6366f1?style=flat-square">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square">
   <img src="https://img.shields.io/badge/license-Apache 2.0-22c55e?style=flat-square">
 
@@ -41,6 +41,7 @@
 - **Skin manager** — 3D preview, cape selector, and player skin downloader
 - **Microsoft login** — device code OAuth with AES-256-GCM encrypted token storage and silent background refresh
 - **Playtime tracking** — hours played per instance shown on the home dashboard
+- **Updates in place** — CraftDock checks for a new release on launch, then downloads and restarts itself when you say so, or on its own if you turn on automatic updates (portable and installed builds both)
 
 ---
 
@@ -52,10 +53,25 @@
 | CurseForge Browsing | Shipped (v0.6.3) |
 | Export / Import | Shipped (v0.6.3) |
 | Bug fixes & polish before public release | Shipped (v0.7.0) |
+| In-app updater | Shipped (v0.8.0) |
 | Public Beta (current) | **Now** |
 | v1.0 Release | TBD |
 
 Public beta is open to everyone — install from [Releases](https://github.com/Geegamr/CraftDock/releases), report issues on GitHub, and follow progress on the [Discord](https://discord.gg/zfmemagrZR).
+
+---
+
+## Versioning
+
+Versions are `MAJOR_VERSION.MAJOR_BUG_FIX.MINOR_BUG_FIX`, three numbers, bumped by position:
+
+| Position | Bumped for | Example |
+|----------|-----------|---------|
+| `MAJOR_VERSION` | A milestone or a change that breaks compatibility with older data | `0.9.0` → `1.0.0` |
+| `MAJOR_BUG_FIX` | A significant batch of fixes, or a new feature | `0.7.1` → `0.8.0` |
+| `MINOR_BUG_FIX` | One small, contained fix | `0.8.0` → `0.8.1` |
+
+`package.json` is the only place a version is written. The main process reads it, the window asks the main process for it, and every label and User-Agent string is built from that one value — nothing is typed twice. The updater compares the three numbers numerically, so `0.10.0` is newer than `0.9.0` and a local build ahead of the newest release is never told to update.
 
 ---
 

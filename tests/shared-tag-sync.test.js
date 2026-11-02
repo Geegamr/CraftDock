@@ -70,7 +70,7 @@ test('tagging an instance moves its worlds into the shared folder and links save
     const updated = await app.exposed.craftdockInstance.update({
       id: 'inst_a', name: 'Alpha', worldTag: 'Survival SMP',
     });
-    assert.deepEqual(plain(updated), { success: true });
+    assert.deepEqual(plain(updated), { success: true, removedPools: [] });
 
     const sharedDir = path.join(app.sharedWorldsDir, 'survival_smp');
     assert.equal(fs.readFileSync(path.join(sharedDir, 'Survival', 'level.dat'), 'utf8'), 'survival world');

@@ -13,14 +13,15 @@ const MANIFEST_ROUTE = {
   'https://launchermeta.mojang.com/mc/game/version_manifest_v2.json': {
     versions: [
       { id: '1.20.4', url: 'https://fixture.invalid/1.20.4.json' },
+      { id: '1.17', url: 'https://fixture.invalid/1.17.json' },
       { id: '1.16.5', url: 'https://fixture.invalid/1.16.5.json' },
     ],
   },
 };
 
-function adoptiumUrl(feature, os = 'linux') {
+function adoptiumUrl(feature, os = 'linux', imageType = 'jre') {
   return `https://api.adoptium.net/v3/assets/feature_releases/${feature}/ga`
-    + `?image_type=jre&os=${os}&architecture=x64&jvm_impl=hotspot&page_size=1`;
+    + `?image_type=${imageType}&os=${os}&architecture=x64&jvm_impl=hotspot&page_size=1`;
 }
 
 function adoptiumResponse(feature) {
@@ -142,6 +143,38 @@ test('a launch installs the missing Java once, then reuses it without downloadin
   });
 });
 
+// 1.17 needs Java 16, and Temurin only ever published JRE images from 17 on:
+// the JRE lookup answers HTTP 404. The install must fall back to the JDK build
+// rather than failing with the raw 404.
+test('a Java 16 install falls back to the JDK build when there is no JRE image', async () => {
+  await withTempRoot(async root => {
+    prepareClientCache(root, '1.17');
+    const app = loadApp(root, {
+      platform: 'linux',
+      env: { JAVA_HOME: '' },
+      javaVersion: command => (command.includes(`${path.sep}java16${path.sep}`) ? 16 : 0),
+      execFileSync: extractWithTar(),
+      routes: {
+        ...MANIFEST_ROUTE,
+        // Deliberately no JRE 16 route: the mock answers 404, like the real API.
+        [adoptiumUrl(16, 'linux', 'jdk')]: adoptiumResponse(16),
+        'https://fixture.invalid/jre-16.tar.gz': Buffer.from('jdk tarball'),
+      },
+    });
+
+    writeInstance(app, 'inst_117', { mcVersion: '1.17' });
+    const result = await app.exposed.craftdockInstance.launch({ id: 'inst_117' });
+
+    assert.equal(result.success, true, result.error);
+    const installedExe = path.join(app.dataDir, 'java', 'java16', 'bin', 'java');
+    assert.equal(fs.existsSync(installedExe), true, 'the JDK download is unpacked into java16');
+    assert.equal(launchCommand(app), installedExe);
+    assert.deepEqual(adoptiumRequests(app), [
+      adoptiumUrl(16), adoptiumUrl(16, 'linux', 'jdk'),
+    ], 'the JRE lookup is tried first, then the JDK');
+  });
+});
+
 test('the startup Java check reports what is available and never downloads', async () => {
   await withTempRoot(async root => {
     const empty = loadApp(root, {
@@ -191,7 +224,8 @@ test('install-missing downloads only the versions this machine cannot run', asyn
       javaVersion: command => (command === systemJava ? 8 : 0),
       execFileSync: extractWithTar(),
       routes: {
-        [adoptiumUrl(16)]: adoptiumResponse(16),
+        // Temurin publishes no JRE 16, so the installer has to take the JDK.
+        [adoptiumUrl(16, 'linux', 'jdk')]: adoptiumResponse(16),
         [adoptiumUrl(17)]: adoptiumResponse(17),
         [adoptiumUrl(21)]: adoptiumResponse(21),
         'https://fixture.invalid/jre-16.tar.gz': Buffer.from('16'),
@@ -206,9 +240,9 @@ test('install-missing downloads only the versions this machine cannot run', asyn
       result.results.map(entry => [entry.major, entry.status]),
       [[8, 'system'], [16, 'installed'], [17, 'installed'], [21, 'installed']],
     );
-    assert.deepEqual(adoptiumRequests(app).sort(), [
-      adoptiumUrl(16), adoptiumUrl(17), adoptiumUrl(21),
-    ].sort(), 'Java 8 is already provided by the user and is not downloaded');
+    assert.deepEqual(adoptiumRequests(app), [
+      adoptiumUrl(16), adoptiumUrl(16, 'linux', 'jdk'), adoptiumUrl(17), adoptiumUrl(21),
+    ], 'Java 8 is already provided by the user and is not downloaded');
 
     for (const major of [16, 17, 21]) {
       assert.equal(fs.existsSync(path.join(app.dataDir, 'java', `java${major}`, 'bin', 'java')), true);
@@ -226,7 +260,8 @@ test('install-missing reports progress for each Java version it downloads', asyn
       execFileSync: extractWithTar(),
       routes: {
         [adoptiumUrl(8)]: adoptiumResponse(8),
-        [adoptiumUrl(16)]: adoptiumResponse(16),
+        // Temurin publishes no JRE 16, so the installer has to take the JDK.
+        [adoptiumUrl(16, 'linux', 'jdk')]: adoptiumResponse(16),
         [adoptiumUrl(17)]: adoptiumResponse(17),
         [adoptiumUrl(21)]: adoptiumResponse(21),
         'https://fixture.invalid/jre-8.tar.gz': Buffer.from('8'),
@@ -272,7 +307,8 @@ test('a slow Java download reports throughput before it finishes', async () => {
       execFileSync: extractWithTar(),
       routes: {
         [adoptiumUrl(8)]: adoptiumResponse(8),
-        [adoptiumUrl(16)]: adoptiumResponse(16),
+        // Temurin publishes no JRE 16, so the installer has to take the JDK.
+        [adoptiumUrl(16, 'linux', 'jdk')]: adoptiumResponse(16),
         [adoptiumUrl(17)]: adoptiumResponse(17),
         [adoptiumUrl(21)]: adoptiumResponse(21),
         'https://fixture.invalid/jre-8.tar.gz': { chunks: Array(12).fill(chunk), gapMs: 60 },

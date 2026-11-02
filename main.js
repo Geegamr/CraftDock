@@ -806,7 +806,7 @@ async function resolveVanillaUrl(version) {
   // Fetch the version manifest with a timeout + User-Agent to avoid Windows SSL issues
   const fetchJson = (url) => new Promise((resolve, reject) => {
     const req = require('https').get(url, {
-      headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
+      headers: { 'User-Agent': `CraftDock/${MAIN_JS_VERSION} (contact@craftdock.app)` }
     }, res => {
       // Follow redirects
       if ([301,302,307,308].includes(res.statusCode)) {
@@ -1129,7 +1129,7 @@ function downloadFile(url, dest, onProgress, timeoutMs = 120000, signal = null) 
       const agent = new proto.Agent({ keepAlive: false });
       const req = proto.get(u, {
         agent,
-        headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
+        headers: { 'User-Agent': `CraftDock/${MAIN_JS_VERSION} (contact@craftdock.app)` }
       }, res => {
         if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
           res.resume(); // drain response
@@ -1453,6 +1453,81 @@ function listInstanceIds() {
     .filter(e => fs.existsSync(path.join(instancesBase, e, 'instance.json')));
 }
 
+// ── Shared tag pools ──────────────────────────────────────
+// Every tag owns a folder under craftdock-data/shared-<kind>s/. The folder name
+// is the tag run through the same sanitiser the linkers above use, so cleanup
+// finds exactly the folder a symlink was pointing at.
+const TAG_POOLS = {
+  world:    { field: 'worldTag',    base: sharedWorldsDir,    sanitize: t => t.replace(/[^a-z0-9_-]/gi, '_').toLowerCase() },
+  server:   { field: 'serverTag',   base: sharedServersDir,   sanitize: t => t.replace(/[^a-z0-9_-]/gi, '_').toLowerCase() },
+  resource: { field: 'resourceTag', base: sharedResourcesDir, sanitize: t => t.replace(/[^a-z0-9_-]/gi, '-') },
+  shader:   { field: 'shaderTag',   base: sharedShadersDir,   sanitize: t => t.replace(/[^a-z0-9_-]/gi, '-') },
+};
+
+function poolPathFor(kind, tag) {
+  const spec = TAG_POOLS[kind];
+  if (!spec || !tag) return null;
+  const safeName = spec.sanitize(String(tag));
+  if (!safeName || safeName === '.' || safeName === '..' || /[\\/]/.test(safeName)) return null;
+  return path.join(spec.base, safeName);
+}
+
+// Instance folders are the only source of truth: a pool that no instance.json
+// mentions has nothing left to share with.
+function poolOwners() {
+  const owners = {};
+  for (const kind of Object.keys(TAG_POOLS)) owners[kind] = new Map();
+  for (const id of listInstanceIds()) {
+    const meta = readInstMeta(id) || {};
+    const label = meta.name || id;
+    for (const kind of Object.keys(TAG_POOLS)) {
+      const dir = poolPathFor(kind, meta[TAG_POOLS[kind].field]);
+      if (!dir) continue;
+      if (!owners[kind].has(dir)) owners[kind].set(dir, []);
+      owners[kind].get(dir).push({ id, name: label });
+    }
+  }
+  return owners;
+}
+
+// Deleting the last instance of a tag used to leave its worlds, server list and
+// packs behind forever. Sweep out every pool nothing references any more.
+async function removeOrphanedPools() {
+  const owners = poolOwners();
+  const removed = [];
+  for (const kind of Object.keys(TAG_POOLS)) {
+    const base = TAG_POOLS[kind].base;
+    if (!fs.existsSync(base)) continue;
+    let entries = [];
+    try { entries = fs.readdirSync(base); } catch { continue; }
+    for (const poolName of entries) {
+      const dir = path.join(base, poolName);
+      let stat;
+      try { stat = fs.lstatSync(dir); } catch { continue; }
+      if (!stat.isDirectory()) continue;
+      if (owners[kind].has(dir)) continue;
+      await rmSafe(dir);
+      if (!fs.existsSync(dir)) removed.push({ kind, name: poolName });
+    }
+  }
+  return removed;
+}
+
+function folderSize(dir, depth = 0) {
+  if (depth > 8) return 0;
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return 0; }
+  let total = 0;
+  for (const entry of entries) {
+    try {
+      if (entry.isSymbolicLink()) continue;
+      const p = path.join(dir, entry.name);
+      total += entry.isDirectory() ? folderSize(p, depth + 1) : fs.statSync(p).size;
+    } catch {}
+  }
+  return total;
+}
+
 // ── Instance IPC Handlers ─────────────────────────────────
 
 ipcMain.handle('instance-create', (_, meta) => {
@@ -1547,7 +1622,7 @@ ipcMain.handle('instance-apply-shader-tag', (_, id, tag) => {
   catch(e) { return { success: false, error: e.message }; }
 });
 
-ipcMain.handle('instance-update', (_, meta) => {
+ipcMain.handle('instance-update', async (_, meta) => {
   const id = meta.id;
   if (!id) return { success: false, error: 'No id' };
   const existing = readInstMeta(id) || {};
@@ -1564,7 +1639,9 @@ ipcMain.handle('instance-update', (_, meta) => {
   const wasShaderTag = (existing.shaderTag || null);
   const nowShaderTag = (meta.shaderTag    || null);
   if (wasShaderTag !== nowShaderTag) applySharedShaders(id, nowShaderTag);
-  return { success: true };
+  // Clearing the last instance's tag leaves the pool with no owners too.
+  const removedPools = await removeOrphanedPools();
+  return { success: true, removedPools };
 });
 
 ipcMain.handle('instance-delete', async (_, id) => {
@@ -1588,7 +1665,10 @@ ipcMain.handle('instance-delete', async (_, id) => {
   } catch {}
 
   await rmSafe(dir);
-  return { success: true };
+  // Removing the last instance that used a tag also removes the reason for that
+  // tag's shared folder, so clear whatever is now unreferenced.
+  const removedPools = await removeOrphanedPools();
+  return { success: true, removedPools };
 });
 
 ipcMain.handle('instance-list', () => {
@@ -1691,6 +1771,61 @@ ipcMain.handle('instance-open-folder', (_, id, sub) => {
 const diskSizeCache = new Map(); // instId -> { size, at }
 const DISK_SIZE_TTL = 30 * 1000;
 
+// ── Instance banner ──────────────────────────────────────
+// The image is kept next to instance.json instead of inside it: a banner is a
+// few hundred KB and instance.json is read for every row in the instance list.
+const BANNER_MAX_BYTES = 8 * 1024 * 1024;
+const BANNER_EXTS = ['png', 'jpg', 'webp', 'gif'];
+const BANNER_MIME = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+function bannerPathFor(id) {
+  const meta = readInstMeta(id) || {};
+  if (!meta.bannerFile) return null;
+  try { return resolveInside(instDir(id), meta.bannerFile); } catch { return null; }
+}
+
+ipcMain.handle('instance-set-banner', (_, id, dataUrl) => {
+  const match = /^data:(image\/[a-z+]+);base64,([\s\S]+)$/i.exec(String(dataUrl || ''));
+  if (!match) return { success: false, error: 'Unsupported image data' };
+  const ext = BANNER_MIME[match[1].toLowerCase()];
+  if (!ext) return { success: false, error: 'Use a PNG, JPEG, WebP or GIF image' };
+  let buffer;
+  try { buffer = Buffer.from(match[2], 'base64'); } catch { return { success: false, error: 'Could not read the image' }; }
+  if (!buffer.length) return { success: false, error: 'Empty image' };
+  if (buffer.length > BANNER_MAX_BYTES) return { success: false, error: 'Banner must be under 8 MB' };
+
+  const dir = ensureInstance(id);
+  // Only ever keep one banner, so changing format does not leave the old file.
+  for (const oldExt of BANNER_EXTS) {
+    try { fs.rmSync(path.join(dir, 'banner.' + oldExt), { force: true }); } catch {}
+  }
+  const fileName = 'banner.' + ext;
+  try { fs.writeFileSync(path.join(dir, fileName), buffer); }
+  catch (e) { return { success: false, error: e.message }; }
+
+  const meta = readInstMeta(id) || { id };
+  writeInstMeta(id, { ...meta, bannerFile: fileName });
+  return { success: true };
+});
+
+ipcMain.handle('instance-get-banner', (_, id) => {
+  const filePath = bannerPathFor(id);
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  try {
+    const ext = path.extname(filePath).toLowerCase().slice(1);
+    const mime = ext === 'jpg' ? 'image/jpeg' : 'image/' + ext;
+    return `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`;
+  } catch { return null; }
+});
+
+ipcMain.handle('instance-clear-banner', (_, id) => {
+  const filePath = bannerPathFor(id);
+  if (filePath) { try { fs.rmSync(filePath, { force: true }); } catch {} }
+  const meta = readInstMeta(id);
+  if (meta && meta.bannerFile) { delete meta.bannerFile; writeInstMeta(id, meta); }
+  return { success: true };
+});
+
 ipcMain.handle('instance-get-disk-size', async (_, id) => {
   const now = Date.now();
   const hit = diskSizeCache.get(id);
@@ -1734,7 +1869,7 @@ function fetchJsonHttp(url, hops = 0) {
     // used to hang the caller forever instead of failing.
     if (hops > 5) return reject(new Error('Too many redirects: ' + url));
     const req = require('https').get(url, {
-      headers: { 'User-Agent': 'CraftDock/0.7.0 (contact@craftdock.app)' }
+      headers: { 'User-Agent': `CraftDock/${MAIN_JS_VERSION} (contact@craftdock.app)` }
     }, res => {
       if ([301,302,307,308].includes(res.statusCode)) {
         res.resume();
@@ -2365,6 +2500,48 @@ ipcMain.handle('instance-delete-resfile', (_, id, subdir, filename) => {
   catch (e) { return { success: false, error: e.message }; }
   try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
   return { success: true };
+});
+
+ipcMain.handle('tag-pools-list', () => {
+  const owners = poolOwners();
+  const pools = [];
+  for (const kind of Object.keys(TAG_POOLS)) {
+    const base = TAG_POOLS[kind].base;
+    if (!fs.existsSync(base)) continue;
+    let entries = [];
+    try { entries = fs.readdirSync(base); } catch { continue; }
+    for (const name of entries) {
+      const dir = path.join(base, name);
+      let stat;
+      try { stat = fs.lstatSync(dir); } catch { continue; }
+      if (!stat.isDirectory()) continue;
+      pools.push({
+        kind,
+        name,
+        size: folderSize(dir),
+        instances: (owners[kind].get(dir) || []).map(o => o.name),
+      });
+    }
+  }
+  pools.sort((a, b) => (a.kind + a.name).localeCompare(b.kind + b.name));
+  return pools;
+});
+
+ipcMain.handle('tag-pool-delete', async (_, kind, name) => {
+  const spec = TAG_POOLS[kind];
+  if (!spec) return { success: false, error: 'Unknown tag kind' };
+  let dir;
+  try { dir = resolveInside(spec.base, String(name || '')); }
+  catch (e) { return { success: false, error: e.message }; }
+  if (!dir || dir === spec.base) return { success: false, error: 'Invalid tag folder' };
+  const owners = poolOwners()[kind].get(dir) || [];
+  if (owners.length) {
+    return { success: false, error: `Still tagged in ${owners.map(o => o.name).join(', ')}` };
+  }
+  await rmSafe(dir);
+  return fs.existsSync(dir)
+    ? { success: false, error: 'Could not delete the folder' }
+    : { success: true };
 });
 
 ipcMain.handle('instance-list-world-tags', () => {
@@ -3152,9 +3329,30 @@ async function ensureLauncherJava(majorVersion, onProgress, options = {}) {
   const featureMap = { 8: 8, 16: 16, 17: 17, 21: 21 };
   const feature    = featureMap[majorVersion] || majorVersion;
 
-  const apiUrl = `https://api.adoptium.net/v3/assets/feature_releases/${feature}/ga?image_type=jre&os=${os}&architecture=${arch}&jvm_impl=hotspot&page_size=1`;
-  const apiRes = await fetchJsonHttp(apiUrl);
-  if (!apiRes || !apiRes.length) throw new Error(`No Temurin JRE found for Java ${majorVersion} ${os}/${arch}`);
+  const assetsUrl = imageType =>
+    `https://api.adoptium.net/v3/assets/feature_releases/${feature}/ga?image_type=${imageType}&os=${os}&architecture=${arch}&jvm_impl=hotspot&page_size=1`;
+
+  // Temurin only publishes JRE images from 17 on; asking for a JRE of 16 (what
+  // 1.17 needs) answers 404. The JDK runs Minecraft identically, it is just a
+  // bigger download, so fall back to it instead of failing the install.
+  let apiRes = null;
+  let imageType = 'jre';
+  try {
+    apiRes = await fetchJsonHttp(assetsUrl('jre'));
+  } catch (error) {
+    javaLog(`[Java] No Temurin JRE ${majorVersion} (${error.message}) — trying the JDK build.`);
+    apiRes = null;
+  }
+  if (!apiRes || !apiRes.length) {
+    imageType = 'jdk';
+    try {
+      apiRes = await fetchJsonHttp(assetsUrl('jdk'));
+    } catch (error) {
+      throw new Error(`No Temurin Java ${majorVersion} download for ${os}/${arch} (${error.message})`);
+    }
+  }
+  if (!apiRes || !apiRes.length) throw new Error(`No Temurin Java ${majorVersion} download for ${os}/${arch}`);
+  if (imageType === 'jdk') javaLog(`[Java] Java ${majorVersion} has no JRE build; using the JDK.`);
 
   const binary = apiRes[0].binaries?.[0];
   if (!binary) throw new Error(`No binary in Temurin response for Java ${majorVersion}`);
@@ -4204,14 +4402,14 @@ ipcMain.handle('server-download-to-folder', async (_, id, url, fileName, subfold
     await new Promise((resolve, reject) => {
       const client = url.startsWith('https') ? https : http;
       let file;
-      client.get(url, { headers: { 'User-Agent': 'CraftDock/0.7.0' } }, res => {
+      client.get(url, { headers: { 'User-Agent': `CraftDock/${MAIN_JS_VERSION}` } }, res => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           // follow one redirect
           const redir = res.headers.location;
           file?.close?.();
           const c2 = redir.startsWith('https') ? https : http;
           const file2 = fs.createWriteStream(dest);
-          c2.get(redir, { headers: { 'User-Agent': 'CraftDock/0.7.0' } }, r2 => {
+          c2.get(redir, { headers: { 'User-Agent': `CraftDock/${MAIN_JS_VERSION}` } }, r2 => {
             if (r2.statusCode !== 200) { r2.resume(); return reject(new Error(`HTTP ${r2.statusCode} for ${redir}`)); }
             r2.pipe(file2);
             file2.on('finish', () => file2.close(resolve));
@@ -4347,23 +4545,203 @@ ipcMain.handle('instance-export', async (_, instId, format) => {
   }
 });
 
-// ── IPC: Check for CraftDock app updates from GitHub ───────
+// Compare dotted version strings by number, ignoring any trailing labels.
+function compareVersions(a, b) {
+  const parse = value => String(value || '').split('-')[0].split('.').map(n => parseInt(n, 10) || 0);
+  const left = parse(a), right = parse(b);
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const diff = (left[i] || 0) - (right[i] || 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+// ── In-app updater ─────────────────────────────────────────
+// GitHub releases are the only source of builds, and each release carries two
+// Windows artifacts: "CraftDock <version>.exe" (portable) and "CraftDock Setup
+// <version>.exe" (NSIS installer). Uploading rewrites the spaces in asset names
+// to dots (CraftDock.Setup.0.7.0.exe), so the matcher normalises separators
+// rather than comparing exact names.
+const UPDATE_API   = 'https://api.github.com/repos/Geegamr/CraftDock/releases/latest';
+const UPDATE_PAGE  = 'https://github.com/Geegamr/CraftDock/releases';
+const UPDATE_STAGE = 'craftdock-update';
+const UPDATE_DOWNLOAD_TIMEOUT_MS = 15 * 60 * 1000;
+
+function classifyUpdateAsset(name) {
+  const norm = String(name || '').toLowerCase().replace(/\s+/g, '.');
+  if (!norm.endsWith('.exe') || norm.includes('uninstaller')) return null;
+  if (norm.startsWith('craftdock.setup.')) return 'installer';
+  if (norm.startsWith('craftdock.')) return 'portable';
+  return null;
+}
+
+// A portable copy has to replace the file the user is running; an installed
+// copy has to run the setup again. Picking the wrong one would leave a second
+// copy lying around instead of updating anything.
+function updateAssetForBuild(assets) {
+  const wanted = portableDir ? 'portable' : 'installer';
+  const asset = (assets || []).find(entry => classifyUpdateAsset(entry.name) === wanted);
+  return asset || null;
+}
+
+let _pendingUpdate = null;   // { version, path, kind }
+let _updateDownload = null;  // in-flight download promise
+
+function updateStagingDir() {
+  return path.join(app.getPath('temp'), UPDATE_STAGE);
+}
+
+function sendUpdateProgress(payload) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app-update-progress', payload);
+  } catch (_) { /* window closed mid-download */ }
+}
+
+async function fetchUpdateInfo() {
+  const res = await fetchJsonHttp(UPDATE_API);
+  if (!res?.tag_name) return { success: false, error: 'No releases found' };
+  const latest = String(res.tag_name).replace(/^v/, '');
+  const current = MAIN_JS_VERSION;
+  // Numeric compare, so a newer local build stays quiet and 0.10.0 is not
+  // mistaken for an older release than 0.9.0.
+  const hasUpdate = compareVersions(latest, current) > 0;
+  const asset = hasUpdate ? updateAssetForBuild(res.assets) : null;
+  return {
+    success: true,
+    current,
+    latest,
+    hasUpdate,
+    portable: !!portableDir,
+    asset: asset ? { name: asset.name, size: asset.size, url: asset.browser_download_url } : null,
+    // An update without a matching artifact can still be announced, but it can
+    // only be installed by hand from the release page.
+    canInstall: !!asset,
+    url: res.html_url || UPDATE_PAGE,
+    name: res.name || `v${latest}`,
+    body: res.body || '',
+  };
+}
+
 ipcMain.handle('check-app-update', async () => {
   try {
-    const res = await fetchJsonHttp('https://api.github.com/repos/Geegamr/CraftDock/releases/latest');
-    if (!res?.tag_name) return { success: false, error: 'No releases found' };
-    const latestTag = res.tag_name.replace(/^v/, '');
-    const current = MAIN_JS_VERSION;
-    const hasUpdate = latestTag !== current;
-    return {
-      success: true,
-      current,
-      latest: latestTag,
-      hasUpdate,
-      url: res.html_url || 'https://github.com/Geegamr/CraftDock/releases',
-      name: res.name || `v${latestTag}`,
-      body: res.body || '',
-    };
+    return await fetchUpdateInfo();
+  } catch(e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('app-update-download', async () => {
+  if (_pendingUpdate && fs.existsSync(_pendingUpdate.path)) {
+    return { success: true, version: _pendingUpdate.version, path: _pendingUpdate.path, cached: true };
+  }
+  if (_updateDownload) return _updateDownload;
+
+  _updateDownload = (async () => {
+    try {
+      const info = await fetchUpdateInfo();
+      if (!info.success) return { success: false, error: info.error };
+      if (!info.hasUpdate) return { success: false, error: `CraftDock v${info.current} is already the latest version` };
+      if (!info.asset) return { success: false, error: `Release v${info.latest} has no ${portableDir ? 'portable' : 'installer'} build for Windows` };
+
+      const dir = updateStagingDir();
+      fs.mkdirSync(dir, { recursive: true });
+      // Old downloads pile up fast at ~112 MB each; one day is plenty of grace.
+      for (const entry of fs.readdirSync(dir)) {
+        const full = path.join(dir, entry);
+        try {
+          if (Date.now() - fs.statSync(full).mtimeMs > 24 * 60 * 60 * 1000) fs.rmSync(full, { recursive: true, force: true });
+        } catch (_) { /* a file another process still holds */ }
+      }
+
+      const fileName = path.basename(new URL(info.asset.url).pathname) || `CraftDock-${info.latest}.exe`;
+      const dest = path.join(dir, fileName);
+      sendUpdateProgress({ version: info.latest, percent: 0, received: 0, total: info.asset.size || 0, bytesPerSecond: 0 });
+      await downloadFile(info.asset.url, dest, (percent, stats) => {
+        sendUpdateProgress({ version: info.latest, percent, ...stats });
+      }, UPDATE_DOWNLOAD_TIMEOUT_MS);
+
+      const size = fs.statSync(dest).size;
+      if (info.asset.size && size !== info.asset.size) {
+        fs.rmSync(dest, { force: true });
+        return { success: false, error: `The download stopped at ${size} of ${info.asset.size} bytes` };
+      }
+
+      _pendingUpdate = { version: info.latest, path: dest, kind: classifyUpdateAsset(fileName) || (portableDir ? 'portable' : 'installer') };
+      return { success: true, version: info.latest, path: dest, kind: _pendingUpdate.kind };
+    } catch(e) {
+      return { success: false, error: e.message };
+    } finally {
+      _updateDownload = null;
+    }
+  })();
+  return _updateDownload;
+});
+
+// Writes a small batch file that waits for this process to disappear, copies the
+// new exe over the running one and starts it. Windows will not let us overwrite a
+// running executable, and the portable build's exe *is* the install.
+function startPortableSwap() {
+  const target = process.env.PORTABLE_EXECUTABLE_FILE || app.getPath('exe');
+  const script = path.join(updateStagingDir(), 'apply-update.cmd');
+  const lines = [
+    '@echo off',
+    'setlocal',
+    `set "TARGET=${target}"`,
+    `set "SOURCE=${_pendingUpdate.path}"`,
+    `set "PID=${process.pid}"`,
+    'set TRIES=0',
+    ':wait',
+    'tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul',
+    'if errorlevel 1 goto swap',
+    'timeout /t 1 /nobreak >nul',
+    'goto wait',
+    ':swap',
+    'copy /Y "%SOURCE%" "%TARGET%" >nul 2>&1',
+    'if not errorlevel 1 goto done',
+    'set /a TRIES+=1',
+    'if %TRIES% GEQ 60 goto failed',
+    'timeout /t 1 /nobreak >nul',
+    'goto swap',
+    ':done',
+    'start "" "%TARGET%"',
+    'del "%~f0"',
+    'exit /b 0',
+    ':failed',
+    'del "%~f0"',
+    'exit /b 1',
+  ];
+  fs.writeFileSync(script, lines.join('\r\n') + '\r\n', 'utf8');
+  const child = spawn('cmd.exe', ['/c', script], { detached: true, stdio: 'ignore', windowsHide: true });
+  child.unref();
+}
+
+// `--updated` is the flag electron-builder's own updater passes: it runs the
+// installer silently and starts CraftDock again afterwards, so the user comes
+// back to the app on the new version instead of an empty desktop.
+function startInstaller(installerPath) {
+  const child = spawn(installerPath, ['--updated'], { detached: true, stdio: 'ignore' });
+  child.unref();
+}
+
+ipcMain.handle('app-update-install', async () => {
+  try {
+    if (!_pendingUpdate) return { success: false, error: 'No update has been downloaded yet' };
+    if (!fs.existsSync(_pendingUpdate.path)) {
+      _pendingUpdate = null;
+      return { success: false, error: 'The downloaded update is no longer on disk' };
+    }
+    // Quitting on top of live servers would orphan their Java processes.
+    if (runningServers.size > 0) {
+      return { success: false, busy: true, error: `Stop your running server${runningServers.size > 1 ? 's' : ''} first` };
+    }
+    if (process.platform !== 'win32') {
+      return { success: false, error: 'In-app updates are only built for Windows right now' };
+    }
+    if (_pendingUpdate.kind === 'portable') startPortableSwap();
+    else startInstaller(_pendingUpdate.path);
+    const version = _pendingUpdate.version;
+    setTimeout(() => app.exit(0), 400);
+    return { success: true, version };
   } catch(e) {
     return { success: false, error: e.message };
   }

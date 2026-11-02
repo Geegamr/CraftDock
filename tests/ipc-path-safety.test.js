@@ -38,7 +38,7 @@ test('an instance id of ".." cannot delete the launcher data root', async () => 
 
     assert.equal(fs.readFileSync(marker, 'utf8'), 'still here');
     assert.equal(fs.existsSync(path.join(dir, 'instance.json')), true);
-    assert.deepEqual(plain(await app.exposed.craftdockInstance.delete('inst_guard')), { success: true });
+    assert.deepEqual(plain(await app.exposed.craftdockInstance.delete('inst_guard')), { success: true, removedPools: [] });
     assert.equal(fs.existsSync(dir), false);
   });
 });

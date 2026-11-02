@@ -311,6 +311,7 @@ function loadApp(root, options = {}) {
       whenReady: () => ({ then() {} }),
       on() {},
       quit() {},
+      exit() {},
     },
     BrowserWindow: class BrowserWindow { constructor() {} },
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler), on() {} },
