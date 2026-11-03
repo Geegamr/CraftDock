@@ -275,11 +275,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 
 /* ── SKIN MANAGER ── */
 .skin-manager{padding:10px 20px 8px;flex-shrink:0;border-bottom:1px solid var(--border);background:var(--bg-panel)}
-.skin-workspace{display:grid;grid-template-columns:250px 1fr;gap:16px;padding:16px 20px;overflow-y:auto;flex:1;min-height:0;align-items:start}
+.skin-workspace{display:grid;grid-template-columns:250px 1fr;gap:16px;padding:16px 20px 36px;overflow-y:auto;flex:1;min-height:0;align-items:start}
 .skin-workspace::-webkit-scrollbar{width:6px}
 .skin-workspace::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 #page-skins{flex-direction:column;min-height:0}
-.skin-preview-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;position:sticky;top:0}
+.skin-preview-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
 .skin-canvas-wrap{min-height:0}
 .skin-canvas-wrap{background:linear-gradient(160deg,#0d1a2e 0%,#091122 100%);display:flex;align-items:center;justify-content:center;padding:20px;position:relative;min-height:280px}
 .skin-canvas-wrap canvas{display:block}
@@ -292,6 +292,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .skin-right-panel{display:flex;flex-direction:column;gap:16px}
 .skin-grid-label{font-size:11px;font-weight:700;letter-spacing:0.1em;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
 .skins-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+.skins-collapse-wrap{display:flex;flex-direction:column;gap:8px}
+.skins-grid.is-collapsed{overflow:hidden}
+.skins-toggle{display:flex;align-items:center;justify-content:center}
+.skins-toggle-top{display:none}
+.skins-collapse-wrap.is-expanded .skins-toggle-top{display:flex}
+.skins-toggle-btn{display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-family:inherit;font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;transition:all .15s}
+.skins-toggle-btn:hover{border-color:var(--border-hover);color:var(--text-secondary)}
 .skin-card{background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:all 0.18s;position:relative}
 .skin-card:hover{border-color:var(--border-hover);transform:translateY(-2px)}
 .skin-card.active-skin{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
@@ -368,6 +375,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:1000}
 .modal-overlay.open{display:flex}
 .modal{background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;padding:24px;width:480px;max-width:90vw;box-shadow:0 24px 80px rgba(0,0,0,0.6)}
+.modal.modal-wide{width:760px}
 .modal-title{font-size:16px;font-weight:800;margin-bottom:4px}
 .modal-sub{font-size:12px;color:var(--text-muted);margin-bottom:20px}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
@@ -646,7 +654,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
     <img src="../assets/icon.svg" width="20" height="20" style="border-radius:4px;image-rendering:pixelated;flex-shrink:0" alt="CraftDock">
     CRAFTDOCK
   </div>
-  <div class="titlebar-center" data-tauri-drag-region>v<span class="app-version">0.8.0</span><span class="beta-badge">Public Beta</span></div>
+  <div class="titlebar-center" data-tauri-drag-region><span>v<span class="app-version">0.8.1</span></span><span class="beta-badge">Public Beta</span></div>
   <div class="titlebar-controls">
     <button class="tc-btn min" onclick="winCtrl('minimize')" aria-label="Minimize" title="Minimize">─</button>
     <button class="tc-btn max" onclick="winCtrl('maximize')" aria-label="Maximize" title="Maximize">□</button>
@@ -705,7 +713,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" style="margin:0 auto 10px;display:block;opacity:0.4"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
         <div style="font-size:13px;margin-bottom:6px">No instances yet</div>
         <div style="font-size:11px;margin-bottom:14px">Browse modpacks to get started</div>
-        <button class="btn-launch" style="display:inline-flex" onclick="switchPage('browse',document.querySelectorAll('.rail-btn')[2])">Browse Modpacks</button>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          <button class="btn-launch" style="display:inline-flex" onclick="switchPage('browse',document.querySelectorAll('.rail-btn')[2])">Browse Modpacks</button>
+          <button class="btn-launch" style="display:inline-flex" onclick="openLauncherImportModal()">Import from Another Launcher</button>
+        </div>
       </div>
     </div>
   </div>
@@ -718,7 +729,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <span class="tabs-title">Instances</span>
       <div style="display:flex;gap:4px">
         <button class="tabs-add" onclick="openNewCategoryModal()" title="New category" style="font-size:10px;width:auto;padding:2px 6px;letter-spacing:0.04em">CAT</button>
-        <button class="tabs-add" onclick="openImportModal()" title="Import modpack (.zip / .mrpack) as a new instance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+        <button class="tabs-add" onclick="openImportChoiceModal()" title="Import a modpack file or an instance from another launcher"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
         <button class="tabs-add" onclick="openNewInstanceModal()" title="New instance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
       </div>
     </div>
@@ -728,7 +739,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <div id="noInstancesMsg" style="padding:20px 10px;text-align:center;color:var(--text-muted)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" style="margin:0 auto 8px;display:block;opacity:0.4"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         <div style="font-size:11px">No instances yet.</div>
-        <div style="font-size:10px;margin-top:4px">Browse modpacks or create a custom instance.</div>
+        <div style="font-size:10px;margin-top:4px">Browse modpacks, import a pack file, or bring one over from another launcher.</div>
       </div>
     </div>
   </div>
@@ -1188,7 +1199,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
     <div class="section-header">
       <div class="section-heading">Skin Manager</div>
       <div style="display:flex;gap:8px">
-        <button class="btn-secondary" id="btnPickSkin" onclick="pickSkinFile()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Load from file</button>
+        <button class="btn-secondary" id="btnPickSkin" style="display:flex;align-items:center;gap:6px" onclick="pickSkinFile()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Load from file</button>
         <button class="btn-add" onclick="openSkinNameModal()">+ Save Current Skin</button>
       </div>
     </div>
@@ -1218,14 +1229,14 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
               <div id="activeCapeState" style="font-size:10px;color:var(--text-muted);margin-top:2px">Click below to select one of your capes</div>
             </div>
           </div>
-          <button class="btn-secondary" style="width:100%;justify-content:center;display:flex;font-size:12px" onclick="openCapeChanger()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>Change Cape (Mojang)</button>
+          <button class="btn-secondary" style="width:100%;justify-content:center;display:flex;font-size:12px" onclick="openCapeChanger()">Change Cape (Mojang)</button>
         </div>
         <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px">
           <button class="btn-launch" style="width:100%;justify-content:center" onclick="applyAndUploadSkin()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="20,6 9,17 4,12"/></svg>Apply Skin
           </button>
-          <button class="btn-secondary" style="width:100%;justify-content:center;display:flex" onclick="openSkinNameModal()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="19,21 19,13 5,13 5,21"/><polyline points="19,7 14,2 5,2 5,7"/></svg>Save to Library
+          <button class="btn-secondary" style="width:100%;justify-content:center;display:flex;gap:6px" onclick="openSkinNameModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save to Library
           </button>
         </div>
       </div>
@@ -1237,8 +1248,20 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
             <span>Saved Skins</span>
             <span id="skinCount" style="background:rgba(255,255,255,0.06);padding:1px 6px;border-radius:10px;font-size:10px">0</span>
           </div>
-          <div class="skins-grid" id="skinsGrid">
-            <!-- Populated by JS -->
+          <div class="skins-collapse-wrap" id="skinsCollapseWrap">
+            <div class="skins-toggle skins-toggle-top">
+              <button class="skins-toggle-btn" onclick="setSkinsExpanded(false)" title="Collapse saved skins">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11"><polyline points="18,15 12,9 6,15"/></svg>Collapse
+              </button>
+            </div>
+            <div class="skins-grid" id="skinsGrid">
+              <!-- Populated by JS -->
+            </div>
+            <div class="skins-toggle skins-toggle-bottom" id="skinsToggleBottom" style="display:none">
+              <button class="skins-toggle-btn" onclick="toggleSkinsExpanded()">
+                <svg id="skinsToggleIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11"><polyline points="6,9 12,15 18,9"/></svg><span id="skinsToggleLabel">Show all</span>
+              </button>
+            </div>
           </div>
           <div id="noSkinsMsg" style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;display:none">No saved skins yet. Upload one below!</div>
         </div>
@@ -1284,7 +1307,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
             Player not found or skin unavailable.
           </div>
           <button id="skinDownloadSaveBtn" class="btn-launch" style="width:100%;justify-content:center;display:none" onclick="savePlayerSkin()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><polyline points="19,21 19,13 5,13 5,21"/><polyline points="19,7 14,2 5,2 5,7"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             Save to Library
           </button>
         </div>
@@ -1576,7 +1599,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 <div class="page" id="page-settings">
   <div class="settings-view">
     <div style="font-size:18px;font-weight:800;margin-bottom:4px">Settings</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v<span class="app-version">0.8.0</span></div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v<span class="app-version">0.8.1</span></div>
 
     <!-- Java Management -->
     <div class="settings-section">
@@ -1741,7 +1764,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Version</div></div>
-        <span style="font-size:12px;color:var(--text-muted)">CraftDock v<span class="app-version">0.8.0</span></span>
+        <span style="font-size:12px;color:var(--text-muted)">CraftDock v<span class="app-version">0.8.1</span></span>
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Electron version</div></div>
@@ -2202,6 +2225,65 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
   </div>
 </div>
 
+<!-- ── Import choice: pack file or another launcher ── -->
+<div class="modal-overlay" id="importChoiceModal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title">Import</div>
+    <div class="modal-sub">Bring in a pack file, or copy an instance another launcher already set up.</div>
+    <div class="export-options" style="margin-bottom:4px">
+      <div class="export-opt" onclick="closeImportChoiceModal();openImportModal()">
+        <div class="export-opt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div class="export-opt-name">Modpack file</div>
+        <div class="export-opt-desc">CurseForge .zip or Modrinth .mrpack</div>
+      </div>
+      <div class="export-opt" onclick="closeImportChoiceModal();openLauncherImportModal()">
+        <div class="export-opt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+        <div class="export-opt-name">Another launcher</div>
+        <div class="export-opt-desc">Prism, MultiMC, Modrinth, CurseForge, ATLauncher</div>
+      </div>
+    </div>
+    <div class="modal-actions"><button class="btn-secondary" onclick="closeImportChoiceModal()">Cancel</button></div>
+  </div>
+</div>
+
+<!-- ── Import from another launcher ── -->
+<div class="modal-overlay" id="launcherImportModal">
+  <div class="modal modal-wide">
+    <div class="modal-title" id="liTitle">Import from Another Launcher</div>
+    <div class="modal-sub" id="liSub">Your other launcher is read only — every file is copied into a new instance.</div>
+
+    <div id="liStepLaunchers">
+      <div id="liLauncherGrid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px"></div>
+      <div style="display:flex;gap:9px;margin-top:14px;padding:11px 13px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-bright)" stroke-width="2" width="15" height="15" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <div style="font-size:11px;color:var(--text-muted);line-height:1.55">
+          Mods, worlds, configs, resource packs and shaders are copied across. Each jar is matched to the project it came from, and the pack version is recorded, so pack and mod updates work here like they did there.
+        </div>
+      </div>
+    </div>
+
+    <div id="liStepInstances" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <button class="btn-ghost" style="width:auto;padding:4px 9px;font-size:11px" onclick="liBackToLaunchers()">\u2190 Launchers</button>
+        <span id="liFoundLabel" style="font-size:11px;color:var(--text-muted)"></span>
+      </div>
+      <div id="liInstanceList" style="max-height:320px;overflow-y:auto"></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);margin-top:10px;cursor:pointer">
+        <input type="checkbox" id="liSelectAll" onchange="liToggleAll(this.checked)" style="accent-color:#6366f1"> Select all
+      </label>
+    </div>
+
+    <div id="liStepProgress" style="display:none">
+      <div id="liProgressList" style="max-height:320px;overflow-y:auto"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="liCancelBtn" onclick="closeLauncherImportModal()">Cancel</button>
+      <button class="btn-launch" id="liImportBtn" onclick="liRunImport()" disabled style="opacity:0.5">Import</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="exportModal">
   <div class="modal">
     <div class="modal-title">Export Modpack</div>
@@ -2226,7 +2308,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <button class="model-tab active" id="saveModelClassic" onclick="this.classList.add('active');document.getElementById('saveModelSlim').classList.remove('active')">Classic</button>
       <button class="model-tab" id="saveModelSlim" onclick="this.classList.add('active');document.getElementById('saveModelClassic').classList.remove('active')">Slim</button>
     </div>
-    <div class="modal-actions"><button class="btn-secondary" onclick="closeSkinNameModal()">Cancel</button><button class="btn-launch" onclick="saveSkin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="19,21 19,13 5,13 5,21"/><polyline points="19,7 14,2 5,2 5,7"/></svg>Save Skin</button></div>
+    <div class="modal-actions"><button class="btn-secondary" onclick="closeSkinNameModal()">Cancel</button><button class="btn-launch" onclick="saveSkin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save Skin</button></div>
   </div>
 </div>
 
@@ -2453,7 +2535,7 @@ const hasCraftDockInstances = typeof window.craftdockInstance !== 'undefined';
 // The one version string: everything the UI shows and every API call it makes
 // reads this. Startup refreshes it from package.json through the main process,
 // so the literal here only has to cover the browser fallback and the first paint.
-let APP_VERSION = '0.8.0';
+let APP_VERSION = '0.8.1';
 
 // Everything that prints the version reads .app-version, and the main process
 // owns the value, so bumping package.json is the only edit a release needs.
@@ -3114,7 +3196,10 @@ async function refreshHomePage() {
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" style="margin:0 auto 10px;display:block;opacity:0.4"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>'
       + '<div style="font-size:13px;margin-bottom:6px">No instances yet</div>'
       + '<div style="font-size:11px;margin-bottom:14px">Browse modpacks to get started</div>'
+      + '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">'
       + '<button class="btn-launch" style="display:inline-flex" onclick="switchPage(\'browse\',document.querySelectorAll(\'.rail-btn\')[2])">Browse Modpacks</button>'
+      + '<button class="btn-launch" style="display:inline-flex" onclick="openLauncherImportModal()">Import from Another Launcher</button>'
+      + '</div>'
       + '</div>';
     return;
   }
@@ -5848,6 +5933,7 @@ async function equipCape(capeId, alias, e) {
   renderCapeList(mojangProfile?.capes || []);
   const cape = mojangProfile?.capes?.find(c=>c.id===capeId);
   updateActiveCapeInSkinPanel(alias, meta, cape?.url || null);
+  rememberActiveCape(alias, cape?.url || null);
   showNotif('Cape Equipped', `${meta.name} is now your active cape`);
 
   const isDemoMode = !mojangBearerToken || mojangBearerToken==='DEMO' || mojangBearerToken==='(demo mode)';
@@ -5880,6 +5966,7 @@ async function disableCape() {
     setCapeLoading(false);
     if (mojangProfile?.capes) { mojangProfile.capes.forEach(c=>c.state='INACTIVE'); renderCapeList(mojangProfile.capes); }
     updateActiveCapeInSkinPanel(null,null,null);
+    rememberActiveCape(null, null);
     showNotif('Cape Disabled','Cape hidden from other players');
     return;
   }
@@ -5888,6 +5975,7 @@ async function disableCape() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     setCapeLoading(false);
     updateActiveCapeInSkinPanel(null,null,null);
+    rememberActiveCape(null, null);
     showNotif('Cape Disabled','Cape hidden from other players');
   } catch(err) {
     setCapeLoading(false);
@@ -5937,19 +6025,100 @@ function showCapeError(msg, detail) {
   const em=document.getElementById('capeErrorMsg'); if(em) em.textContent=msg;
   const ed=document.getElementById('capeErrorDetail'); if(ed) ed.textContent=detail||'';
 }
-function updateActiveCapeInSkinPanel(alias, meta, textureUrl) {
+function updateActiveCapeInSkinPanel(alias, meta, textureUrl, stateText) {
   const canvas=document.getElementById('activeCapeCanvas');
   const label=document.getElementById('activeCapeLabel');
   const state=document.getElementById('activeCapeState');
   if (!alias||!meta) {
     if(canvas) drawCapeOnCanvas(canvas,null);
     if(label) { label.textContent='No cape equipped'; label.style.color=''; }
-    if(state) state.textContent='Click below to manage';
+    if(state) state.textContent=stateText||'Click below to manage';
     return;
   }
   if(label) { label.textContent=meta.name; label.style.color=meta.color; }
-  if(state) state.textContent=`${alias} · Active`;
+  if(state) state.textContent=stateText||`${alias} · Active`;
   if(canvas) loadCapeToCanvas(canvas, textureUrl||null);
+}
+
+// ── Active cape shown on the skins page ─────────────────
+// Paint the cached cape immediately, then ask the Minecraft profile for the
+// real one. Cached per account, so switching accounts never shows a cape the
+// current account doesn't own.
+const ACTIVE_CAPE_CACHE_KEY = 'craftdock:active-cape';
+let _activeCapeCache = null;    // null = not read yet, false = nothing cached
+let _activeCapeSyncId = 0;
+
+async function readActiveCapeCache() {
+  if (_activeCapeCache === null) {
+    const stored = await Store.get(ACTIVE_CAPE_CACHE_KEY);
+    _activeCapeCache = (stored && typeof stored === 'object') ? stored : false;
+  }
+  return _activeCapeCache || null;
+}
+
+async function writeActiveCapeCache(accountId, alias, url) {
+  if (!accountId) return;
+  _activeCapeCache = { accountId, alias: alias || null, url: url || null, savedAt: Date.now() };
+  await Store.set(ACTIVE_CAPE_CACHE_KEY, _activeCapeCache);
+}
+
+async function rememberActiveCape(alias, url) {
+  const acct = await AccountStore.getActive();
+  if (acct) await writeActiveCapeCache(acct.id, alias, url);
+}
+
+function renderActiveCape(alias, url, stateText) {
+  if (!alias) { updateActiveCapeInSkinPanel(null, null, null, stateText); return; }
+  updateActiveCapeInSkinPanel(alias, getCapeDisplay(alias), url, stateText);
+}
+
+// Single place that talks to the main process, so the rest of the flow can be
+// exercised without a live Microsoft token.
+async function requestMinecraftProfile(token) {
+  const bridge = window.craftdock && window.craftdock.auth && window.craftdock.auth.fetchProfile;
+  if (typeof bridge !== 'function') return { ok: false, error: 'bridge_unavailable' };
+  return await bridge(token);
+}
+
+async function syncActiveCape() {
+  const acct  = await AccountStore.getActive();
+  const token = acct && acct.minecraftToken;
+  const canRead = typeof token === 'string' && token.length > 0
+    && !token.startsWith('MC_DEMO_') && !token.startsWith('MC_TOKEN_');
+  const cache = await readActiveCapeCache();
+  const cacheMatches = !!(acct && cache && cache.accountId === acct.id);
+
+  // 1. Cache first — the panel never waits on the network.
+  if (cacheMatches && cache.alias) renderActiveCape(cache.alias, cache.url, `${cache.alias} · Cached`);
+  if (!acct || !canRead) return;
+
+  // 2. Then the live profile, in case the cape was changed somewhere else.
+  const requestId = ++_activeCapeSyncId;
+  try {
+    const result = await requestMinecraftProfile(token);
+    if (requestId !== _activeCapeSyncId) return;   // a newer sync already won
+    if (!result || !result.ok) throw new Error((result && result.error) || 'profile_request_failed');
+    const profile = result.profile || {};
+    const capes = Array.isArray(profile.capes) ? profile.capes : [];
+    const active = capes.find(c => c && c.state === 'ACTIVE') || null;
+
+    // Keep the stored account in step so the cape changer opens with fresh data.
+    acct.capes = capes;
+    if (Array.isArray(profile.skins)) acct.skins = profile.skins;
+    await AccountStore.save(acct);
+
+    renderActiveCape(active ? active.alias : null, active ? active.url : null,
+      active ? `${active.alias} · Active` : 'No cape equipped on this account');
+    await writeActiveCapeCache(acct.id, active ? active.alias : null, active ? active.url : null);
+  } catch (err) {
+    if (requestId !== _activeCapeSyncId) return;
+    if (cacheMatches && cache.alias) renderActiveCape(cache.alias, cache.url, `${cache.alias} · Cached · offline`);
+    else {
+      const state = document.getElementById('activeCapeState');
+      if (state) state.textContent = 'Could not read your cape right now';
+    }
+    console.warn('Active cape refresh failed:', err.message);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -6028,8 +6197,10 @@ class SkinRenderer {
       e.preventDefault();
     }, {passive:false});
     this.canvas.addEventListener('touchend',   () => drag=false);
-    // Scroll to zoom
+    // Ctrl+wheel zooms the preview. A plain wheel must keep scrolling the page:
+    // swallowing it here made the whole skins tab feel stuck.
     this.canvas.addEventListener('wheel', e => {
+      if (!e.ctrlKey) return;
       e.preventDefault();
       const zoomSpeed = 0.5;
       const direction = e.deltaY > 0 ? 1 : -1;
@@ -6150,15 +6321,28 @@ class SkinRenderer {
     group.add(bodyOv);
 
     // ── RIGHT ARM (4/3 × 12 × 4) ─────────────────────────
-    const rArmX = S === 3 ? 46 : 44;
-    const rArmMats = this._boxMats(tex, [
-      [rArmX+S, 20, 4, 12],  // right
-      [40,      20, 4, 12],  // left
-      [44,      16, S, 4 ],  // top
-      [44+S,    16, S, 4 ],  // bottom
-      [44,      20, S, 12],  // front
-      [44+S*2,  20, 4, 12],  // back
-    ]);
+    // A slim arm unwraps to 14px: [outer 4][front 3][inner 4][back 3], with the
+    // 3px top/bottom faces sitting above the front and inner columns. The old
+    // code reused the classic 16px stride for slim skins, so every face sampled
+    // a few pixels into its neighbour — that is why slim skins looked garbled.
+    const slim = this.slim;
+    const rArmMats = slim
+      ? this._boxMats(tex, [
+          [47, 20, 4, 12],  // +X inner side
+          [40, 20, 4, 12],  // -X outer side
+          [44, 16, 3, 4],   // +Y top
+          [47, 16, 3, 4],   // -Y bottom
+          [44, 20, 3, 12],  // +Z front
+          [51, 20, 3, 12],  // -Z back
+        ])
+      : this._boxMats(tex, [
+          [48, 20, 4, 12],  // +X inner side
+          [40, 20, 4, 12],  // -X outer side
+          [44, 16, 4, 4],   // +Y top
+          [48, 16, 4, 4],   // -Y bottom
+          [44, 20, 4, 12],  // +Z front
+          [52, 20, 4, 12],  // -Z back
+        ]);
     // ── Pivot groups for correct rotation origin ──────────
     // Each limb mesh is offset inside a pivot so rotation happens at shoulder/hip
 
@@ -6167,27 +6351,37 @@ class SkinRenderer {
     rArmPivot.position.set(-(1 + S*0.125), 2, 0);
     const rArm = box(S*0.25, 3, 1, rArmMats);
     rArm.position.set(0, -1.5, 0);
-    const rArmOvMats = this._boxMats(tex, [
-      [rArmX+S, 36, 4, 12],[40,36,4,12],[44,32,S,4],[44+S,32,S,4],[44,36,S,12],[44+S*2,36,4,12],
-    ]);
+    const rArmOvMats = slim
+      ? this._boxMats(tex, [
+          [47, 36, 4, 12],[40, 36, 4, 12],[44, 32, 3, 4],[47, 32, 3, 4],[44, 36, 3, 12],[51, 36, 3, 12],
+        ])
+      : this._boxMats(tex, [
+          [48, 36, 4, 12],[40, 36, 4, 12],[44, 32, 4, 4],[48, 32, 4, 4],[44, 36, 4, 12],[52, 36, 4, 12],
+        ]);
     const rArmOv = box(S*0.25+0.12, 3.12, 1.12, rArmOvMats);
     rArmOv.position.set(0, -1.5, 0);
     rArmPivot.add(rArm); rArmPivot.add(rArmOv);
     group.add(rArmPivot);
 
     // LEFT ARM pivot at shoulder
-    const lArmX = S === 3 ? 32 : 36;
-    const lArmMats = this._boxMats(tex, [
-      [lArmX+S,52,4,12],[32,52,4,12],[lArmX,48,S,4],[lArmX+S,48,S,4],[lArmX,52,S,12],[lArmX+S*2,52,4,12],
-    ]);
+    const lArmMats = slim
+      ? this._boxMats(tex, [
+          [39, 52, 4, 12],[32, 52, 4, 12],[36, 48, 3, 4],[39, 48, 3, 4],[36, 52, 3, 12],[43, 52, 3, 12],
+        ])
+      : this._boxMats(tex, [
+          [40, 52, 4, 12],[32, 52, 4, 12],[36, 48, 4, 4],[40, 48, 4, 4],[36, 52, 4, 12],[44, 52, 4, 12],
+        ]);
     const lArmPivot = new THREE.Group();
     lArmPivot.position.set(1 + S*0.125, 2, 0);
     const lArm = box(S*0.25, 3, 1, lArmMats);
     lArm.position.set(0, -1.5, 0);
-    const lArmOvX = S === 3 ? 48 : 52;
-    const lArmOvMats = this._boxMats(tex, [
-      [lArmOvX+S,52,4,12],[48,52,4,12],[lArmOvX,48,S,4],[lArmOvX+S,48,S,4],[lArmOvX,52,S,12],[lArmOvX+S*2,52,4,12],
-    ]);
+    const lArmOvMats = slim
+      ? this._boxMats(tex, [
+          [55, 52, 4, 12],[48, 52, 4, 12],[52, 48, 3, 4],[55, 48, 3, 4],[52, 52, 3, 12],[59, 52, 3, 12],
+        ])
+      : this._boxMats(tex, [
+          [56, 52, 4, 12],[48, 52, 4, 12],[52, 48, 4, 4],[56, 48, 4, 4],[52, 52, 4, 12],[60, 52, 4, 12],
+        ]);
     const lArmOv = box(S*0.25+0.12, 3.12, 1.12, lArmOvMats);
     lArmOv.position.set(0, -1.5, 0);
     lArmPivot.add(lArm); lArmPivot.add(lArmOv);
@@ -6349,11 +6543,12 @@ async function refreshSkinGrid() {
   const noMsg = document.getElementById('noSkinsMsg');
   const countEl = document.getElementById('skinCount');
   if (countEl) countEl.textContent = skins.length;
-  if (!grid) return;
+  if (!grid) return skins;
   if (!skins.length) {
     grid.innerHTML = '';
     if (noMsg) noMsg.style.display='block';
-    return;
+    updateSkinsCollapse();
+    return skins;
   }
   if (noMsg) noMsg.style.display='none';
   grid.innerHTML = skins.map(skin => `
@@ -6375,7 +6570,70 @@ async function refreshSkinGrid() {
     const tc = document.getElementById(`sthumb-${skin.id}`);
     if (tc && skin.dataUrl) renderSkinThumbnail(tc, skin.dataUrl, skin.model==='slim');
   });
+  updateSkinsCollapse();
+  return skins;
 }
+
+// ── Saved Skins: show two rows, with an expand/collapse control ──
+// Collapsed: one small button centred under the grid. Expanded: collapse
+// buttons centred above and below the grid, so they sit inside the saved
+// skins card and nowhere else.
+const SKINS_VISIBLE_ROWS = 2;
+let _skinsExpanded = false;
+
+function updateSkinsCollapse() {
+  const grid   = document.getElementById('skinsGrid');
+  const wrap   = document.getElementById('skinsCollapseWrap');
+  const bottom = document.getElementById('skinsToggleBottom');
+  if (!grid || !wrap || !bottom) return;
+
+  const cards = grid.querySelectorAll('.skin-card');
+  const reset = () => {
+    _skinsExpanded = false;
+    grid.style.maxHeight = '';
+    grid.classList.remove('is-collapsed');
+    wrap.classList.remove('is-expanded');
+    bottom.style.display = 'none';
+  };
+  // Nothing to measure while the page is hidden — re-run when it is shown.
+  if (!cards.length || !grid.offsetParent) { if (!cards.length) reset(); return; }
+
+  const rowGap = parseFloat(getComputedStyle(grid).rowGap) || 0;
+  const firstTop = Math.round(cards[0].offsetTop);
+  let perRow = 0;
+  for (const card of cards) {
+    if (Math.round(card.offsetTop) !== firstTop) break;
+    perRow++;
+  }
+  const rows = Math.ceil(cards.length / Math.max(1, perRow));
+  const cardH = cards[0].offsetHeight;
+
+  if (rows <= SKINS_VISIBLE_ROWS || !cardH) { reset(); return; }
+
+  bottom.style.display = 'flex';
+  wrap.classList.toggle('is-expanded', _skinsExpanded);
+  grid.classList.toggle('is-collapsed', !_skinsExpanded);
+  grid.style.maxHeight = _skinsExpanded ? '' : Math.round(cardH * SKINS_VISIBLE_ROWS + rowGap) + 'px';
+
+  const label = document.getElementById('skinsToggleLabel');
+  const icon  = document.getElementById('skinsToggleIcon');
+  if (label) label.textContent = _skinsExpanded ? 'Collapse' : 'Show all ' + cards.length;
+  if (icon)  icon.innerHTML    = _skinsExpanded
+    ? '<polyline points="18,15 12,9 6,15"/>'
+    : '<polyline points="6,9 12,15 18,9"/>';
+}
+
+function setSkinsExpanded(expanded) {
+  _skinsExpanded = !!expanded;
+  updateSkinsCollapse();
+}
+
+function toggleSkinsExpanded() { setSkinsExpanded(!_skinsExpanded); }
+
+// The grid reflows with the window, so recompute how many rows are revealed.
+window.addEventListener('resize', () => {
+  if (typeof _currentPage !== 'undefined' && _currentPage === 'skins') updateSkinsCollapse();
+});
 
 function renderSkinThumbnail(canvas, dataUrl, slim) {
   const img = new Image();
@@ -6531,7 +6789,12 @@ async function applySkin(id, e) {
 async function deleteSkin(id, e) {
   if (e) e.stopPropagation();
   await SkinStore.remove(id);
-  await refreshSkinGrid();
+  const remaining = await refreshSkinGrid();
+  // Removing is silent when the write fails, so confirm the entry is really gone.
+  if (remaining.some(skin => skin.id === id)) {
+    showNotif('Delete Failed', 'That skin is still in your library');
+    return;
+  }
   showNotif('Skin Deleted','Skin removed from library');
 }
 
@@ -6612,6 +6875,7 @@ function switchPage(name, btn) {
   if (name === _currentPage && document.getElementById('page-' + name)?.classList.contains('active')) {
     // Already on this page — only re-run data refresh, skip DOM thrash
     if (name==='home') refreshHomePage();
+    if (name==='skins') { updateSkinsCollapse(); syncActiveCape(); }
     return;
   }
   if (_currentPage === 'skins' && name !== 'skins') mainRenderer?.pause();
@@ -6631,6 +6895,7 @@ function switchPage(name, btn) {
   if (btn) btn.classList.add('active');
   if (name==='skins'&&!mainRenderer) initSkinManager();
   else if (name==='skins') mainRenderer.resume();
+  if (name==='skins') { updateSkinsCollapse(); syncActiveCape(); }
   if (name==='browse') { populateVersionFilters(); triggerBrowse(); }
   if (name==='servers') renderSrvList();
   if (name==='accounts') renderAccountsPage();
@@ -7583,7 +7848,7 @@ async function savePlayerSkin() {
       const input = document.getElementById('skinDownloadName');
       if (input) input.value = '';
       if (saveBtn) {
-        saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="19,21 19,13 5,13 5,21"/><polyline points="19,7 14,2 5,2 5,7"/></svg> Save to Library';
+        saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save to Library';
         saveBtn.disabled = false;
       }
     }, 2000);
@@ -12154,14 +12419,16 @@ async function checkInstanceModUpdates(btn) {
   if (!inst) return;
 
   const modsWithSource = (inst.mods || []).filter(m => m.source === 'modrinth' && m.id);
-  if (!modsWithSource.length) { showNotif('No Updateable Mods', 'Install mods from Modrinth to check for updates.', 4000); return; }
+  const cfMods = (inst.mods || []).filter(m => m.source === 'curseforge' && /^\d+$/.test(String(m.id || '')));
+  const checkable = modsWithSource.length + cfMods.length;
+  if (!checkable) { showNotif('No Updateable Mods', 'Install mods from Modrinth or CurseForge to check for updates.', 4000); return; }
 
   if (btn) { btn.textContent = 'Checking…'; btn.disabled = true; }
-  showNotif('Checking Updates…', `Checking ${modsWithSource.length} mod${modsWithSource.length!==1?'s':''}…`, 2500);
+  showNotif('Checking Updates…', `Checking ${checkable} mod${checkable!==1?'s':''}…`, 2500);
 
-  const latestMap = await fetchModrinthLatestVersions(
-    modsWithSource.map(m => m.id), inst.mcVersion || '', inst.loader || ''
-  );
+  const latestMap = modsWithSource.length
+    ? await fetchModrinthLatestVersions(modsWithSource.map(m => m.id), inst.mcVersion || '', inst.loader || '')
+    : {};
 
   const updates = [];
   for (const mod of modsWithSource) {
@@ -12185,13 +12452,37 @@ async function checkInstanceModUpdates(btn) {
       mod._hasUpdate = false;
     }
   }
+  // CurseForge-sourced mods (an imported CurseForge pack tracks project ids):
+  // ask the API for the newest file of each project and compare file ids.
+  if (cfMods.length && window.craftdockInstance?.getCurseForgeLatestFiles) {
+    const response = await window.craftdockInstance
+      .getCurseForgeLatestFiles(cfMods.map(mod => ({
+        projectId: mod.id,
+        gameVersion: inst.mcVersion || '',
+        loader: inst.loader || '',
+      })))
+      .catch(() => null);
+    const results = response?.results || {};
+    for (const mod of cfMods) {
+      const latest = results[String(mod.id)];
+      if (!latest) continue;
+      const installedId = String(mod.versionId || '');
+      if (installedId && installedId === String(latest.latestVersionId)) { mod._hasUpdate = false; continue; }
+      mod._hasUpdate       = true;
+      mod._latestVersion   = latest.latestVersion;
+      mod._latestVersionId = latest.latestVersionId;
+      mod._latestUrl       = latest.files?.[0]?.url || '';
+      mod._latestFileName  = latest.files?.[0]?.filename || '';
+      if (mod._latestUrl) updates.push({ mod, latest });
+    }
+  }
 
   await InstanceStore.save(inst);
   renderInstalledMods(inst);
   if (btn) { btn.textContent = 'Updates'; btn.disabled = false; }
 
   if (!updates.length) {
-    showNotif('All Up to Date ✓', `All ${modsWithSource.length} checked mods are on the latest version.`, 4000);
+    showNotif('All Up to Date ✓', `All ${checkable} checked mods are on the latest version.`, 4000);
     return;
   }
   await showModUpdateModal(updates, activeInstanceId, inst);
@@ -12695,6 +12986,302 @@ async function doImport() {
     if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = '1'; }
     showNotif('Import Failed', err.message || 'Could not import pack', 8000);
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  IMPORT FROM ANOTHER LAUNCHER
+// ═══════════════════════════════════════════════════════════
+let _liLaunchers = [];
+let _liRoots = {};
+let _liLauncherId = null;
+let _liScan = null;
+let _liSelection = new Set();
+let _liBusy = false;
+let _liProgressBound = false;
+let _liRowIndex = new Map();
+
+function launcherBridge() {
+  const api = window.craftdockInstance;
+  return api && typeof api.detectLaunchers === 'function' ? api : null;
+}
+
+function openImportChoiceModal() { document.getElementById('importChoiceModal').classList.add('open'); }
+function closeImportChoiceModal() { document.getElementById('importChoiceModal').classList.remove('open'); }
+
+async function openLauncherImportModal() {
+  const api = launcherBridge();
+  if (!api) { showNotif('Not Available', 'Importing from another launcher is only available in the desktop app'); return; }
+  document.getElementById('launcherImportModal').classList.add('open');
+  _liSelection = new Set();
+  _liScan = null;
+  _liLauncherId = null;
+  document.getElementById('liTitle').textContent = 'Import from Another Launcher';
+  liShowStep('launchers');
+  document.getElementById('liLauncherGrid').innerHTML = '<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--text-muted);font-size:12px">Looking for other launchers on this PC\u2026</div>';
+  if (!_liProgressBound && typeof api.onLauncherImportProgress === 'function') {
+    _liProgressBound = true;
+    api.onLauncherImportProgress(payload => liHandleProgress(payload));
+  }
+  try {
+    const result = await api.detectLaunchers();
+    _liLaunchers = result?.launchers || [];
+  } catch (e) { _liLaunchers = []; }
+  liRenderLauncherCards();
+}
+
+function closeLauncherImportModal() {
+  if (_liBusy) return;
+  document.getElementById('launcherImportModal').classList.remove('open');
+  _liScan = null;
+  _liLauncherId = null;
+  _liSelection = new Set();
+}
+
+function liShowStep(step) {
+  document.getElementById('liStepLaunchers').style.display = step === 'launchers' ? 'block' : 'none';
+  document.getElementById('liStepInstances').style.display = step === 'instances' ? 'block' : 'none';
+  document.getElementById('liStepProgress').style.display  = step === 'progress'  ? 'block' : 'none';
+  const cancel = document.getElementById('liCancelBtn');
+  if (cancel) cancel.textContent = step === 'progress' ? 'Close' : 'Cancel';
+  if (step !== 'progress') document.getElementById('liImportBtn').style.display = '';
+}
+
+function liRenderLauncherCards() {
+  const grid = document.getElementById('liLauncherGrid');
+  if (!grid) return;
+  if (!_liLaunchers.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--text-muted);font-size:12px">No other launcher was found. Use \u201cLocate folder\u201d if yours is installed somewhere else.</div>';
+    return;
+  }
+  grid.innerHTML = _liLaunchers.map(launcher => {
+    const id = escHtml(launcher.id);
+    const count = launcher.instanceCount || 0;
+    const status = count > 0
+      ? `${count} instance${count === 1 ? '' : 's'}`
+      : (launcher.found ? 'No instances' : 'Not found');
+    const statusColour = count > 0 ? 'var(--green)' : 'var(--text-muted)';
+    return '<div class="export-opt" onclick="liChooseLauncher(\'' + id + '\')" style="text-align:left;padding:12px 13px;display:flex;flex-direction:column;gap:9px">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0">'
+      + '<div class="export-opt-name" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(launcher.name) + '</div>'
+      + '<div style="font-size:10px;white-space:nowrap;flex-shrink:0;color:' + statusColour + '">' + escHtml(status) + '</div>'
+      + '</div>'
+      + '<button class="btn-ghost" style="width:100%;padding:4px 8px;font-size:10px" onclick="event.stopPropagation();liPickRoot(\'' + id + '\')">Locate Folder</button>'
+      + '</div>';
+  }).join('');
+}
+
+async function liPickRoot(launcherId) {
+  const api = launcherBridge();
+  if (!api?.pickLauncherRoot) return;
+  const picked = await api.pickLauncherRoot(launcherId).catch(() => null);
+  if (!picked?.success || !picked.root) return;
+  _liRoots[launcherId] = picked.root;
+  const scan = await api.scanLauncher(launcherId, picked.root).catch(() => null);
+  const launcher = _liLaunchers.find(item => item.id === launcherId);
+  if (launcher) {
+    launcher.found = true;
+    launcher.root = picked.root;
+    launcher.instanceCount = scan?.instances?.length || 0;
+  }
+  liRenderLauncherCards();
+  if (scan?.success && scan.instances?.length) liChooseLauncher(launcherId);
+}
+
+async function liChooseLauncher(launcherId) {
+  const api = launcherBridge();
+  if (!api || _liBusy) return;
+  _liLauncherId = launcherId;
+  _liSelection = new Set();
+  const launcher = _liLaunchers.find(item => item.id === launcherId) || { id: launcherId, name: launcherId };
+  // Nothing found at the default location: ask where it is instead of showing
+  // an empty list with no way forward.
+  if (!_liRoots[launcherId] && !launcher.found) { await liPickRoot(launcherId); return; }
+  document.getElementById('liTitle').textContent = 'Import from ' + launcher.name;
+  liShowStep('instances');
+  liUpdateImportButton();
+  const list = document.getElementById('liInstanceList');
+  list.innerHTML = '<div style="padding:22px;text-align:center;color:var(--text-muted);font-size:12px">Reading instances\u2026</div>';
+  document.getElementById('liFoundLabel').textContent = '';
+  try {
+    const scan = await api.scanLauncher(launcherId, _liRoots[launcherId] || launcher.root || undefined);
+    _liScan = scan?.success ? scan : { instances: [], error: scan?.error || 'Could not read that launcher' };
+  } catch (e) {
+    _liScan = { instances: [], error: e.message };
+  }
+  liRenderInstanceList();
+}
+
+function liRenderInstanceList() {
+  const list = document.getElementById('liInstanceList');
+  const instances = _liScan?.instances || [];
+  const found = document.getElementById('liFoundLabel');
+  if (found) found.textContent = instances.length ? `${instances.length} instance${instances.length === 1 ? '' : 's'} found` : '';
+  if (!instances.length) {
+    list.innerHTML = '<div style="padding:22px;text-align:center;color:var(--text-muted);font-size:12px;line-height:1.6">'
+      + (escHtml(_liScan?.error || 'Nothing to import here.'))
+      + '<br><span style="font-size:11px">If it is installed somewhere else, use \u201cLocate folder\u201d on the launcher.</span></div>';
+    return;
+  }
+  list.innerHTML = instances.map((inst, index) => {
+    const bits = [
+      inst.mcVersion || 'Version unknown',
+      [inst.loader, inst.loaderVersion].filter(Boolean).join(' '),
+      `${inst.modCount} mod${inst.modCount === 1 ? '' : 's'}`,
+      `${inst.worldCount} world${inst.worldCount === 1 ? '' : 's'}`,
+    ].filter(Boolean).join(' \u00b7 ');
+    let packLine = '';
+    if (inst.pack) {
+      const label = [inst.pack.name, inst.pack.versionName].filter(Boolean).join(' ') || 'Modpack';
+      const tracked = inst.pack.id ? 'updates tracked' : 'no pack id';
+      packLine = '<div style="font-size:10px;color:var(--accent-bright);margin-top:3px">Pack: ' + escHtml(label) + ' \u00b7 ' + tracked + '</div>';
+    }
+    return '<label style="display:flex;gap:10px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;align-items:flex-start">'
+      + '<input type="checkbox" data-index="' + index + '" onchange="liToggleOne(' + index + ', this.checked)" style="margin-top:2px;accent-color:#6366f1">'
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(inst.name) + '</div>'
+      + '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + escHtml(bits) + '</div>'
+      + packLine
+      + '</div></label>';
+  }).join('');
+  const selectAll = document.getElementById('liSelectAll');
+  if (selectAll) selectAll.checked = false;
+  liUpdateImportButton();
+}
+
+function liToggleOne(index, checked) {
+  if (checked) _liSelection.add(index); else _liSelection.delete(index);
+  liUpdateImportButton();
+}
+
+function liToggleAll(checked) {
+  document.querySelectorAll('#liInstanceList input[type=checkbox]').forEach(box => {
+    box.checked = checked;
+    const index = Number(box.dataset.index);
+    if (checked) _liSelection.add(index); else _liSelection.delete(index);
+  });
+  liUpdateImportButton();
+}
+
+function liUpdateImportButton() {
+  const btn = document.getElementById('liImportBtn');
+  if (!btn) return;
+  const count = _liSelection.size;
+  btn.textContent = count ? `Import ${count} instance${count === 1 ? '' : 's'}` : 'Import';
+  btn.disabled = !count || _liBusy;
+  btn.style.opacity = btn.disabled ? '0.5' : '1';
+}
+
+function liBackToLaunchers() {
+  if (_liBusy) return;
+  _liSelection = new Set();
+  _liScan = null;
+  _liLauncherId = null;
+  document.getElementById('liTitle').textContent = 'Import from Another Launcher';
+  liShowStep('launchers');
+  liRenderLauncherCards();
+}
+
+function liSetRow(index, update) {
+  const row = document.querySelector(`#liProgressList [data-row="${index}"]`);
+  if (!row) return;
+  if (update.status != null) {
+    const status = row.querySelector('.li-status');
+    status.textContent = update.status;
+    status.style.color = update.colour || 'var(--text-muted)';
+  }
+  if (update.pct != null) {
+    row.querySelector('.li-bar').style.width = Math.max(0, Math.min(100, update.pct)) + '%';
+  }
+  if (update.detail != null) row.querySelector('.li-detail').innerHTML = update.detail;
+}
+
+function liHandleProgress(payload) {
+  if (!payload || !_liRowIndex.size) return;
+  const index = _liRowIndex.get(payload.instance);
+  if (index == null) return;
+  liSetRow(index, { status: payload.message || 'Working\u2026', pct: payload.pct });
+}
+
+function liSummaryHtml(result) {
+  const lines = [];
+  if (result.pack) {
+    const label = [result.pack.name, result.pack.versionName].filter(Boolean).join(' ') || 'Modpack';
+    const platform = result.pack.type === 'modrinth' ? 'Modrinth' : result.pack.type === 'curseforge' ? 'CurseForge' : result.pack.type;
+    lines.push(result.pack.tracked
+      ? `Pack: ${label} \u00b7 ${platform} id saved, pack updates work`
+      : `Pack: ${label} \u00b7 no pack id in the old launcher, mods still update one by one`);
+  }
+  if (result.mods?.total) {
+    lines.push(`${result.mods.total} mods \u00b7 ${result.mods.mapped} matched to a project \u00b7 ${result.mods.local} local`);
+  }
+  if (result.mcVersion) {
+    lines.push(`Minecraft ${result.mcVersion}${result.loader ? ' \u00b7 ' + result.loader + ' ' + (result.loaderVersion || '') : ''}`);
+  }
+  for (const warning of result.warnings || []) lines.push('Note: ' + warning);
+  return lines.map(line => escHtml(line)).join('<br>');
+}
+
+async function liRunImport() {
+  const api = launcherBridge();
+  if (!api || _liBusy || !_liScan || !_liLauncherId) return;
+  const chosen = [..._liSelection].sort((a, b) => a - b)
+    .map(index => _liScan.instances[index]).filter(Boolean);
+  if (!chosen.length) return;
+
+  _liBusy = true;
+  liShowStep('progress');
+  document.getElementById('liImportBtn').style.display = 'none';
+  document.getElementById('liCancelBtn').disabled = true;
+  document.getElementById('liCancelBtn').style.opacity = '0.5';
+
+  _liRowIndex = new Map();
+  const list = document.getElementById('liProgressList');
+  list.innerHTML = chosen.map((inst, index) => {
+    _liRowIndex.set(inst.externalId, index);
+    return '<div data-row="' + index + '" style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px">'
+      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'
+      + '<div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(inst.name) + '</div>'
+      + '<div class="li-status" style="font-size:10px;color:var(--text-muted);white-space:nowrap">Waiting\u2026</div>'
+      + '</div>'
+      + '<div style="height:3px;background:var(--bg-input);border-radius:3px;overflow:hidden;margin-top:7px"><div class="li-bar" style="height:100%;width:0%;background:var(--accent);transition:width .2s"></div></div>'
+      + '<div class="li-detail" style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.5"></div>'
+      + '</div>';
+  }).join('');
+
+  let imported = 0;
+  for (const inst of chosen) {
+    const index = _liRowIndex.get(inst.externalId);
+    liSetRow(index, { status: 'Starting\u2026', pct: 1 });
+    let result;
+    try {
+      result = await api.importFromLauncher({
+        launcherId: _liLauncherId,
+        externalId: inst.externalId,
+        root: _liScan.root,
+      });
+    } catch (e) {
+      result = { success: false, error: e.message };
+    }
+    if (result?.success) {
+      imported += 1;
+      if (result.iconDataUrl) {
+        try {
+          const meta = await InstanceStore.get(result.id);
+          if (meta) { meta.iconUrl = result.iconDataUrl; await InstanceStore.save(meta); }
+        } catch {}
+      }
+      liSetRow(index, { status: 'Imported', pct: 100, colour: 'var(--green)', detail: liSummaryHtml(result) });
+    } else {
+      liSetRow(index, { status: 'Failed', pct: 100, colour: '#ef4444', detail: escHtml(result?.error || 'Could not import this instance') });
+    }
+  }
+
+  _liBusy = false;
+  document.getElementById('liCancelBtn').disabled = false;
+  document.getElementById('liCancelBtn').style.opacity = '1';
+  await renderInstanceList(true);
+  refreshHomePage();
+  showNotif('Import finished', `${imported} of ${chosen.length} instance${chosen.length === 1 ? '' : 's'} imported`, 5000);
 }
 
 // ═══════════════════════════════════════════════════════════

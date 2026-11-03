@@ -46,6 +46,7 @@ const { createConfigFileListReader } = require('./config-file-list');
 const { createServerPropertiesAccess } = require('./server-properties');
 const { createModpackMetadataReader } = require('./modpack-metadata');
 const { createBrowseCacheStore } = require('./browse-cache');
+const { createLauncherImporter } = require('./launcher-import');
 
 const isDev    = !app.isPackaged;
 // The portable Windows build unpacks itself into a throwaway temp folder, so the
@@ -584,6 +585,23 @@ ipcMain.handle('auth-poll-token', async (_, deviceCode) => {
 ipcMain.handle('auth-complete-login', async (_, msAccessToken) => {
   try { return { success: true, ...(await doCompleteLogin(msAccessToken)) }; }
   catch(e) { return { success: false, error: e.message }; }
+});
+// Re-read the Minecraft profile (skins + capes) for an account. This has to run
+// in the main process: api.minecraftservices.com sends no CORS headers, so the
+// renderer's own fetch is always blocked and the skins page never saw a real
+// active cape.
+ipcMain.handle('auth-fetch-profile', async (_, minecraftToken) => {
+  if (typeof minecraftToken !== 'string' || !minecraftToken.trim())
+    return { ok: false, error: 'missing_token' };
+  try {
+    const res = await get('api.minecraftservices.com', '/minecraft/profile',
+      { Authorization: `Bearer ${minecraftToken.trim()}` });
+    if (res.status === 401) return { ok: false, status: 401, error: 'token_expired' };
+    if (res.status !== 200) return { ok: false, status: res.status, error: 'http_' + res.status };
+    return { ok: true, profile: res.body };
+  } catch(e) {
+    return { ok: false, error: e.message || 'request_failed' };
+  }
 });
 
 // ── IPC: Persistent key-value store ───────────────────────
@@ -1543,6 +1561,94 @@ ipcMain.handle('instance-create', (_, meta) => {
   if (meta.resourceTag) applySharedResources(id, meta.resourceTag);
   if (meta.shaderTag)   applySharedShaders(id,   meta.shaderTag);
   return { success: true, id, dir: instDir(id) };
+});
+
+// ── Import from another launcher ──────────────────────────────────────────
+// Reads Prism, MultiMC, Modrinth App, CurseForge and ATLauncher instance folders
+// without touching them, then copies the game files into a new instance and
+// translates the pack/mod origins so updates keep working.
+//
+// CurseForge records the project a jar came from but not its logo, so the mods
+// page would show blank tiles for those. The API key lives here, not in the
+// importer, so the logo lookup is handed over as a callback.
+async function curseForgeLogoMap(modIds) {
+  const logos = new Map();
+  const ids = [...new Set((modIds || []).map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0))];
+  if (!ids.length || !CF_API_KEY) return logos;
+  for (let index = 0; index < ids.length; index += 50) {
+    const chunk = ids.slice(index, index + 50);
+    try {
+      const res = await fetch(`${CF_BASE_URL}/mods`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'x-api-key': CF_API_KEY,
+        },
+        body: JSON.stringify({ modIds: chunk, filter: false }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      for (const mod of data?.data || []) {
+        const logo = mod?.logo?.thumbnailUrl || mod?.logo?.url;
+        if (logo) logos.set(String(mod.id), logo);
+      }
+    } catch (error) {
+      // A missing logo is cosmetic; the import itself already succeeded.
+      console.warn(`[CraftDock] CurseForge logo lookup failed: ${error.message}`);
+    }
+  }
+  return logos;
+}
+
+const launcherImporter = createLauncherImporter({
+  instancesBase,
+  registerSlug,
+  ensureInstance,
+  instDir,
+  writeInstMeta,
+  curseForgeIcons: curseForgeLogoMap,
+});
+
+ipcMain.handle('launcher-import-detect', () => {
+  try { return { success: true, launchers: launcherImporter.detect() }; }
+  catch (error) { return { success: false, error: error.message, launchers: [] }; }
+});
+
+ipcMain.handle('launcher-import-scan', (_, launcherId, root) => {
+  try {
+    const result = launcherImporter.scan(String(launcherId || ''), root ? String(root) : undefined);
+    return { success: true, ...result };
+  } catch (error) { return { success: false, error: error.message, instances: [] }; }
+});
+
+ipcMain.handle('launcher-import-pick-root', async (_, launcherId) => {
+  const name = String(launcherId || 'launcher');
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: `Choose the ${name} folder`,
+    properties: ['openDirectory'],
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { success: false, canceled: true };
+  return { success: true, root: result.filePaths[0] };
+});
+
+ipcMain.handle('launcher-import-run', async (event, request) => {
+  const payload = request && typeof request === 'object' ? request : {};
+  const send = progress => {
+    if (!event.sender.isDestroyed()) event.sender.send('launcher-import-progress', progress);
+  };
+  try {
+    const result = await launcherImporter.importInstance({
+      launcherId: String(payload.launcherId || ''),
+      externalId: String(payload.externalId || ''),
+      root: payload.root ? String(payload.root) : undefined,
+      name: payload.name ? String(payload.name) : undefined,
+    }, send);
+    return result;
+  } catch (error) {
+    send({ instance: String(payload.externalId || ''), pct: 100, message: 'Failed', error: error.message });
+    return { success: false, error: error.message };
+  }
 });
 
 // ── Config file listing ────────────────────────────────────────────────────
@@ -2755,6 +2861,40 @@ ipcMain.handle('instance-install-cf-modpack', async (event, instId, modId, mcVer
     try { writeInstMeta(instId, { ...readInstMeta(instId), downloadStatus: 'error' }); } catch {}
     return { success: false, error: e.message };
   }
+});
+
+// Latest CurseForge file for each installed mod that came from CurseForge.
+// The instance update checker calls this for the mods Modrinth cannot answer for
+// (a pack imported from the CurseForge app tracks its mods by project/file id).
+ipcMain.handle('cf-latest-mod-files', async (_, requests) => {
+  const list = Array.isArray(requests) ? requests.slice(0, 80) : [];
+  const results = {};
+  const BATCH = 4; // keep the per-mod lookups gentle on the CF API
+  for (let i = 0; i < list.length; i += BATCH) {
+    await Promise.all(list.slice(i, i + BATCH).map(async request => {
+      const projectId = String(request?.projectId || '');
+      if (!/^\d+$/.test(projectId)) return;
+      const params = new URLSearchParams({ pageSize: '20' });
+      if (request.gameVersion) params.append('gameVersion', String(request.gameVersion));
+      const loaderType = CF_MODLOADER_TYPES[String(request.loader || '').toLowerCase()];
+      if (loaderType) params.append('modLoaderType', String(loaderType));
+      try {
+        const data = await cfGetJson(`/mods/${projectId}/files?${params}`);
+        const files = Array.isArray(data.data) ? data.data : [];
+        // Newest upload wins; the API does not promise an order for this call.
+        const newest = files
+          .filter(file => file && file.fileName)
+          .sort((left, right) => (right.fileDate || '').localeCompare(left.fileDate || '') || (right.id || 0) - (left.id || 0))[0];
+        if (!newest) return;
+        results[projectId] = {
+          latestVersion: newest.displayName || newest.fileName,
+          latestVersionId: String(newest.id),
+          files: [{ url: newest.downloadUrl || cfCdnUrl(newest.id, newest.fileName), filename: newest.fileName }],
+        };
+      } catch {}
+    }));
+  }
+  return { success: true, results };
 });
 
 ipcMain.handle('shared-worlds-path', () => sharedWorldsDir);

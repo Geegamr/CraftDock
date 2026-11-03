@@ -623,7 +623,7 @@ dependencies = [
 
 [[package]]
 name = "craftdock"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",

@@ -49,6 +49,7 @@ function loadProductionIpc(tempRoot, handlers, jsonModule) {
     if (name === './server-json') return jsonModule;
     if (name === './modpack-metadata') return { createModpackMetadataReader: () => async () => ({}) };
     if (name === './browse-cache') return require('../browse-cache');
+    if (name === './launcher-import') return require('../launcher-import');
     if (name === './package.json') return require('../package.json');
     return require(name);
   };

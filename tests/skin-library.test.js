@@ -87,6 +87,7 @@ function loadProductionIpc(tempRoot, handlers, skinModule = require('../skin-lib
     if (name === './skin-library') return skinModule;
     if (name === './modpack-metadata') return { createModpackMetadataReader: () => async () => ({}) };
     if (name === './browse-cache') return require('../browse-cache');
+    if (name === './launcher-import') return require('../launcher-import');
     if (name === './package.json') return packageConfig;
     return require(name);
   };
@@ -438,9 +439,9 @@ test('production preload invokes unchanged skins IPC for fallback and actual Rus
       assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdock.skins.getAll())), [
         { id: 'ipc-skin', name: 'IPC skin', filePath: path.join(skinDirectory, 'ipc-skin.png'), model: 'classic', dataUrl: skin.dataUrl },
       ]);
-      assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdock.skins.delete('ipc-skin'))), { success: true });
+      assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdock.skins.remove('ipc-skin'))), { success: true });
       assert.equal(fs.existsSync(path.join(skinDirectory, 'ipc-skin.png')), false);
-      assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdock.skins.delete('ipc-skin'))), { success: true });
+      assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdock.skins.remove('ipc-skin'))), { success: true });
       assert.deepEqual(JSON.parse(JSON.stringify(invocations)), [
         ['skins-get-all'],
         ['skins-save', skin],
@@ -472,7 +473,7 @@ test('production preload falls back for missing or broken Rust binary and preser
       const skin = { id: 'fallback', name: 'Fallback', dataUrl: 'data:image/png;base64,AQ==' };
       assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdock.skins.save(skin))), { success: true });
       assert.deepEqual(fs.readFileSync(path.join(root, 'craftdock-data', 'skins', 'fallback.png')), Buffer.from([1]));
-      assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdock.skins.delete('fallback'))), { success: true });
+      assert.deepEqual(JSON.parse(JSON.stringify(await exposed.craftdock.skins.remove('fallback'))), { success: true });
       fs.rmSync(path.join(root, 'craftdock-data', 'skins'), { recursive: true, force: true });
       await assert.rejects(exposed.craftdock.skins.save({ id: 'bad', dataUrl: 'data:image/png;base64,AQ==' }), /ENOENT/);
     });

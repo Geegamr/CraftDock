@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('craftdock', {
     requestDeviceCode: () => ipcRenderer.invoke('auth-request-device-code'),
     pollToken:         (deviceCode) => ipcRenderer.invoke('auth-poll-token', deviceCode),
     completeLogin:     (msAccessToken) => ipcRenderer.invoke('auth-complete-login', msAccessToken),
+    // Reads the Minecraft profile (and its capes) in the main process, where
+    // there is no CORS restriction.
+    fetchProfile:      (minecraftToken) => ipcRenderer.invoke('auth-fetch-profile', minecraftToken),
   },
 
   // Persistent key-value store (accounts, instances, servers)
@@ -32,7 +35,7 @@ contextBridge.exposeInMainWorld('craftdock', {
   skins: {
     getAll:     ()     => ipcRenderer.invoke('skins-get-all'),
     save:       (skin) => ipcRenderer.invoke('skins-save',   skin),
-    delete:     (id)   => ipcRenderer.invoke('skins-delete', id),
+    remove:     (id)   => ipcRenderer.invoke('skins-delete', id),
     openPicker: ()     => ipcRenderer.invoke('dialog-open-skin'),
   },
 
@@ -131,6 +134,11 @@ contextBridge.exposeInMainWorld('craftdockInstance', {
   readConfigFile:     (p)        => ipcRenderer.invoke('instance-read-config-file',      p),
   writeConfigFile:    (p, text)  => ipcRenderer.invoke('instance-write-config-file',     p, text),
   importPack:         (p, type)  => ipcRenderer.invoke('instance-import-pack',          p, type),
+  detectLaunchers:    ()         => ipcRenderer.invoke('launcher-import-detect'),
+  scanLauncher:       (id, root) => ipcRenderer.invoke('launcher-import-scan',          id, root),
+  pickLauncherRoot:   (id)       => ipcRenderer.invoke('launcher-import-pick-root',     id),
+  importFromLauncher: (request)  => ipcRenderer.invoke('launcher-import-run',           request),
+  getCurseForgeLatestFiles: (requests) => ipcRenderer.invoke('cf-latest-mod-files',     requests),
   getDiskSize:    (id)            => ipcRenderer.invoke('instance-get-disk-size',       id),
   downloadMod:    (id,url,fn)     => ipcRenderer.invoke('instance-download-mod',        id, url, fn),
   listFolder:     (id,sub)        => ipcRenderer.invoke('instance-list-folder',         id, sub),
@@ -145,6 +153,7 @@ contextBridge.exposeInMainWorld('craftdockInstance', {
     ipcRenderer.invoke('instance-install-cf-modpack', id, modId, mcVer, loader),
   onLaunchStatus:     (cb)            => ipcRenderer.on('instance-launch-status',     (_,id,st,msg) => cb(id, st, msg)),
   onInstallProgress:  (cb)            => ipcRenderer.on('instance-install-progress',  (_,id,pct,msg) => cb(id, pct, msg)),
+  onLauncherImportProgress: (cb)      => ipcRenderer.on('launcher-import-progress',   (_, payload) => cb(payload)),
   onConsoleLog:       (cb)            => ipcRenderer.on('instance-console-log',        (_,id,line) => cb(id, line)),
   scanJava:           ()              => ipcRenderer.invoke('java-scan'),
   javaStatus:         ()              => ipcRenderer.invoke('java-status'),

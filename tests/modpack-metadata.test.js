@@ -154,6 +154,7 @@ function loadProductionIpc(tempRoot, handlers, modpackMetadataModule, fsOverride
     if (name === './server-properties') return require('../server-properties');
     if (name === './modpack-metadata') return modpackMetadataModule;
     if (name === './browse-cache') return require('../browse-cache');
+    if (name === './launcher-import') return require('../launcher-import');
     if (name === './package.json') return require('../package.json');
     return require(name);
   };

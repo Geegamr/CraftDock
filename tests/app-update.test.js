@@ -8,12 +8,29 @@ const path = require('node:path');
 const { loadApp, plain, projectRoot, withTempRoot } = require('./helpers/electron-app');
 
 const RELEASE_API = 'https://api.github.com/repos/Geegamr/CraftDock/releases/latest';
-const INSTALLER_URL = 'https://fixture.invalid/CraftDock.Setup.0.9.0.exe';
-const PORTABLE_URL = 'https://fixture.invalid/CraftDock.0.9.0.exe';
+
+const appVersion = require('../package.json').version;
+const [majorPart, minorPart] = appVersion.split('.');
+
+// The fixture release has to be newer than the build under test, so it is
+// derived from package.json by bumping the minor part (0.8.1 -> 0.9.0), so a
+// version bump never quietly turns these tests into "already up to date"
+// no-ops. The bumped minor also keeps the numeric compare honest once the
+// minor reaches two digits, since "0.10.0" sorts before "0.9.0" as a string.
+const NEXT_VERSION = `${majorPart}.${Number(minorPart) + 1}.0`;
+// Older than any release this repository has shipped.
+const OLD_VERSION = '0.0.1';
 
 // GitHub rewrites the spaces in uploaded asset names to dots, so the release
-// carries "CraftDock.Setup.0.9.0.exe" for the file built as
-// "CraftDock Setup 0.9.0.exe".
+// carries "CraftDock.Setup.0.10.0.exe" for the file built as
+// "CraftDock Setup 0.10.0.exe".
+const installerAsset = tag => `CraftDock.Setup.${tag}.exe`;
+const portableAsset = tag => `CraftDock.${tag}.exe`;
+const assetUrl = name => `https://fixture.invalid/${name}`;
+
+const INSTALLER_URL = assetUrl(installerAsset(NEXT_VERSION));
+const PORTABLE_URL = assetUrl(portableAsset(NEXT_VERSION));
+
 function release(tag, body = 'update body') {
   return {
     tag_name: `v${tag}`,
@@ -21,29 +38,27 @@ function release(tag, body = 'update body') {
     body,
     html_url: `https://github.com/Geegamr/CraftDock/releases/tag/v${tag}`,
     assets: [
-      { name: `CraftDock.Setup.${tag}.exe`, size: 8, browser_download_url: INSTALLER_URL },
-      { name: `CraftDock.Setup.${tag}.exe.blockmap`, size: 2, browser_download_url: 'https://fixture.invalid/latest.yml.blockmap' },
-      { name: `CraftDock.${tag}.exe`, size: 8, browser_download_url: PORTABLE_URL },
+      { name: installerAsset(tag), size: 8, browser_download_url: assetUrl(installerAsset(tag)) },
+      { name: `${installerAsset(tag)}.blockmap`, size: 2, browser_download_url: 'https://fixture.invalid/latest.yml.blockmap' },
+      { name: portableAsset(tag), size: 8, browser_download_url: assetUrl(portableAsset(tag)) },
     ],
   };
 }
-
-const appVersion = require('../package.json').version;
 
 test('a check reports the release and the artifact that matches this install', async () => {
   await withTempRoot(async root => {
     const installed = loadApp(root, {
       platform: 'win32',
-      routes: { [RELEASE_API]: release('0.9.0') },
+      routes: { [RELEASE_API]: release(NEXT_VERSION) },
     });
     const forInstalled = plain(await installed.exposed.craftdockInstance.checkAppUpdate());
 
     assert.equal(forInstalled.success, true);
     assert.equal(forInstalled.current, appVersion);
-    assert.equal(forInstalled.latest, '0.9.0');
+    assert.equal(forInstalled.latest, NEXT_VERSION);
     assert.equal(forInstalled.hasUpdate, true);
     assert.equal(forInstalled.canInstall, true);
-    assert.equal(forInstalled.asset.name, 'CraftDock.Setup.0.9.0.exe', 'an installed build runs the setup again');
+    assert.equal(forInstalled.asset.name, installerAsset(NEXT_VERSION), 'an installed build runs the setup again');
     assert.equal(forInstalled.asset.size, 8);
     assert.equal(forInstalled.asset.url, INSTALLER_URL);
   });
@@ -55,21 +70,21 @@ test('a check reports the release and the artifact that matches this install', a
         PORTABLE_EXECUTABLE_DIR: root,
         PORTABLE_EXECUTABLE_FILE: path.join(root, 'CraftDock.exe'),
       },
-      routes: { [RELEASE_API]: release('0.9.0') },
+      routes: { [RELEASE_API]: release(NEXT_VERSION) },
     });
     const forPortable = plain(await portable.exposed.craftdockInstance.checkAppUpdate());
 
     assert.equal(forPortable.portable, true);
-    assert.equal(forPortable.asset.name, 'CraftDock.0.9.0.exe', 'a portable build replaces its own exe');
+    assert.equal(forPortable.asset.name, portableAsset(NEXT_VERSION), 'a portable build replaces its own exe');
     assert.equal(forPortable.asset.url, PORTABLE_URL);
   });
 });
 
-test('the version compare is numeric, so 0.10.0 beats 0.9.0 and old releases stay quiet', async () => {
+test('the version compare is numeric, so a two-digit minor beats a one-digit one and old releases stay quiet', async () => {
   await withTempRoot(async root => {
     const newer = loadApp(root, {
       platform: 'win32',
-      routes: { [RELEASE_API]: release('0.10.0') },
+      routes: { [RELEASE_API]: release(NEXT_VERSION) },
     });
     assert.equal(plain(await newer.exposed.craftdockInstance.checkAppUpdate()).hasUpdate, true);
   });
@@ -77,7 +92,7 @@ test('the version compare is numeric, so 0.10.0 beats 0.9.0 and old releases sta
   await withTempRoot(async root => {
     const older = loadApp(root, {
       platform: 'win32',
-      routes: { [RELEASE_API]: release('0.7.0') },
+      routes: { [RELEASE_API]: release(OLD_VERSION) },
     });
     const info = plain(await older.exposed.craftdockInstance.checkAppUpdate());
     assert.equal(info.hasUpdate, false, 'an older release is not an update');
@@ -88,7 +103,7 @@ test('the version compare is numeric, so 0.10.0 beats 0.9.0 and old releases sta
     // Same version, different string form: still not an update.
     const same = loadApp(root, {
       platform: 'win32',
-      routes: { [RELEASE_API]: release(appVersion) },
+      routes: { [RELEASE_API]: release(`v${appVersion}`) },
     });
     assert.equal(plain(await same.exposed.craftdockInstance.checkAppUpdate()).hasUpdate, false);
   });
@@ -108,18 +123,18 @@ test('the update is downloaded into a staging folder and checked against its siz
     const app = loadApp(root, {
       platform: 'win32',
       routes: {
-        [RELEASE_API]: release('0.9.0'),
+        [RELEASE_API]: release(NEXT_VERSION),
         [INSTALLER_URL]: Buffer.from('setup!!!'),
       },
     });
 
     const result = plain(await app.exposed.craftdockInstance.appUpdateDownload());
     assert.equal(result.success, true, result.error);
-    assert.equal(result.version, '0.9.0');
+    assert.equal(result.version, NEXT_VERSION);
     assert.equal(result.kind, 'installer');
 
     // app.getPath('temp') is the temp root in the harness.
-    const staged = path.join(root, 'craftdock-update', 'CraftDock.Setup.0.9.0.exe');
+    const staged = path.join(root, 'craftdock-update', installerAsset(NEXT_VERSION));
     assert.equal(fs.existsSync(staged), true);
     assert.equal(fs.readFileSync(staged, 'utf8'), 'setup!!!');
 
@@ -134,14 +149,14 @@ test('the update is downloaded into a staging folder and checked against its siz
     const app = loadApp(root, {
       platform: 'win32',
       routes: {
-        [RELEASE_API]: release('0.9.0'),
+        [RELEASE_API]: release(NEXT_VERSION),
         [INSTALLER_URL]: Buffer.from('short!'),
       },
     });
     const result = plain(await app.exposed.craftdockInstance.appUpdateDownload());
     assert.equal(result.success, false);
     assert.match(result.error, /6 of 8 bytes/);
-    assert.equal(fs.existsSync(path.join(root, 'craftdock-update', 'CraftDock.Setup.0.9.0.exe')), false);
+    assert.equal(fs.existsSync(path.join(root, 'craftdock-update', installerAsset(NEXT_VERSION))), false);
   });
 });
 
@@ -150,7 +165,7 @@ test('installing an update on an installed build runs the setup silently', async
     const app = loadApp(root, {
       platform: 'win32',
       routes: {
-        [RELEASE_API]: release('0.9.0'),
+        [RELEASE_API]: release(NEXT_VERSION),
         [INSTALLER_URL]: Buffer.from('setup!!!'),
       },
     });
@@ -162,7 +177,7 @@ test('installing an update on an installed build runs the setup silently', async
     const result = plain(await app.exposed.craftdockInstance.appUpdateInstall());
     assert.equal(result.success, true, result.error);
 
-    const installer = app.spawnCalls.find(call => String(call.command).endsWith('CraftDock.Setup.0.9.0.exe'));
+    const installer = app.spawnCalls.find(call => String(call.command).endsWith(installerAsset(NEXT_VERSION)));
     assert.ok(installer, 'the downloaded setup is started');
     assert.deepEqual(plain(installer.args), ['--updated'], 'the update flag installs without pages and reopens the app');
     assert.equal(installer.options.detached, true);
@@ -176,7 +191,7 @@ test('installing a portable update hands the swap to a helper that waits for the
       platform: 'win32',
       env: { PORTABLE_EXECUTABLE_DIR: root, PORTABLE_EXECUTABLE_FILE: target },
       routes: {
-        [RELEASE_API]: release('0.9.0'),
+        [RELEASE_API]: release(NEXT_VERSION),
         [PORTABLE_URL]: Buffer.from('portable'),
       },
     });

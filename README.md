@@ -4,7 +4,7 @@
   <p>A lightweight, modern Minecraft launcher built with Electron.</p>
 
   <img src="https://img.shields.io/badge/status-Public%20Beta-22c55e?style=flat-square">
-  <img src="https://img.shields.io/badge/version-0.8.0-6366f1?style=flat-square">
+  <img src="https://img.shields.io/badge/version-0.8.1-6366f1?style=flat-square">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square">
   <img src="https://img.shields.io/badge/license-Apache 2.0-22c55e?style=flat-square">
 
@@ -26,7 +26,7 @@
 ## Features
 
 - **Modpack browser** — search and install from Modrinth and CurseForge
-- **Import / Export** — import CurseForge `.zip` or Modrinth `.mrpack`; export as zip, mrpack, CF code, or Modrinth link
+- **Import / Export** — import CurseForge `.zip` or Modrinth `.mrpack`; copy instances straight over from Prism Launcher, MultiMC, the Modrinth App, the CurseForge app or ATLauncher; export as zip, mrpack, CF code, or Modrinth link
 - **Instance manager** — isolated folder per instance with mods, saves, configs, screenshots, and resource packs
 - **Mod browser & version picker** — browse Modrinth with version compatibility badges for your MC version and loader
 - **Mod update checker** — check and update mods per-instance individually or in bulk
@@ -54,6 +54,7 @@
 | Export / Import | Shipped (v0.6.3) |
 | Bug fixes & polish before public release | Shipped (v0.7.0) |
 | In-app updater | Shipped (v0.8.0) |
+| Import from other launchers | Shipped (v0.8.1) |
 | Public Beta (current) | **Now** |
 | v1.0 Release | TBD |
 

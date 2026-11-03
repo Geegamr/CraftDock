@@ -61,6 +61,7 @@ function loadProductionIpc(tempRoot, handlers, modToggleModule = require('../ins
     if (name === './instance-mod-toggle') return modToggleModule;
     if (name === './modpack-metadata') return { createModpackMetadataReader: () => async () => ({}) };
     if (name === './browse-cache') return require('../browse-cache');
+    if (name === './launcher-import') return require('../launcher-import');
     if (name === './package.json') return packageConfig;
     return require(name);
   };
