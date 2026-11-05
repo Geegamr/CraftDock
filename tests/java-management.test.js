@@ -190,7 +190,7 @@ test('the startup Java check reports what is available and never downloads', asy
       preferredSource: 'none',
       bestSystemVersion: 0,
       bestLauncherVersion: 0,
-      missingMajors: [8, 16, 17, 21],
+      missingMajors: [8, 16, 17, 21, 25],
     });
     assert.deepEqual(adoptiumRequests(empty), [], 'detection does not install anything');
     assert.deepEqual(empty.fetchCalls, [], 'detection does not touch the network');
@@ -209,7 +209,8 @@ test('the startup Java check reports what is available and never downloads', asy
     assert.equal(status.systemCount, 1);
     assert.equal(status.preferredSource, 'system', 'the user\'s Java is preferred');
     assert.equal(status.bestSystemVersion, 21);
-    assert.deepEqual(status.missingMajors, [], 'a Java 21 covers every supported major');
+    assert.deepEqual(status.missingMajors, [25],
+      'a Java 21 still leaves Java 25, which the 26.x calendar versions need');
     assert.deepEqual(app.fetchCalls, []);
   });
 });
@@ -228,9 +229,11 @@ test('install-missing downloads only the versions this machine cannot run', asyn
         [adoptiumUrl(16, 'linux', 'jdk')]: adoptiumResponse(16),
         [adoptiumUrl(17)]: adoptiumResponse(17),
         [adoptiumUrl(21)]: adoptiumResponse(21),
+        [adoptiumUrl(25)]: adoptiumResponse(25),
         'https://fixture.invalid/jre-16.tar.gz': Buffer.from('16'),
         'https://fixture.invalid/jre-17.tar.gz': Buffer.from('17'),
         'https://fixture.invalid/jre-21.tar.gz': Buffer.from('21'),
+        'https://fixture.invalid/jre-25.tar.gz': Buffer.from('25'),
       },
     });
 
@@ -238,13 +241,13 @@ test('install-missing downloads only the versions this machine cannot run', asyn
     assert.equal(result.success, true);
     assert.deepEqual(
       result.results.map(entry => [entry.major, entry.status]),
-      [[8, 'system'], [16, 'installed'], [17, 'installed'], [21, 'installed']],
+      [[8, 'system'], [16, 'installed'], [17, 'installed'], [21, 'installed'], [25, 'installed']],
     );
     assert.deepEqual(adoptiumRequests(app), [
-      adoptiumUrl(16), adoptiumUrl(16, 'linux', 'jdk'), adoptiumUrl(17), adoptiumUrl(21),
+      adoptiumUrl(16), adoptiumUrl(16, 'linux', 'jdk'), adoptiumUrl(17), adoptiumUrl(21), adoptiumUrl(25),
     ], 'Java 8 is already provided by the user and is not downloaded');
 
-    for (const major of [16, 17, 21]) {
+    for (const major of [16, 17, 21, 25]) {
       assert.equal(fs.existsSync(path.join(app.dataDir, 'java', `java${major}`, 'bin', 'java')), true);
     }
     assert.equal(fs.existsSync(path.join(app.dataDir, 'java', 'java8')), false);
@@ -264,10 +267,12 @@ test('install-missing reports progress for each Java version it downloads', asyn
         [adoptiumUrl(16, 'linux', 'jdk')]: adoptiumResponse(16),
         [adoptiumUrl(17)]: adoptiumResponse(17),
         [adoptiumUrl(21)]: adoptiumResponse(21),
+        [adoptiumUrl(25)]: adoptiumResponse(25),
         'https://fixture.invalid/jre-8.tar.gz': Buffer.from('8'),
         'https://fixture.invalid/jre-16.tar.gz': Buffer.from('16'),
         'https://fixture.invalid/jre-17.tar.gz': Buffer.from('17'),
         'https://fixture.invalid/jre-21.tar.gz': Buffer.from('21'),
+        'https://fixture.invalid/jre-25.tar.gz': Buffer.from('25'),
       },
     });
 
@@ -281,14 +286,14 @@ test('install-missing reports progress for each Java version it downloads', asyn
 
     assert.deepEqual(
       progress.filter(entry => entry.type === 'start').map(entry => entry.major),
-      [8, 16, 17, 21], 'each version starts in order');
+      [8, 16, 17, 21, 25], 'each version starts in order');
     assert.deepEqual(
       progress.filter(entry => entry.type === 'done').map(entry => [entry.major, entry.status]),
-      [[8, 'installed'], [16, 'installed'], [17, 'installed'], [21, 'installed']]);
+      [[8, 'installed'], [16, 'installed'], [17, 'installed'], [21, 'installed'], [25, 'installed']]);
 
     const percents = progress.filter(entry => entry.type === 'percent');
     assert.ok(percents.length >= 4, 'download percentages are reported');
-    assert.ok(percents.every(entry => entry.percent === 100 && [8, 16, 17, 21].includes(entry.major)));
+    assert.ok(percents.every(entry => entry.percent === 100 && [8, 16, 17, 21, 25].includes(entry.major)));
     assert.ok(
       percents.every(entry => entry.received === entry.total && entry.received > 0),
       'each progress event carries the byte counts used for the time estimate');
@@ -311,10 +316,12 @@ test('a slow Java download reports throughput before it finishes', async () => {
         [adoptiumUrl(16, 'linux', 'jdk')]: adoptiumResponse(16),
         [adoptiumUrl(17)]: adoptiumResponse(17),
         [adoptiumUrl(21)]: adoptiumResponse(21),
+        [adoptiumUrl(25)]: adoptiumResponse(25),
         'https://fixture.invalid/jre-8.tar.gz': { chunks: Array(12).fill(chunk), gapMs: 60 },
         'https://fixture.invalid/jre-16.tar.gz': Buffer.from('16'),
         'https://fixture.invalid/jre-17.tar.gz': Buffer.from('17'),
         'https://fixture.invalid/jre-21.tar.gz': Buffer.from('21'),
+        'https://fixture.invalid/jre-25.tar.gz': Buffer.from('25'),
       },
     });
 
@@ -358,7 +365,7 @@ test('a Java install can be cancelled while a download is in flight', async () =
     assert.equal(result.cancelled, true);
     assert.equal(result.success, false);
     assert.deepEqual(result.results.map(entry => entry.status),
-      ['cancelled', 'cancelled', 'cancelled', 'cancelled']);
+      ['cancelled', 'cancelled', 'cancelled', 'cancelled', 'cancelled']);
     assert.deepEqual(adoptiumRequests(app), [], 'no download starts after a cancel');
     assert.equal(fs.existsSync(path.join(app.dataDir, 'java')), false, 'no partial Java is kept');
 
@@ -386,7 +393,8 @@ test('install-missing reports a failed download without throwing', async () => {
     const result = plain(await app.exposed.craftdockInstance.installMissingJava());
     assert.equal(result.success, false);
     const failed = result.results.filter(entry => entry.status === 'error');
-    assert.deepEqual(result.results.map(entry => entry.status), ['error', 'error', 'error', 'installed']);
+    // Only Java 21 has a download route here; every other major fails, including 25.
+    assert.deepEqual(result.results.map(entry => entry.status), ['error', 'error', 'error', 'installed', 'error']);
     assert.ok(failed.every(entry => typeof entry.error === 'string' && entry.error.length > 0));
   });
 });
@@ -547,6 +555,91 @@ test('the settings panel shows per-version install progress and can cancel it', 
   assert.equal(elements.settingsJavaCancelBtn.disabled, true);
   assert.equal(elements.settingsJavaCancelBtn.textContent, 'Cancelling…');
   assert.equal(elements.settingsJavaProgressLabel.textContent, 'Cancelling after the current file…');
+});
+
+// Minecraft switched to calendar version numbers at 26.1, and that release is the
+// first to require Java 25. Read as "1.<minor>", 26.2 looked like a 1.2 pack and
+// got Java 8, which died with "class file version 69.0, only recognises 52.0".
+test('a 26.2 instance gets Java 25 instead of falling through to Java 8', async () => {
+  await withTempRoot(async root => {
+    prepareClientCache(root, '26.2');
+    const app = loadApp(root, {
+      platform: 'linux',
+      env: { JAVA_HOME: '' },
+      javaVersion: command => (command.includes(`${path.sep}java25${path.sep}`) ? 25 : 0),
+      execFileSync: extractWithTar(),
+      routes: {
+        'https://launchermeta.mojang.com/mc/game/version_manifest_v2.json': {
+          versions: [{ id: '26.2', url: 'https://fixture.invalid/26.2.json' }],
+        },
+        [adoptiumUrl(25)]: adoptiumResponse(25),
+        'https://fixture.invalid/jre-25.tar.gz': Buffer.from('25'),
+      },
+    });
+
+    writeInstance(app, 'inst_262', { mcVersion: '26.2' });
+    const result = await app.exposed.craftdockInstance.launch({ id: 'inst_262' });
+
+    assert.equal(result.success, true, result.error);
+    assert.deepEqual(adoptiumRequests(app), [adoptiumUrl(25)],
+      'a 26.x pack asks for Java 25, not Java 8');
+    assert.equal(launchCommand(app), path.join(app.dataDir, 'java', 'java25', 'bin', 'java'));
+  });
+});
+
+// The runtime Mojang states per release wins over any local table, which is the
+// only reliable answer for snapshots.
+test('the Java stated in the version JSON is used when it differs', async () => {
+  await withTempRoot(async root => {
+    const { versionDir } = prepareClientCache(root, '26.2');
+    fs.writeFileSync(path.join(versionDir, 'version.json'), JSON.stringify({
+      mainClass: 'net.minecraft.client.main.Main',
+      downloads: { client: { url: 'https://fixture.invalid/26.2-client.jar' } },
+      libraries: [],
+      javaVersion: { component: 'java-runtime-epsilon', majorVersion: 21 },
+      assetIndex: { id: 'fixture', url: 'https://fixture.invalid/asset-index.json' },
+    }));
+
+    const jdk = path.join(root, 'jdk-21');
+    const systemJava = makeJava(root, path.join('jdk-21', 'bin', 'java'));
+    const app = loadApp(root, {
+      platform: 'linux',
+      env: { JAVA_HOME: jdk },
+      javaVersion: command => (command === systemJava ? 21 : 0),
+      routes: {
+        'https://launchermeta.mojang.com/mc/game/version_manifest_v2.json': {
+          versions: [{ id: '26.2', url: 'https://fixture.invalid/26.2.json' }],
+        },
+      },
+    });
+
+    writeInstance(app, 'inst_stated', { mcVersion: '26.2' });
+    const result = await app.exposed.craftdockInstance.launch({ id: 'inst_stated' });
+
+    assert.equal(result.success, true, result.error);
+    assert.equal(launchCommand(app), systemJava, 'the release itself named Java 21');
+    assert.deepEqual(adoptiumRequests(app), [], 'nothing had to be downloaded');
+  });
+});
+
+// The renderer keeps its own copy of the table for the pickers; it has to agree.
+test('the renderer picker table matches the calendar versions', () => {
+  const renderer = fs.readFileSync(path.join(projectRoot, 'src', 'index.html'), 'utf8');
+  const match = renderer.match(/^function javaRequiredForMc\(mcVersion\) \{[\s\S]*?\r?\n\}/m);
+  assert.ok(match, 'javaRequiredForMc() exists in the renderer');
+
+  const context = vm.createContext({});
+  vm.runInContext(`${match[0]}\nvar pick = javaRequiredForMc;`, context);
+  const required = version => vm.runInContext(`pick(${JSON.stringify(version)})`, context);
+
+  assert.equal(required('26.2'), 25);
+  assert.equal(required('26.1'), 25);
+  assert.equal(required('26.2-snapshot-8'), 25);
+  assert.equal(required('1.21.4'), 21);
+  assert.equal(required('1.20.4'), 21);
+  assert.equal(required('1.19.2'), 17);
+  assert.equal(required('1.17'), 16);
+  assert.equal(required('1.16.5'), 8);
 });
 
 test('java detection prefers the user\'s Java over a launcher copy and never downloads', async () => {

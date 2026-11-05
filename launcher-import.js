@@ -13,6 +13,8 @@ const crypto = require('crypto');
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const USER_AGENT = 'CraftDock-launcher-import/1.0 (contact@craftdock.app)';
 const MAX_METADATA_BYTES = 64 * 1024 * 1024;
+// Import copies are read and hashed a megabyte at a time.
+const COPY_CHUNK = 1024 * 1024;
 
 // Component uids used by Prism Launcher and MultiMC in mmc-pack.json.
 const LOADER_UIDS = {
@@ -113,6 +115,59 @@ function sha1File(filePath) {
     stream.on('error', reject);
     stream.on('end', () => resolve(hash.digest('hex')));
   });
+}
+
+// SHA-256 of a file, read in chunks so a multi-gigabyte world never has to fit in
+// memory. This digest is always taken from the file itself — a copy is judged
+// against the original, never against a digest the importer made up.
+function hashFileSync(filePath) {
+  const hash = crypto.createHash('sha256');
+  const buffer = Buffer.allocUnsafe(COPY_CHUNK);
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    let bytes;
+    while ((bytes = fs.readSync(fd, buffer, 0, COPY_CHUNK, null)) > 0) {
+      hash.update(buffer.subarray(0, bytes));
+    }
+  } finally {
+    try { fs.closeSync(fd); } catch (_) {}
+  }
+  return hash.digest('hex');
+}
+
+// Copy a file while hashing what is read, so the original's digest comes from the
+// same pass that wrote the copy instead of a second read of the source.
+function copyFileHashed(from, to) {
+  const hash = crypto.createHash('sha256');
+  const buffer = Buffer.allocUnsafe(COPY_CHUNK);
+  const input = fs.openSync(from, 'r');
+  let output = null;
+  try {
+    output = fs.openSync(to, 'w');
+    let bytes;
+    while ((bytes = fs.readSync(input, buffer, 0, COPY_CHUNK, null)) > 0) {
+      hash.update(buffer.subarray(0, bytes));
+      let written = 0;
+      while (written < bytes) {
+        written += fs.writeSync(output, buffer, written, bytes - written);
+      }
+    }
+  } finally {
+    if (output !== null) { try { fs.closeSync(output); } catch (_) {} }
+    try { fs.closeSync(input); } catch (_) {}
+  }
+  return hash.digest('hex');
+}
+
+// Do these two files hold the same bytes? Size first, as a cheap rejection, then
+// the digest — a copy that matches in size but not in content is a failed copy.
+function sameBytes(from, to, knownSourceHash = null) {
+  const source = statSafe(from);
+  const target = statSafe(to);
+  if (!source || !target || !source.isFile() || !target.isFile()) return false;
+  if (source.size !== target.size) return false;
+  const sourceHash = knownSourceHash || hashFileSync(from);
+  return sourceHash === hashFileSync(to);
 }
 
 function readJsonCapped(filePath) {
@@ -963,7 +1018,7 @@ function createLauncherImporter(options = {}) {
     return { files, bytes };
   }
 
-  function copyTree(src, dest, onFile, depth = 0) {
+  function copyTree(src, dest, onFile, depth = 0, failed = null) {
     if (depth > 12) return 0;
     let copied = 0;
     let entries;
@@ -975,19 +1030,77 @@ function createLauncherImporter(options = {}) {
       const from = path.join(src, entry.name);
       const to = path.join(dest, entry.name);
       if (entry.isDirectory()) {
-        copied += copyTree(from, to, onFile, depth + 1);
+        copied += copyTree(from, to, onFile, depth + 1, failed);
       } else if (entry.isFile()) {
-        try {
-          fs.copyFileSync(from, to);
+        if (copyFileVerified(from, to)) {
           copied += 1;
           onFile?.(copied);
-        } catch {}
+        } else {
+          failed?.push(to);
+        }
       }
     }
     return copied;
   }
 
-  function copyGameFiles(gameDir, instanceDir, onFile) {
+  // Copy one file and prove the bytes landed. A file the old launcher (or its
+  // antivirus, or a sync tool) still holds can copy short or copy garbage, and
+  // a truncated level.dat or region file is exactly what Minecraft reports as a
+  // corrupt save later on. The digest always comes from the original file — the
+  // copy has to reproduce it, so nothing here trusts a hash of its own making.
+  function copyFileVerified(from, to) {
+    const source = statSafe(from);
+    if (!source || !source.isFile()) return false;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        // Hash of the original taken while the copy is written.
+        const copiedHash = copyFileHashed(from, to);
+        if (!sameBytes(from, to, copiedHash)) throw new Error('copy does not match the original');
+        // The original must still read back as the same bytes, otherwise it was
+        // being written while it was copied and the import cannot be trusted.
+        if (hashFileSync(from) !== copiedHash) throw new Error('source changed during copy');
+        return true;
+      } catch (_) {
+        try { fs.rmSync(to, { force: true }); } catch (_) {}
+      }
+    }
+    return false;
+  }
+
+  function dirBytes(dir) {
+    let bytes = 0;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return bytes; }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) bytes += dirBytes(full);
+      else if (entry.isFile()) bytes += statSafe(full)?.size || 0;
+    }
+    return bytes;
+  }
+
+  // A world is copied into a staging folder and only moved into saves/ once
+  // every byte arrived. A failed import therefore leaves no half-written world
+  // behind: the original stays in the other launcher and the world is reported.
+  function copyWorld(srcDir, destDir, onFile, failedWorlds) {
+    const staging = destDir + '.craftdock-partial';
+    try { fs.rmSync(staging, { recursive: true, force: true }); } catch (_) {}
+    const worldFailures = [];
+    copyTree(srcDir, staging, onFile, 0, worldFailures);
+    const complete = worldFailures.length === 0 && dirBytes(srcDir) === dirBytes(staging);
+    if (complete) {
+      try {
+        fs.rmSync(destDir, { recursive: true, force: true });
+        fs.renameSync(staging, destDir);
+        return true;
+      } catch (_) {}
+    }
+    try { fs.rmSync(staging, { recursive: true, force: true }); } catch (_) {}
+    failedWorlds?.push(path.basename(destDir));
+    return false;
+  }
+
+  function copyGameFiles(gameDir, instanceDir, onFile, failed = null, failedWorlds = null) {
     let copied = 0;
     let entries;
     try { entries = fs.readdirSync(gameDir, { withFileTypes: true }); } catch { return 0; }
@@ -996,10 +1109,27 @@ function createLauncherImporter(options = {}) {
       if (entry.isSymbolicLink()) continue;
       const from = path.join(gameDir, entry.name);
       const to = path.join(instanceDir, entry.name);
-      if (entry.isDirectory()) {
-        copied += copyTree(from, to, onFile);
+      if (entry.isDirectory() && entry.name.toLowerCase() === 'saves') {
+        let worlds;
+        try { worlds = fs.readdirSync(from, { withFileTypes: true }); } catch { worlds = []; }
+        try { fs.mkdirSync(to, { recursive: true }); } catch (_) {}
+        for (const world of worlds) {
+          if (world.isDirectory()) {
+            copyWorld(path.join(from, world.name), path.join(to, world.name), onFile, failedWorlds);
+          } else if (world.isFile() && copyFileVerified(path.join(from, world.name), path.join(to, world.name))) {
+            copied += 1;
+            onFile?.(copied);
+          }
+        }
+      } else if (entry.isDirectory()) {
+        copied += copyTree(from, to, onFile, 0, failed);
       } else if (entry.isFile()) {
-        try { fs.copyFileSync(from, to); copied += 1; onFile?.(copied); } catch {}
+        if (copyFileVerified(from, to)) {
+          copied += 1;
+          onFile?.(copied);
+        } else {
+          failed?.push(to);
+        }
       }
     }
     return copied;
@@ -1041,9 +1171,13 @@ function createLauncherImporter(options = {}) {
     };
 
     let copiedFiles = 0;
+    const copyFailures = [];
+    const failedWorlds = [];
     try {
-      copiedFiles = copyGameFiles(instance.gameDir, instanceDir, onFile);
-      report(68, 'Copying files… done');
+      copiedFiles = copyGameFiles(instance.gameDir, instanceDir, onFile, copyFailures, failedWorlds);
+      report(68, failedWorlds.length
+        ? `Copying files… done (${failedWorlds.length} world${failedWorlds.length === 1 ? '' : 's'} could not be copied)`
+        : 'Copying files… done');
 
       // Old launchers keep their own icon next to the instance; CraftDock's hero
       // reads a data URL, so it travels as one and is saved by the renderer.
@@ -1120,6 +1254,12 @@ function createLauncherImporter(options = {}) {
         warnings: [
           !mcVersion ? 'Minecraft version could not be detected — set it before launching.' : null,
           pack && !pack.id ? 'Pack identity was not recorded by the old launcher, so pack updates cannot be checked.' : null,
+          failedWorlds.length
+            ? `${failedWorlds.length} world${failedWorlds.length === 1 ? '' : 's'} could not be copied cleanly and ${failedWorlds.length === 1 ? 'was' : 'were'} left in the other launcher: ${failedWorlds.slice(0, 3).join(', ')}${failedWorlds.length > 3 ? '…' : ''}`
+            : null,
+          copyFailures.length
+            ? `${copyFailures.length} game file${copyFailures.length === 1 ? '' : 's'} could not be copied — close the other launcher (and pause any sync tool) and import again.`
+            : null,
         ].filter(Boolean),
       };
     } catch (error) {
@@ -1138,4 +1278,6 @@ module.exports = {
   parseMmcPack,
   readIni,
   normalizeLoaderVersion,
+  hashFileSync,
+  sameBytes,
 };

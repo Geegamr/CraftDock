@@ -2155,7 +2155,10 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
     }
 
     // ── Step 5: find java ─────────────────────────────────────
-    const javaInfo = await findBestJava(8, meta.javaPath || null, mcVersion, (msg) => send('progress', msg));
+    // The version JSON states the runtime this release was built for, which is
+    // the only reliable answer for calendar versions (26.1+) and snapshots.
+    const statedJava = Number(vJson.javaVersion?.majorVersion) || 0;
+    const javaInfo = await findBestJava(8, meta.javaPath || null, mcVersion, (msg) => send('progress', msg), statedJava);
     if (javaInfo.warning) send('progress', `⚠ ${javaInfo.warning}`);
     const java = javaInfo.exe;
 
@@ -2236,7 +2239,7 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
           if (installerUrl) {
             const installerJar = path.join(forgeCacheDir, 'installer.jar');
             await downloadFile(installerUrl, installerJar, null, 120000);
-            const javaInfo2 = await findBestJava(17, meta.javaPath || null, mcVersion, (msg) => send('progress', msg));
+            const javaInfo2 = await findBestJava(17, meta.javaPath || null, mcVersion, (msg) => send('progress', msg), statedJava);
             await runCommandAsync(javaInfo2.exe, ['-jar', installerJar, '--installClient', forgeCacheDir], 180000);
             fs.writeFileSync(forgeMarker, JSON.stringify({ mcVersion, loaderVersion, installedAt: Date.now() }));
           }
@@ -3397,17 +3400,21 @@ ipcMain.handle('server-install-modpack', async (event, srv, mrpackUrl) => {
 //  JAVA AUTO-DETECTION
 // ═══════════════════════════════════════════════════════════
 
-// Returns minimum Java major version required for a given MC version string
+// Servers need the same table the client launch uses, so ask the one function.
 function requiredJava(mcVersion) {
-  const [, minor] = mcVersion.split('.').map(Number);
-  if (minor >= 21) return 21;
-  if (minor >= 17) return 17;
-  if (minor >= 16) return 11;
-  return 8;
+  return javaVersionForMc(mcVersion);
 }
+
+// A JRE at a fixed path never changes major version, so positive probes are
+// remembered for the life of the process: detection, the pickers and every
+// launch would otherwise re-spawn java -version for the same handful of paths.
+// Failed probes (0) are never cached, because a path can be filled in later.
+const javaProbeCache = new Map();
 
 // Try running `java -version` at a given path, return major version or 0
 async function probeJava(javaExe) {
+  const cached = javaProbeCache.get(javaExe);
+  if (cached) return cached;
   return new Promise(resolve => {
     const p = spawn(javaExe, ['-version'], { stdio: ['ignore','pipe','pipe'], windowsHide: true, shell: false });
     let out = '';
@@ -3417,22 +3424,41 @@ async function probeJava(javaExe) {
     p.on('close', () => {
       const m = out.match(/version "(?:1\.(\d+)|(\d+))/);
       if (!m) { resolve(0); return; }
-      resolve(parseInt(m[1] || m[2], 10));
+      const version = parseInt(m[1] || m[2], 10);
+      if (version > 0) javaProbeCache.set(javaExe, version);
+      resolve(version);
     });
   });
 }
 
 // ── Java version required by MC version (from official Java compatibility table) ──
+// Two schemes are in use: the 1.x releases up to 1.21.11, and the calendar
+// versions that started at 26.1 (26.1, 26.2, 26.2-snapshot-8…). The calendar era
+// is the first to require Java 25, and reading "26.2" as if it were "1.<minor>"
+// is what used to drop a 26.x pack down to Java 8. Anything unrecognised gets
+// Java 21 rather than silently falling through to Java 8.
 function javaVersionForMc(mcVersion) {
   if (!mcVersion) return 21;
-  const parts  = mcVersion.split('.');
-  const minor  = parseInt(parts[1] || '0', 10);
-  const patch  = parseInt(parts[2] || '0', 10);
-  if (minor >= 21)                             return 21; // 1.21+
-  if (minor === 20 && patch <= 4)              return 21; // 1.20–1.20.4
-  if (minor >= 18)                             return 17; // 1.18–1.19
-  if (minor === 17)                            return 16; // 1.17
-  return 8;                                               // 1.16 and below
+  const raw = String(mcVersion).trim().toLowerCase();
+
+  // Calendar versioning: 26.1 and everything after it needs Java 25.
+  const calendar = raw.match(/^(\d{2})\.(\d{1,2})/);
+  if (calendar) return Number(calendar[1]) >= 26 ? 25 : 21;
+
+  // Weekly snapshots ("24w14a") follow the line they belong to.
+  const weekly = raw.match(/^(\d{2})w\d{2}/);
+  if (weekly) return Number(weekly[1]) >= 24 ? 21 : 17;
+
+  // 1.x releases.
+  const legacy = raw.match(/^1\.(\d+)(?:\.(\d+))?/);
+  if (legacy) {
+    const minor = Number(legacy[1]);
+    if (minor >= 20) return 21;  // 1.20 – 1.21.x
+    if (minor >= 18) return 17;  // 1.18 – 1.19
+    if (minor === 17) return 16; // 1.17
+    return 8;                    // 1.16 and below
+  }
+  return 21;
 }
 
 // ── Launcher-local Java directory: <dataDir>/java/java{8|16|17|21}/ ──────
@@ -3625,18 +3651,151 @@ async function resolveLocalJava(requiredVersion, preferredExe) {
     if (version >= requiredVersion) return { suitable: { exe: cand, version, source: 'system' }, best };
   }
 
-  // 2. Launcher-managed Java (installed by an earlier launch or from Settings)
-  const launcherExe = launcherJavaExe(requiredVersion);
-  if (fs.existsSync(launcherExe)) {
-    const version = await consider(launcherExe, 'launcher-bundled');
-    if (version >= requiredVersion) return { suitable: { exe: launcherExe, version, source: 'launcher-bundled' }, best };
+  // 2. Java another launcher downloaded for itself. ATLauncher, Prism, MultiMC
+  //    and the vanilla launcher all keep their runtimes outside the system
+  //    Java list, so a machine with "no Java installed" can still have the
+  //    exact version this pack needs sitting in one of those folders.
+  for (const cand of otherLauncherJavaCandidates()) {
+    const version = await consider(cand, 'other-launcher');
+    if (version >= requiredVersion) return { suitable: { exe: cand, version, source: 'other-launcher' }, best };
+  }
+
+  // 3. Launcher-managed Java (installed by an earlier launch or from Settings).
+  //    Any installed major that is new enough will do — Java 25 runs a 1.21 pack.
+  for (const managed of installedLauncherJavaMajors()) {
+    if (managed.major < requiredVersion) continue;
+    const version = await consider(managed.exe, 'launcher-bundled');
+    if (version >= requiredVersion) return { suitable: { exe: managed.exe, version, source: 'launcher-bundled' }, best };
   }
 
   return { suitable: null, best };
 }
 
 // Java majors the launcher knows how to install privately.
-const LAUNCHER_JAVA_MAJORS = [8, 16, 17, 21];
+const LAUNCHER_JAVA_MAJORS = [8, 16, 17, 21, 25];
+
+// Folders that never hold a JRE — skipped so a launcher's game data does not
+// turn the runtime hunt into a walk of every mod and world on the disk.
+const JAVA_SCAN_SKIP = new Set([
+  'libraries', 'assets', 'mods', 'saves', 'logs', 'crash-reports', 'resourcepacks',
+  'shaderpacks', 'screenshots', 'config', 'natives', 'versions', 'downloads',
+  'cache', '.git', 'mods.disabled', 'datapacks', 'backups', 'instances',
+]);
+
+// Where the popular launchers keep the Java they downloaded for themselves.
+function otherLauncherJavaRoots() {
+  const env  = process.env;
+  const home = require('os').homedir();
+  const roots = [];
+  if (process.platform === 'win32') {
+    const appData      = env.APPDATA      || path.join(home, 'AppData', 'Roaming');
+    const localAppData = env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    roots.push(
+      // ATLauncher keeps its own JRE in jre/ and Mojang's runtimes (the ones a
+      // 26.x pack needs) under runtimes/minecraft/java-runtime-*/…
+      path.join(appData, 'ATLauncher'),
+      path.join(appData, '.ATLauncher'),
+      path.join(appData, 'PrismLauncher', 'java'),
+      path.join(appData, 'MultiMC', 'java'),
+      path.join(appData, '.minecraft', 'runtime'),
+      path.join(localAppData, 'PrismLauncher', 'java'),
+      // Microsoft Store build of the vanilla launcher
+      path.join(localAppData, 'Packages', 'Microsoft.4297127D64EC6_8wekyb3d8bbwe', 'LocalCache', 'Local', 'runtime'),
+      path.join(home, 'curseforge', 'minecraft', 'Install', 'runtime'),
+      path.join(home, 'Documents', 'curseforge', 'minecraft', 'Install', 'runtime'),
+    );
+  } else if (process.platform === 'darwin') {
+    const support = path.join(home, 'Library', 'Application Support');
+    roots.push(
+      path.join(support, 'PrismLauncher', 'java'),
+      path.join(support, 'MultiMC', 'java'),
+      path.join(support, '.minecraft', 'runtime'),
+    );
+  } else {
+    const share = env.XDG_DATA_HOME || path.join(home, '.local', 'share');
+    roots.push(
+      path.join(share, 'PrismLauncher', 'java'),
+      path.join(share, 'multimc', 'java'),
+      path.join(home, '.minecraft', 'runtime'),
+    );
+  }
+  return roots.filter(root => {
+    try { return fs.statSync(root).isDirectory(); } catch { return false; }
+  });
+}
+
+// Breadth-first hunt for <something>/bin/java[.exe] under one root. `budget` is
+// shared by every root so a huge folder cannot stall a scan.
+function findJavaUnder(root, maxDepth, budget, found, seen) {
+  const exeName = process.platform === 'win32' ? 'java.exe' : 'java';
+  const queue = [{ dir: root, depth: 0 }];
+  while (queue.length && budget.dirs > 0) {
+    const { dir, depth } = queue.shift();
+    budget.dirs -= 1;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const name = entry.name.toLowerCase();
+      if (JAVA_SCAN_SKIP.has(name)) continue;
+      const full = path.join(dir, entry.name);
+      if (name === 'bin') {
+        const candidate = path.join(full, exeName);
+        if (!seen.has(candidate) && fs.existsSync(candidate)) {
+          seen.add(candidate);
+          found.push(candidate);
+        }
+        continue;
+      }
+      if (depth + 1 <= maxDepth) queue.push({ dir: full, depth: depth + 1 });
+    }
+  }
+  return found;
+}
+
+// Discovered once and reused for a minute: the pickers, javaStatus and every
+// launch ask the same question and the folders rarely change.
+let foreignJavaCache = { at: 0, exes: [] };
+
+function otherLauncherJavaCandidates() {
+  const now = Date.now();
+  if (now - foreignJavaCache.at < 60000) return foreignJavaCache.exes;
+  const budget = { dirs: 4000 };
+  const seen    = new Set();
+  const found   = [];
+  for (const root of otherLauncherJavaRoots()) {
+    findJavaUnder(root, 6, budget, found, seen);
+  }
+  foreignJavaCache = { at: now, exes: found };
+  return found;
+}
+
+// Which launcher a discovered runtime belongs to, for the "Java Version" lists.
+function foreignJavaLabel(exePath) {
+  const lower = exePath.toLowerCase();
+  if (lower.includes('atlauncher')) return 'ATLauncher';
+  if (lower.includes('prismlauncher')) return 'Prism Launcher';
+  if (lower.includes('multimc')) return 'MultiMC';
+  if (lower.includes('curseforge')) return 'CurseForge';
+  if (lower.includes(`${path.sep}.minecraft${path.sep}`)) return 'Minecraft launcher';
+  return 'Other launcher';
+}
+
+// Every <dataDir>/java/java<N>/ the launcher installed, smallest first.
+function installedLauncherJavaMajors() {
+  const exeName = process.platform === 'win32' ? 'java.exe' : 'java';
+  const installs = [];
+  let entries;
+  try { entries = fs.readdirSync(launcherJavaDir); } catch { return installs; }
+  for (const subdir of entries) {
+    const match = subdir.match(/^java(\d+)$/i);
+    if (!match) continue;
+    const exe = path.join(launcherJavaDir, subdir, 'bin', exeName);
+    if (!fs.existsSync(exe)) continue;
+    installs.push({ major: Number(match[1]), exe });
+  }
+  return installs.sort((a, b) => a.major - b.major);
+}
 
 async function listLauncherJavaInstalls() {
   const isWin   = process.platform === 'win32';
@@ -3706,11 +3865,14 @@ async function ensureAllJavaMajors(hooks = {}) {
 }
 
 // First-startup view: which Java the launcher will prefer, and which majors are
-// missing entirely. Never downloads anything.
+// missing entirely. Never downloads anything. Java that belongs to another
+// launcher counts as available — it is a real Java on this machine that a
+// launch can use, and reporting it as missing would offer a pointless download.
 async function javaStatus() {
-  const system   = await detectAllJava();
-  const launcher = await listLauncherJavaInstalls();
-  const versions = [...system, ...launcher].map(j => j.version);
+  const detected = await detectAllJava();
+  const system   = detected.filter(j => j.source !== 'launcher-bundled');
+  const launcher = detected.filter(j => j.source === 'launcher-bundled');
+  const versions = detected.map(j => j.version);
   return {
     systemCount: system.length,
     launcherCount: launcher.length,
@@ -3723,9 +3885,13 @@ async function javaStatus() {
 
 // Scan common install locations and return the best java executable.
 // preferredExe: optional path from per-instance override — used first if valid.
+// requiredMajor: the runtime Mojang names in the version JSON, which beats any
+// table because it is what that exact release was built against.
 // Only downloads a Java when no local install can run the requested version.
-async function findBestJava(minVersion, preferredExe, mcVersion, onProgress) {
-  const requiredVersion = mcVersion ? javaVersionForMc(mcVersion) : minVersion;
+async function findBestJava(minVersion, preferredExe, mcVersion, onProgress, requiredMajor) {
+  const stated = Number(requiredMajor) || 0;
+  const requiredVersion = stated > 0 ? stated
+    : mcVersion ? javaVersionForMc(mcVersion) : minVersion;
   const local = await resolveLocalJava(requiredVersion, preferredExe);
   if (local.suitable) return local.suitable;
 
@@ -3954,7 +4120,7 @@ ipcMain.handle('curseforge-mods-search', async (_,query='',gameVersion='',modLoa
 
 // ── Java detection IPC ─────────────────────────────────────
 ipcMain.handle('java-detect', async () => {
-  const versions = [21, 17, 11, 8];
+  const versions = [25, 21, 17, 11, 8];
   const results  = [];
   for (const minVer of versions) {
     const local = await resolveLocalJava(minVer, null);
@@ -4023,14 +4189,35 @@ async function detectAllJava() {
   }
   allCandidates.add('java'); // PATH fallback
 
+  // Every path to probe, with the label the pickers show next to it.
+  const labelled = new Map();
+  for (const cand of allCandidates) labelled.set(cand, 'system');
+  // Java another launcher downloaded for its own instances.
+  for (const exe of otherLauncherJavaCandidates()) {
+    if (!labelled.has(exe)) labelled.set(exe, 'other-launcher');
+  }
+  // Java CraftDock installed privately.
+  for (const install of installedLauncherJavaMajors()) {
+    if (!labelled.has(install.exe)) labelled.set(install.exe, 'launcher-bundled');
+  }
+
   const results = [];
-  for (const cand of allCandidates) {
-    const ver = await probeJava(cand);
-    if (ver > 0 && !results.find(r => r.exe === cand)) {
+  const entries = [...labelled.entries()];
+  // Probed in small batches: a machine with several JREs should not wait for a
+  // process spawn per candidate, front to back.
+  for (let i = 0; i < entries.length; i += 8) {
+    const batch = await Promise.all(entries.slice(i, i + 8).map(async ([cand, source]) => {
+      const version = await probeJava(cand);
+      return { cand, source, version };
+    }));
+    for (const { cand, source, version } of batch) {
+      if (version <= 0 || results.find(r => r.exe === cand)) continue;
       const parts = cand.split(isWin ? '\\' : '/');
       const jdkDir = parts.length >= 3 ? parts[parts.length - 3] : '';
-      const label = jdkDir || (cand === 'java' ? 'System PATH' : path.dirname(path.dirname(cand)));
-      results.push({ exe: cand, version: ver, label });
+      let label = jdkDir || (cand === 'java' ? 'System PATH' : path.dirname(path.dirname(cand)));
+      if (source === 'other-launcher') label = foreignJavaLabel(cand);
+      if (source === 'launcher-bundled') label = 'CraftDock';
+      results.push({ exe: cand, version, label, source });
     }
   }
   return results.sort((a,b) => b.version - a.version);
@@ -4079,6 +4266,42 @@ ipcMain.handle('java-install-cancel', () => {
   if (!javaInstallController) return { success: false, error: 'No Java install is running' };
   javaInstallController.abort();
   return { success: true };
+});
+
+// Install one specific major on demand — what the per-instance picker offers
+// when nothing on the machine can run that pack (a 26.x pack needs Java 25).
+ipcMain.handle('java-ensure-major', async (event, major) => {
+  const wanted = Number(major);
+  if (!Number.isFinite(wanted) || wanted < 8) {
+    return { success: false, error: 'Invalid Java version' };
+  }
+  if (javaInstallController) {
+    return { success: false, error: 'A Java install is already running' };
+  }
+  const controller = new AbortController();
+  javaInstallController = controller;
+  const emit = payload => {
+    if (!event.sender.isDestroyed()) event.sender.send('java-install-progress', payload);
+  };
+  try {
+    emit({ type: 'start', major: wanted });
+    const result = await ensureJavaMajor(wanted, {
+      signal: controller.signal,
+      onProgress: message => emit({ type: 'progress', major: wanted, message }),
+      onPercent: (percent, stats) => emit({
+        type: 'percent', major: wanted, percent,
+        received: Number(stats?.received) || 0,
+        total: Number(stats?.total) || 0,
+        bytesPerSecond: Number(stats?.bytesPerSecond) || 0,
+      }),
+    });
+    emit({ type: 'done', major: wanted, status: result.status });
+    if (result.status === 'error') return { success: false, error: result.error, result };
+    if (result.status === 'cancelled') return { success: false, cancelled: true, result };
+    return { success: true, result };
+  } finally {
+    javaInstallController = null;
+  }
 });
 
 // ── Browse result cache (shared by every browse surface) ────

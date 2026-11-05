@@ -407,3 +407,49 @@ test('the importer module ships inside the packaged app', () => {
   const packageConfig = require('../package.json');
   assert.ok(packageConfig.build.files.includes('launcher-import.js'));
 });
+
+// Pasted worlds are only trusted when the copy reproduces the digest of the file
+// it came from. Size alone proves nothing: a half-written region file or a stale
+// level.dat can match the original byte for byte in length and still be corrupt.
+test('a copy is trusted only when it reproduces the original digest', t => {
+  const root = tempRoot(t);
+  const original  = path.join(root, 'level.dat');
+  const identical = path.join(root, 'level-copy.dat');
+  const rewritten = path.join(root, 'level-rewritten.dat');
+
+  write(original, 'world header v1');
+  write(identical, 'world header v1');
+  write(rewritten, 'world header v2'); // same length, different bytes
+
+  const { sameBytes, hashFileSync } = require('../launcher-import');
+
+  assert.equal(fs.statSync(original).size, fs.statSync(rewritten).size,
+    'the case that matters is a same-size file with different contents');
+  assert.equal(sameBytes(original, identical), true, 'an identical copy passes');
+  assert.equal(sameBytes(original, rewritten), false, 'equal size alone is not proof');
+  assert.equal(hashFileSync(original), hashFileSync(identical), 'the digest comes from the files');
+  assert.notEqual(hashFileSync(original), hashFileSync(rewritten));
+  assert.equal(sameBytes(original, path.join(root, 'missing.dat')), false,
+    'a copy that is not there never passes');
+});
+
+// The original is hashed again after the copy: a file that changed while it was
+// being read produced a torn copy, and that must not be accepted as an import.
+test('a file that changes while it is copied is not accepted', t => {
+  const root = tempRoot(t);
+  const original = path.join(root, 'region.mca');
+  const copy = path.join(root, 'region-copy.mca');
+  write(original, 'unchanged chunks');
+
+  const { sameBytes, hashFileSync } = require('../launcher-import');
+
+  // A digest taken before a later write cannot match the file as it stands now.
+  const before = hashFileSync(original);
+  write(copy, 'unchanged chunks');
+  assert.equal(hashFileSync(copy) === hashFileSync(original), true);
+
+  fs.appendFileSync(original, 'more chunks');
+  assert.equal(sameBytes(original, copy, before), false,
+    'a digest that no longer describes the original is rejected');
+  assert.notEqual(hashFileSync(copy), hashFileSync(original));
+});

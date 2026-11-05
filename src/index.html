@@ -37,6 +37,23 @@
 }
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+/* ── SHARED CONTROLS ── */
+/* One scrollbar everywhere: thin, no track, a quiet accent thumb that firms up
+   on hover. Panels no longer carry their own rules, so nothing falls back to the
+   default light Chromium bar. */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--border-hover)}
+::-webkit-scrollbar-corner{background:transparent}
+/* Checkboxes are drawn by the theme instead of the platform: one size, a dark
+   field that matches the inputs, and the accent blue with a white tick when
+   ticked. Previously some were native blue, some indigo, some system grey. */
+input[type=checkbox]{-webkit-appearance:none;appearance:none;width:13px;height:13px;flex-shrink:0;vertical-align:middle;background:var(--bg-input);border:1px solid rgba(255,255,255,0.22);border-radius:3px;cursor:pointer;transition:background 0.12s,border-color 0.12s}
+input[type=checkbox]:hover{border-color:var(--border-hover)}
+input[type=checkbox]:checked{background:var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.4l3 3L12.5 4.9' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/9px 9px no-repeat;border-color:var(--accent)}
+input[type=checkbox]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);color:var(--text-primary);font-family:'Manrope','Segoe UI',system-ui,sans-serif;font-size:14px}
 
 /* ── TITLEBAR ── */
@@ -84,8 +101,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .tabs-search input::placeholder{color:var(--text-muted)}
 .tabs-search-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--text-muted);width:13px;height:13px}
 .tabs-list{flex:1;overflow-y:auto;padding:0 8px 8px}
-.tabs-list::-webkit-scrollbar{width:4px}
-.tabs-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .group-header{display:flex;align-items:center;gap:6px;padding:6px 6px 4px;cursor:pointer;border-radius:var(--radius-sm);transition:background 0.12s;user-select:none}
 .group-header:hover{background:rgba(255,255,255,0.03)}
 .group-chevron{width:12px;height:12px;color:var(--text-muted);transition:transform 0.2s;flex-shrink:0}
@@ -93,9 +108,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .group-label{font-size:10px;font-weight:700;letter-spacing:0.1em;color:var(--text-muted);text-transform:uppercase;flex:1}
 .group-count{font-size:10px;color:var(--text-muted);background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:20px}
 .group-items.collapsed{display:none}
-.instance-item{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:var(--radius-sm);cursor:pointer;transition:background 0.12s;position:relative;border:1px solid transparent}
-.instance-item:hover{background:var(--bg-card)}
-.instance-item.active{background:var(--accent-subtle);border-color:var(--border-hover)}
+/* Row highlights are a separate layer that only changes opacity, so hovering
+   never repaints the row, its contents or the list behind it. Restyling a row's
+   own background or border instead made the whole list repaint on every hover
+   (measured 180-420ms of blocked main thread per row change, against 16.8ms for
+   this technique). Same approach as the icon rail. */
+.instance-item{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:var(--radius-sm);cursor:pointer;position:relative;border:1px solid transparent}
+.instance-item::after{content:'';position:absolute;inset:-1px;border-radius:inherit;background:var(--bg-card);border:1px solid var(--border);opacity:0;pointer-events:none;z-index:0;will-change:opacity;transform:translateZ(0);transition:none}
+.instance-item>*{position:relative;z-index:1}
+.instance-item:hover::after{opacity:1}
+.instance-item.active::after{background:var(--accent-subtle);border-color:var(--border-hover);opacity:1}
 .instance-icon{width:32px;height:32px;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:16px}
 .instance-info{flex:1;min-width:0}
 .instance-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -109,11 +131,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .main-content{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg-mid)}
 .page{flex:1;overflow:hidden;display:none;flex-direction:column;min-height:0;contain:layout style}
 .page.active{display:flex;flex-direction:column}
-/* Console scrollbar */
-#appConsoleOut::-webkit-scrollbar{width:6px}
-#appConsoleOut::-webkit-scrollbar-track{background:rgba(0,0,0,0.2)}
-#appConsoleOut::-webkit-scrollbar-thumb{background:rgba(99,102,241,0.4);border-radius:3px}
-#appConsoleOut::-webkit-scrollbar-thumb:hover{background:rgba(99,102,241,0.7)}
 
 /* ── HERO ── */
 .instance-hero{height:180px;position:relative;flex-shrink:0;overflow:hidden;background:var(--bg-darkest)}
@@ -157,18 +174,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 
 /* ── CONTENT AREA ── */
 .content-area{flex:1;overflow-y:auto;padding:20px 24px;will-change:scroll-position;contain:strict}
-.content-area::-webkit-scrollbar{width:5px}
-.content-area::-webkit-scrollbar-track{background:transparent}
-.content-area::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:10px}
-.content-area::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.22)}
-#instConsole::-webkit-scrollbar{width:5px}
-#instConsole::-webkit-scrollbar-track{background:transparent}
-#instConsole::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:10px}
-#instConsole::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.22)}
-#configEditorTextarea::-webkit-scrollbar{width:6px}
-#configEditorTextarea::-webkit-scrollbar-track{background:rgba(0,0,0,0.2)}
-#configEditorTextarea::-webkit-scrollbar-thumb{background:rgba(99,102,241,0.35);border-radius:4px}
-#configEditorTextarea::-webkit-scrollbar-thumb:hover{background:rgba(99,102,241,0.6)}
 
 /* ── CARDS/FORMS ── */
 .card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
@@ -210,8 +215,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 /* ── BROWSE ── */
 .browse-layout{display:flex;flex:1;overflow:hidden}
 .browse-sidebar{width:220px;flex-shrink:0;border-right:1px solid var(--border);background:var(--bg-panel);overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:12px}
-.browse-sidebar::-webkit-scrollbar{width:6px}
-.browse-sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .browse-filter-group{display:flex;flex-direction:column;gap:4px}
 .browse-filter-label{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;padding:2px 4px;margin-bottom:2px}
 .browse-filter-btn{padding:6px 10px;border-radius:var(--radius-sm);border:1px solid transparent;background:transparent;color:var(--text-muted);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:all .14s;text-align:left;display:flex;align-items:center;gap:7px}
@@ -230,8 +233,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .source-tab:hover:not(.active){border-color:var(--border-hover);color:var(--text-secondary)}
 /* List view for browse results */
 .browse-list{display:flex;flex-direction:column;gap:0;padding:0;overflow-y:auto;flex:1}
-.browse-list::-webkit-scrollbar{width:6px}
-.browse-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .bpl-row{display:flex;align-items:center;gap:14px;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background .13s}
 .bpl-row:hover{background:var(--bg-card)}
 .bpl-icon{width:46px;height:46px;border-radius:8px;overflow:hidden;flex-shrink:0;background:var(--bg-panel);border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
@@ -246,8 +247,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .bpl-stat{font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:3px}
 /* Still keep old grid CSS for mod browser */
 .mod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;padding:20px;overflow-y:auto;align-content:start}
-.mod-grid::-webkit-scrollbar{width:6px}
-.mod-grid::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .mod-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;transition:all 0.18s;display:flex;flex-direction:column;gap:10px}
 .mod-card:hover{border-color:var(--border-hover);background:var(--bg-card-hover);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,0.3)}
 .mod-card-header{display:flex;gap:10px;align-items:flex-start}
@@ -264,8 +263,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 
 /* ── HOME ── */
 .home-view{padding:24px;overflow-y:auto;flex:1}
-.home-view::-webkit-scrollbar{width:6px}
-.home-view::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .home-greeting{font-size:24px;font-weight:800;margin-bottom:4px}
 .home-sub{color:var(--text-secondary);margin-bottom:24px;font-size:13px}
 .recent-item{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all 0.15s;margin-bottom:8px}
@@ -276,8 +273,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 /* ── SKIN MANAGER ── */
 .skin-manager{padding:10px 20px 8px;flex-shrink:0;border-bottom:1px solid var(--border);background:var(--bg-panel)}
 .skin-workspace{display:grid;grid-template-columns:250px 1fr;gap:16px;padding:16px 20px 36px;overflow-y:auto;flex:1;min-height:0;align-items:start}
-.skin-workspace::-webkit-scrollbar{width:6px}
-.skin-workspace::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 #page-skins{flex-direction:column;min-height:0}
 .skin-preview-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
 .skin-canvas-wrap{min-height:0}
@@ -342,8 +337,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 
 /* ── ACCOUNTS ── */
 .accounts-view{padding:24px;overflow-y:auto;flex:1}
-.accounts-view::-webkit-scrollbar{width:6px}
-.accounts-view::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .accounts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:24px}
 .account-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;transition:all 0.15s}
 .account-card:hover{border-color:var(--border-hover)}
@@ -355,8 +348,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 
 /* ── SETTINGS ── */
 .settings-view{padding:24px;max-width:760px;overflow-y:auto;flex:1;will-change:scroll-position;contain:strict}
-.settings-view::-webkit-scrollbar{width:6px}
-.settings-view::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .settings-section{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden}
 .settings-section-header{padding:14px 18px;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);display:flex;align-items:center;gap:8px}
 .java-status{display:flex;gap:8px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--border)}
@@ -368,8 +359,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 
 /* ── SERVER ── */
 .server-view{padding:24px;overflow-y:auto;flex:1}
-.server-view::-webkit-scrollbar{width:6px}
-.server-view::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
 /* ── MODALS ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:1000}
@@ -424,8 +413,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .mb-filter-chip.active{border-color:var(--accent);color:var(--accent-bright);background:var(--accent-subtle)}
 .mb-filter-chip:hover:not(.active){border-color:var(--border-hover);color:var(--text-secondary)}
 .mb-list{flex:1;overflow-y:auto;padding:12px}
-.mb-list::-webkit-scrollbar{width:4px}
-.mb-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 .mb-mod-row{display:flex;gap:12px;align-items:center;padding:10px;border-radius:var(--radius);border:1px solid transparent;cursor:pointer;transition:all 0.15s;margin-bottom:4px}
 .mb-mod-row:hover{background:var(--bg-card);border-color:var(--border)}
 .mb-mod-icon{width:44px;height:44px;border-radius:8px;flex-shrink:0;object-fit:cover;background:var(--bg-panel)}
@@ -558,16 +545,30 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
   justify-content:space-between; border-bottom:1px solid var(--border); flex-shrink:0;
 }
 .srv-list { flex:1; overflow-y:auto; padding:8px; }
-.srv-list::-webkit-scrollbar{width:6px}
-.srv-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+/* Same layered highlight as the instance list: the row itself never changes
+   colour, only the opacity of its overlay, so hover costs no repaint. */
 .srv-list-item {
-  padding:10px; border-radius:var(--radius-sm); cursor:pointer;
-  margin-bottom:4px; border:1px solid transparent; transition:all 0.15s;
+  padding:10px; border-radius:var(--radius-sm); cursor:grab;
+  margin-bottom:4px; border:1px solid transparent; position:relative;
   display:flex; align-items:center; gap:10px;
 }
-.srv-list-item:hover  { background:var(--bg-card); border-color:var(--border); }
-.srv-list-item.active { background:var(--accent-subtle); border-color:var(--accent); }
-.srv-list-item.drag-over { border-color:var(--accent); background:rgba(99,102,241,0.1); border-style:dashed; }
+.srv-list-item::after{content:'';position:absolute;inset:-1px;border-radius:inherit;background:var(--bg-card);border:1px solid var(--border);opacity:0;pointer-events:none;z-index:0;will-change:opacity;transform:translateZ(0);transition:none}
+.srv-list-item>*{position:relative;z-index:1}
+.srv-list-item:hover::after  { opacity:1; }
+.srv-list-item.active::after { background:var(--accent-subtle); border-color:var(--accent); opacity:1; }
+/* Reorder feedback: the pressed row lifts into a floating copy that grows and
+   tilts, and the rows it passes slide aside to open the space it will land in.
+   Nothing is drawn in place of the row, and the copy is a composited layer so
+   moving it does not repaint the list. */
+.srv-drag-ghost{position:fixed;margin:0;z-index:3000;pointer-events:none;transform-origin:50% 50%;box-shadow:0 16px 34px rgba(0,0,0,0.55);will-change:transform}
+.srv-drag-ghost::after{opacity:1}
+.srv-drag-origin{visibility:hidden}
+.srv-list.srv-dragging .srv-list-item{transition:transform .16s ease;will-change:transform}
+/* The origin has to disappear in the same frame it is lifted: visibility is in
+   the global transition list, and a discrete visibility fade would leave the
+   original row painted under the floating copy for the whole transition. */
+.srv-list.srv-dragging .srv-list-item.srv-drag-origin{transition:none}
+body.srv-drag-active{user-select:none;cursor:grabbing}
 .srv-status-dot {
   width:8px; height:8px; border-radius:50%; flex-shrink:0; background:var(--text-muted);
 }
@@ -577,8 +578,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .srv-detail {
   flex:1; overflow-y:auto; display:flex; flex-direction:column;
 }
-.srv-detail::-webkit-scrollbar{width:6px}
-.srv-detail::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .srv-detail-header {
   padding:16px 20px; border-bottom:1px solid var(--border); flex-shrink:0;
   display:flex; align-items:center; gap:12px;
@@ -595,8 +594,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .srv-tab:hover  { color:var(--text-primary); }
 .srv-tab.active { color:var(--accent-bright); border-bottom-color:var(--accent); }
 .srv-panel { display:none; flex:1; overflow-y:auto; padding:20px; }
-.srv-panel::-webkit-scrollbar{width:6px}
-.srv-panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .srv-panel.active { display:block; }
 .srv-console {
   background:#0a0f1a; border:1px solid var(--border); border-radius:var(--radius);
@@ -604,8 +601,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
   padding:12px; height:300px; overflow-y:auto; white-space:pre-wrap;
   word-break:break-all; line-height:1.5;
 }
-.srv-console::-webkit-scrollbar{width:6px}
-.srv-console::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .srv-console-input {
   flex:1; background:#0a0f1a; border:1px solid var(--border); border-radius:var(--radius-sm);
   color:#a3e635; font-family:monospace; font-size:11px; padding:6px 10px; outline:none;
@@ -654,7 +649,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
     <img src="../assets/icon.svg" width="20" height="20" style="border-radius:4px;image-rendering:pixelated;flex-shrink:0" alt="CraftDock">
     CRAFTDOCK
   </div>
-  <div class="titlebar-center" data-tauri-drag-region><span>v<span class="app-version">0.8.1</span></span><span class="beta-badge">Public Beta</span></div>
+  <div class="titlebar-center" data-tauri-drag-region><span>v<span class="app-version">0.8.4</span></span><span class="beta-badge">Public Beta</span></div>
   <div class="titlebar-controls">
     <button class="tc-btn min" onclick="winCtrl('minimize')" aria-label="Minimize" title="Minimize">─</button>
     <button class="tc-btn max" onclick="winCtrl('maximize')" aria-label="Maximize" title="Maximize">□</button>
@@ -1148,7 +1143,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         <div class="browse-filter-label" style="display:flex;justify-content:space-between;align-items:center">
           MC Version
           <label style="font-size:10px;font-weight:400;color:var(--text-muted);display:flex;align-items:center;gap:4px;cursor:pointer">
-            <input type="checkbox" id="browseShowSnapshots" onchange="populateVersionFilters(true);triggerBrowse()" style="cursor:pointer">
+            <input type="checkbox" id="browseShowSnapshots" onchange="populateVersionFilters(true);triggerBrowse()">
             Snapshots
           </label>
         </div>
@@ -1520,7 +1515,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         <div style="font-size:11px;color:var(--text-muted);font-weight:600">Minecraft Version</div>
         <div style="display:flex;align-items:center;gap:6px">
           <label style="font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:4px;cursor:pointer">
-            <input type="checkbox" id="csShowSnapshots" onchange="loadMcVersions()" style="width:12px;height:12px;accent-color:var(--accent)">
+            <input type="checkbox" id="csShowSnapshots" onchange="loadMcVersions()">
             Show snapshots
           </label>
         </div>
@@ -1599,7 +1594,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 <div class="page" id="page-settings">
   <div class="settings-view">
     <div style="font-size:18px;font-weight:800;margin-bottom:4px">Settings</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v<span class="app-version">0.8.1</span></div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v<span class="app-version">0.8.4</span></div>
 
     <!-- Java Management -->
     <div class="settings-section">
@@ -1617,9 +1612,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;font-size:11px">
           <div style="padding:5px 0;color:var(--text-secondary);font-weight:700;border-bottom:1px solid var(--border)">Minecraft Version</div>
           <div style="padding:5px 0;color:var(--text-secondary);font-weight:700;border-bottom:1px solid var(--border)">Java Version</div>
-          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">1.21+</div>
-          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 21</div>
-          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">1.20 – 1.20.4</div>
+          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">26.1 and later</div>
+          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 25</div>
+          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">1.20 – 1.21</div>
           <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 21</div>
           <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">1.18 – 1.19</div>
           <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 17</div>
@@ -1764,7 +1759,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Version</div></div>
-        <span style="font-size:12px;color:var(--text-muted)">CraftDock v<span class="app-version">0.8.1</span></span>
+        <span style="font-size:12px;color:var(--text-muted)">CraftDock v<span class="app-version">0.8.4</span></span>
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Electron version</div></div>
@@ -1801,7 +1796,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <button class="btn-ghost" style="width:auto;padding:5px 12px;font-size:11px" onclick="clearAppConsole()">Clear</button>
     </div>
   </div>
-  <div id="appConsoleOut" style="flex:1;min-height:0;overflow-y:scroll;padding:10px 20px;font-family:'Consolas','Fira Mono',monospace;font-size:11.5px;line-height:1.6;background:var(--bg-darkest);white-space:pre-wrap;word-break:break-all;scrollbar-width:thin;scrollbar-color:rgba(99,102,241,0.4) rgba(0,0,0,0.2)"></div>
+  <div id="appConsoleOut" style="flex:1;min-height:0;overflow-y:scroll;padding:10px 20px;font-family:'Consolas','Fira Mono',monospace;font-size:11.5px;line-height:1.6;background:var(--bg-darkest);white-space:pre-wrap;word-break:break-all"></div>
 </div>
 </div><!-- main-content -->
 </div><!-- app-body -->
@@ -1834,11 +1829,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <div style="font-size:11px;color:var(--text-muted);font-weight:600">Minecraft Version</div>
         <label style="font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:4px;cursor:pointer">
-          <input type="checkbox" id="vmShowSnaps" onchange="vmFilterVersions()" style="width:12px;height:12px;accent-color:var(--accent)"> Snapshots
+          <input type="checkbox" id="vmShowSnaps" onchange="vmFilterVersions()"> Snapshots
         </label>
       </div>
       <input class="modal-input" id="vmSearch" placeholder="Search version e.g. 1.20..." style="margin-bottom:8px;font-family:monospace" oninput="vmFilterVersions()">
-      <div id="vmVersionList" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);scrollbar-width:thin;scrollbar-color:rgba(99,102,241,0.4) transparent">
+      <div id="vmVersionList" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-input)">
         <div style="text-align:center;padding:24px;color:var(--text-muted);font-size:12px">
           <div class="launch-spinner" style="width:16px;height:16px;border-width:2px;margin:0 auto 8px"></div>
           Loading versions from Mojang...
@@ -2125,7 +2120,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <label style="font-size:11px;color:var(--text-muted);white-space:nowrap">Filter:</label>
       <input id="resVersionFilter" class="settings-input" placeholder="Search versions…" style="flex:1;padding:5px 10px;font-size:11px" oninput="filterResVersions(this.value)">
       <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);cursor:pointer;white-space:nowrap">
-        <input type="checkbox" id="resVersionCompatOnly" onchange="filterResVersions(document.getElementById('resVersionFilter').value)" style="cursor:pointer"> My MC version only
+        <input type="checkbox" id="resVersionCompatOnly" onchange="filterResVersions(document.getElementById('resVersionFilter').value)"> My MC version only
       </label>
     </div>
     <div id="resVersionList" style="overflow-y:auto;flex:1;padding:6px 8px"></div>
@@ -2269,7 +2264,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       </div>
       <div id="liInstanceList" style="max-height:320px;overflow-y:auto"></div>
       <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);margin-top:10px;cursor:pointer">
-        <input type="checkbox" id="liSelectAll" onchange="liToggleAll(this.checked)" style="accent-color:#6366f1"> Select all
+        <input type="checkbox" id="liSelectAll" onchange="liToggleAll(this.checked)"> Select all
       </label>
     </div>
 
@@ -2447,11 +2442,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em">Mod Version</div>
         <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-muted);cursor:pointer">
-          <input type="checkbox" id="itiShowAll" onchange="_itiToggleShowAll()" style="accent-color:#6366f1;width:11px;height:11px">
+          <input type="checkbox" id="itiShowAll" onchange="_itiToggleShowAll()">
           Show all versions
         </label>
       </div>
-      <div id="itiVersionList" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(99,102,241,0.4) transparent"></div>
+      <div id="itiVersionList" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto"></div>
     </div>
     <div id="itiStatus" style="font-size:11px;color:var(--text-muted);min-height:18px;margin-top:10px"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
@@ -2535,7 +2530,7 @@ const hasCraftDockInstances = typeof window.craftdockInstance !== 'undefined';
 // The one version string: everything the UI shows and every API call it makes
 // reads this. Startup refreshes it from package.json through the main process,
 // so the literal here only has to cover the browser fallback and the first paint.
-let APP_VERSION = '0.8.1';
+let APP_VERSION = '0.8.4';
 
 // Everything that prints the version reads .app-version, and the main process
 // owns the value, so bumping package.json is the only edit a release needs.
@@ -7873,8 +7868,185 @@ async function saveSkinToLibrary(name, dataUrl) {
 }
 
 // ── Sidebar ───────────────────────────────────────────────
-let _srvDragId = null;
-let _srvDragOverId = null;
+// Reordering is a press on the row itself, with no grip handle. After a short
+// hold (or a few pixels of movement) the row lifts into a floating copy, grown
+// and tilted, and the rows it passes slide aside so the space it would land in
+// becomes properly empty instead of being marked with an insertion line.
+// Releasing inside the window drops it there; leaving the window cancels and
+// leaves the saved order untouched.
+const SRV_DRAG_SCALE = 1.15;
+const SRV_DRAG_TILT  = 15;
+let _srvDrag = null;
+let _srvSuppressClick = false;
+
+function _srvGhostTransform(drag, x, y) {
+  return 'translate3d(' + (x - drag.startX) + 'px,' + (y - drag.startY) + 'px,0) scale(' + SRV_DRAG_SCALE + ') rotate(' + SRV_DRAG_TILT + 'deg)';
+}
+
+function _srvBeginDrag(list, item, pointerId, origin) {
+  const rows = Array.from(list.querySelectorAll('.srv-list-item'));
+  const from = rows.indexOf(item);
+  if (from < 0) return null;
+  const rect = item.getBoundingClientRect();
+  const ghost = item.cloneNode(true);
+  ghost.classList.add('srv-drag-ghost');
+  ghost.style.left   = rect.left + 'px';
+  ghost.style.top    = rect.top + 'px';
+  ghost.style.width  = rect.width + 'px';
+  ghost.style.height = rect.height + 'px';
+  document.body.appendChild(ghost);
+
+  const drag = {
+    list, item, ghost, pointerId, from, to: from, moved: false,
+    startX: origin.x, startY: origin.y,
+    scrollTop: list.scrollTop,
+    slot: rect.height + (parseFloat(getComputedStyle(item).marginBottom) || 0),
+    others: rows.filter(r => r !== item).map(r => {
+      const b = r.getBoundingClientRect();
+      return { row: r, index: rows.indexOf(r), top: b.top, height: b.height };
+    })
+  };
+  ghost.style.transform = _srvGhostTransform(drag, origin.x, origin.y);
+  item.classList.add('srv-drag-origin');
+  list.classList.add('srv-dragging');
+  document.body.classList.add('srv-drag-active');
+  return drag;
+}
+
+function _srvUpdateDrag(drag, x, y) {
+  drag.ghost.style.transform = _srvGhostTransform(drag, x, y);
+  const scrolled = drag.list.scrollTop - drag.scrollTop;
+  // How many of the remaining rows sit above the pointer: that is the gap the
+  // row would drop into, counted without the dragged row.
+  let to = 0;
+  for (const entry of drag.others) {
+    if (y > entry.top - scrolled + entry.height / 2) to++;
+  }
+  if (to === drag.to) return;
+  drag.to = to;
+  for (const entry of drag.others) {
+    const i = entry.index;
+    const shift = (drag.from < i && i <= to) ? -drag.slot : (to <= i && i < drag.from) ? drag.slot : 0;
+    entry.row.style.transform = shift ? 'translateY(' + shift + 'px)' : '';
+  }
+}
+
+async function _srvEndDrag(commit) {
+  const drag = _srvDrag;
+  if (!drag) return;
+  _srvDrag = null;
+  const { list, item, ghost, from, to } = drag;
+  ghost.remove();
+  item.classList.remove('srv-drag-origin');
+  document.body.classList.remove('srv-drag-active');
+  drag.others.forEach(entry => { entry.row.style.transform = ''; });
+  // Let the rows slide back under the transition before it is taken away again.
+  setTimeout(() => list.classList.remove('srv-dragging'), 220);
+  if (!commit || to === from) return;
+  const all = await ServerStore.getAll();
+  if (from >= all.length) return;
+  const [moved] = all.splice(from, 1);
+  all.splice(to, 0, moved);
+  await Store.set('craftdock:servers2', all);
+  await renderSrvList();
+}
+
+// True while the pointer sits on the outer edge of the app window, which is
+// where a drag leaves the app and has to be abandoned.
+function _srvPointerOutsideWindow(e) {
+  return e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth - 1 || e.clientY >= window.innerHeight - 1;
+}
+
+function _srvBindReorder(list) {
+  if (list.dataset.reorderBound) return;
+  list.dataset.reorderBound = '1';
+  let press = null;
+
+  // Once a row is lifted the pointer is tracked on the window, so the drag keeps
+  // working while it is dragged over other panels, and releasing anywhere ends
+  // it instead of stranding the floating copy.
+  const detach = drag => {
+    window.removeEventListener('pointermove', drag.onMove, true);
+    window.removeEventListener('pointerup', drag.onUp, true);
+    window.removeEventListener('pointercancel', drag.onCancel, true);
+  };
+
+  const cancelDrag = () => {
+    if (!_srvDrag) return;
+    _srvSuppressClick = true;
+    finishDrag(false);
+  };
+
+  const finishDrag = commit => {
+    const drag = _srvDrag;
+    if (!drag) return;
+    detach(drag);
+    press = null;
+    _srvEndDrag(commit);
+  };
+
+  const onDragMove = e => {
+    const drag = _srvDrag;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    if (_srvPointerOutsideWindow(e)) { cancelDrag(); return; }
+    if (Math.abs(e.clientX - drag.startX) > 2 || Math.abs(e.clientY - drag.startY) > 2) drag.moved = true;
+    _srvUpdateDrag(drag, e.clientX, e.clientY);
+  };
+
+  const onDragUp = e => {
+    const drag = _srvDrag;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    _srvSuppressClick = drag.moved || drag.to !== drag.from;
+    finishDrag(!_srvPointerOutsideWindow(e));
+  };
+
+  const begin = () => {
+    if (!press || _srvDrag) return;
+    clearTimeout(press.timer);
+    const drag = _srvBeginDrag(list, press.item, press.pointerId, press);
+    if (!drag) { press = null; return; }
+    _srvDrag = drag;
+    drag.onMove   = onDragMove;
+    drag.onUp     = onDragUp;
+    drag.onCancel = e => { if (e.pointerId === drag.pointerId) cancelDrag(); };
+    window.addEventListener('pointermove', drag.onMove, true);
+    window.addEventListener('pointerup', drag.onUp, true);
+    window.addEventListener('pointercancel', drag.onCancel, true);
+  };
+
+  list.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || _srvDrag) return;
+    _srvSuppressClick = false;
+    const item = e.target.closest ? e.target.closest('.srv-list-item') : null;
+    if (!item || !list.contains(item)) return;
+    press = { item, pointerId: e.pointerId, x: e.clientX, y: e.clientY, timer: null };
+    press.timer = setTimeout(begin, 80);
+  });
+
+  list.addEventListener('pointermove', e => {
+    if (!press || _srvDrag || e.pointerId !== press.pointerId) return;
+    if (Math.abs(e.clientX - press.x) < 5 && Math.abs(e.clientY - press.y) < 5) return;
+    begin();
+  });
+
+  list.addEventListener('pointerup', e => {
+    if (!press || _srvDrag || e.pointerId !== press.pointerId) return;
+    clearTimeout(press.timer);
+    press = null;
+  });
+
+  // The pointer leaving the document means it left the app window.
+  document.addEventListener('pointerout', e => {
+    if (!_srvDrag || e.pointerId !== _srvDrag.pointerId || e.relatedTarget) return;
+    cancelDrag();
+  });
+
+  window.addEventListener('blur', cancelDrag);
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') cancelDrag();
+  });
+}
 
 async function renderSrvList() {
   const servers = await ServerStore.getAll();
@@ -7884,19 +8056,16 @@ async function renderSrvList() {
     list.innerHTML = '<div style="text-align:center;padding:30px 16px;color:var(--text-muted);font-size:12px">No servers yet</div>';
     return;
   }
+  _srvBindReorder(list);
   list.innerHTML = '';
   for (const srv of servers) {
     const item = document.createElement('div');
     item.className = 'srv-list-item' + (srv.id === activeServerId ? ' active' : '');
     item.dataset.srvId = srv.id;
-    item.draggable = true;
     const dotCls  = srv.status === 'running' ? 'running' : srv.status === 'installing' ? 'installing' : 'stopped';
     const swColor = SW_COLORS[srv.software] || '#6b7280';
     item.innerHTML =
-      '<div style="cursor:grab;color:var(--text-muted);padding:0 2px 0 0;opacity:0.4;flex-shrink:0" title="Drag to reorder">'
-      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="10" height="16"><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="18" x2="16" y2="18"/></svg>'
-      + '</div>'
-      + '<div class="srv-status-dot ' + dotCls + '"></div>'
+      '<div class="srv-status-dot ' + dotCls + '"></div>'
       + (srv.iconUrl
         ? '<img src="'+srv.iconUrl+'" style="width:28px;height:28px;border-radius:5px;object-fit:cover;flex-shrink:0">'
         : '<div style="width:28px;height:28px;border-radius:5px;background:'+swColor+'22;border:1px solid '+swColor+'44;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="'+swColor+'" stroke-width="2" width="14" height="14"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>')
@@ -7904,38 +8073,10 @@ async function renderSrvList() {
       + '<div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(srv.name)+'</div>'
       + '<div style="font-size:10px;color:var(--text-muted);margin-top:1px">'+escHtml(srv.version)+' · '+escHtml(srv.software)+'</div>'
       + '</div>';
-    item.onclick = () => openServerDetail(srv.id);
-    // Drag events
-    item.addEventListener('dragstart', e => {
-      _srvDragId = srv.id;
-      e.dataTransfer.effectAllowed = 'move';
-      setTimeout(() => item.style.opacity = '0.4', 0);
-    });
-    item.addEventListener('dragend', () => {
-      item.style.opacity = '';
-      list.querySelectorAll('.srv-list-item').forEach(i => i.classList.remove('drag-over'));
-    });
-    item.addEventListener('dragover', e => {
-      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
-      if (_srvDragId !== srv.id) {
-        list.querySelectorAll('.srv-list-item').forEach(i => i.classList.remove('drag-over'));
-        item.classList.add('drag-over');
-        _srvDragOverId = srv.id;
-      }
-    });
-    item.addEventListener('drop', async e => {
-      e.preventDefault();
-      if (!_srvDragId || _srvDragId === srv.id) return;
-      const all = await ServerStore.getAll();
-      const fromIdx = all.findIndex(s => s.id === _srvDragId);
-      const toIdx   = all.findIndex(s => s.id === srv.id);
-      if (fromIdx < 0 || toIdx < 0) return;
-      const [moved] = all.splice(fromIdx, 1);
-      all.splice(toIdx, 0, moved);
-      await Store.set('craftdock:servers2', all);
-      _srvDragId = null; _srvDragOverId = null;
-      await renderSrvList();
-    });
+    item.onclick = () => {
+      if (_srvSuppressClick) { _srvSuppressClick = false; return; }
+      openServerDetail(srv.id);
+    };
     list.appendChild(item);
   }
 }
@@ -8639,7 +8780,7 @@ async function openServerDetail(id) {
             </div>
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--text-secondary)">
-                <input type="checkbox" id="srvResetBonusChest-${srv.id}" style="width:14px;height:14px;accent-color:var(--accent);cursor:pointer">
+                <input type="checkbox" id="srvResetBonusChest-${srv.id}">
                 Generate with Bonus Chest
               </label>
               <span style="font-size:10px;color:var(--text-muted)">(starter items spawned near world origin)</span>
@@ -9180,6 +9321,27 @@ async function savePerfSettings(id) {
 }
 
 // ─── Java picker helpers ───────────────────────────────────────────────────
+// Java major a Minecraft version needs. Mirrors the table in the main process:
+// the calendar versions (26.1, 26.2, 26.2-snapshot-8…) are the first to need
+// Java 25, and reading "26.2" as "1.<minor>" used to pick Java 8 for them.
+function javaRequiredForMc(mcVersion) {
+  const raw = String(mcVersion || '').trim().toLowerCase();
+  if (!raw) return 21;
+  const calendar = raw.match(/^(\d{2})\.(\d{1,2})/);
+  if (calendar) return Number(calendar[1]) >= 26 ? 25 : 21;
+  const weekly = raw.match(/^(\d{2})w\d{2}/);
+  if (weekly) return Number(weekly[1]) >= 24 ? 21 : 17;
+  const legacy = raw.match(/^1\.(\d+)(?:\.(\d+))?/);
+  if (legacy) {
+    const minor = Number(legacy[1]);
+    if (minor >= 20) return 21;
+    if (minor >= 18) return 17;
+    if (minor === 17) return 16;
+    return 8;
+  }
+  return 21;
+}
+
 async function scanJavaInstalls(id) {
   const listEl = document.getElementById('javaPickerList-' + id);
   if (!listEl) return;
@@ -9196,16 +9358,17 @@ async function scanJavaInstalls(id) {
   const srv = (await ServerStore.getAll()).find(s => s.id === id);
   const current = document.getElementById('srvSettJavaPath-' + id)?.value.trim() || srv?.javaPath || '';
 
+  // Required Java for this server's MC version
+  const reqVer = javaRequiredForMc(srv?.version || '1.21');
+
   if (!installs.length) {
-    listEl.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">No Java installs found. Paste a path manually below.</div>';
+    listEl.innerHTML = `<div style="font-size:11px;color:var(--text-muted)">No Java installs found. Paste a path manually below.</div>
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;border:1px solid rgba(99,102,241,0.35);background:rgba(99,102,241,0.1);margin-top:6px">
+        <span style="font-size:11px;color:#a5b4fc;flex:1;min-width:0">Minecraft ${escHtml(srv?.version || '?')} needs Java ${reqVer}+.</span>
+        <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px;flex-shrink:0" onclick="downloadSrvJava(${reqVer},'${id}')">Download Java ${reqVer}</button>
+      </div>`;
     return;
   }
-
-  // Required Java for this server's MC version
-  const reqVer = (() => {
-    const minor = parseInt((srv?.version || '1.21').split('.')[1] || '21', 10);
-    if (minor >= 21) return 21; if (minor >= 17) return 17; if (minor >= 16) return 11; return 8;
-  })();
 
   let html = '';
   // Add "Auto-detect" option first
@@ -9233,7 +9396,35 @@ async function scanJavaInstalls(id) {
       + `</div>`
       + `</div>`;
   }
+  if (!installs.some(inst => inst.version >= reqVer)) {
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;border:1px solid rgba(99,102,241,0.35);background:rgba(99,102,241,0.1);margin-top:6px">
+      <span style="font-size:11px;color:#a5b4fc;flex:1;min-width:0">Minecraft ${escHtml(srv?.version || '?')} needs Java ${reqVer}+ and nothing here can run it.</span>
+      <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px;flex-shrink:0" onclick="downloadSrvJava(${reqVer},'${id}')">Download Java ${reqVer}</button>
+    </div>`;
+  }
   listEl.innerHTML = html;
+}
+
+// Fetch one Java major for a server picker and refresh its list.
+async function downloadSrvJava(major, id) {
+  const res = document.getElementById('javaProbeResult-' + id);
+  const ensure = window.craftdockServer?.ensureJavaMajor || window.craftdockInstance?.ensureJavaMajor;
+  if (!ensure) {
+    if (res) res.innerHTML = '<span style="color:#f87171">Downloads are only available in the desktop app</span>';
+    return;
+  }
+  if (res) res.innerHTML = `<span style="color:var(--text-muted)">Downloading Java ${major}…</span>`;
+  try {
+    const result = await ensure(major);
+    if (!result?.success) {
+      if (res) res.innerHTML = `<span style="color:#f87171">✗ ${escHtml(result?.error || 'Download failed')}</span>`;
+      return;
+    }
+    if (res) res.innerHTML = `<span style="color:#22c55e">✓ Java ${major} installed</span>`;
+    await scanJavaInstalls(id);
+  } catch(e) {
+    if (res) res.innerHTML = `<span style="color:#f87171">✗ ${escHtml(e.message)}</span>`;
+  }
 }
 
 function javaPickSelect(el, id, javaPath) {
@@ -11631,8 +11822,7 @@ async function openInstJavaPicker() {
   document.getElementById('instJavaProbeResult').textContent = '';
 
   // Compute recommended Java for this instance's MC version
-  const minor = parseInt((inst.mcVersion||'1.21').split('.')[1]||'21',10);
-  const reqVer = minor >= 21 ? 21 : minor >= 17 ? 17 : minor >= 16 ? 11 : 8;
+  const reqVer = javaRequiredForMc(inst.mcVersion);
 
   const listEl = document.getElementById('instJavaPickerList');
   listEl.innerHTML = `<div style="font-size:11px;color:var(--text-muted);padding:6px 0">Click Scan — recommended: Java ${reqVer}+ for MC ${inst.mcVersion||'?'}</div>`;
@@ -11648,8 +11838,7 @@ async function scanInstJava() {
 
   const instances = await InstanceStore.getAll();
   const inst = instances.find(i=>i.id===activeInstanceId);
-  const minor = parseInt((inst?.mcVersion||'1.21').split('.')[1]||'21',10);
-  const reqVer = minor >= 21 ? 21 : minor >= 17 ? 17 : minor >= 16 ? 11 : 8;
+  const reqVer = javaRequiredForMc(inst?.mcVersion);
 
   try {
     let installs = [];
@@ -11686,10 +11875,44 @@ async function scanInstJava() {
       </div>`;
     }
 
-    if (!installs?.length) html += '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">No Java installs found. Paste a path manually below.</div>';
+    const usable = (installs || []).some(jav => jav.version >= reqVer);
+    if (!installs?.length) {
+      html += '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">No Java installs found on this PC yet. Paste a path manually below, or let CraftDock download one.</div>';
+    }
+    // Nothing on the machine can run this pack: offer the exact runtime it needs
+    // instead of leaving the user to work out which Java a 26.x instance wants.
+    if (!usable) {
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;border:1px solid rgba(99,102,241,0.35);background:rgba(99,102,241,0.1);margin-top:4px">
+        <span style="font-size:11px;color:#a5b4fc;flex:1;min-width:0">Minecraft ${escHtml(inst?.mcVersion || '?')} needs Java ${reqVer}+ and nothing here can run it.</span>
+        <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px;flex-shrink:0" onclick="downloadInstJava(${reqVer})">Download Java ${reqVer}</button>
+      </div>`;
+    }
     listEl.innerHTML = html;
   } catch(e) {
     listEl.innerHTML = `<div style="font-size:11px;color:#f87171">Scan failed: ${escHtml(e.message)}</div>`;
+  }
+}
+
+// Fetch one Java major on demand and re-scan, so the picker shows the new install.
+async function downloadInstJava(major) {
+  const res = document.getElementById('instJavaProbeResult');
+  const bridge = window.craftdockServer || window.craftdockInstance;
+  const ensure = bridge?.ensureJavaMajor;
+  if (!ensure) {
+    if (res) res.innerHTML = '<span style="color:#f87171">Downloads are only available in the desktop app</span>';
+    return;
+  }
+  if (res) res.innerHTML = `<span style="color:var(--text-muted)">Downloading Java ${major}…</span>`;
+  try {
+    const result = await ensure(major);
+    if (!result?.success) {
+      if (res) res.innerHTML = `<span style="color:#f87171">✗ ${escHtml(result?.error || 'Download failed')}</span>`;
+      return;
+    }
+    if (res) res.innerHTML = `<span style="color:#22c55e">✓ Java ${major} installed</span>`;
+    await scanInstJava();
+  } catch(e) {
+    if (res) res.innerHTML = `<span style="color:#f87171">✗ ${escHtml(e.message)}</span>`;
   }
 }
 
@@ -12544,7 +12767,7 @@ function showModUpdateModal(updates, instId, inst) {
                 </div>
               </div>
               <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);cursor:pointer">
-                <input type="checkbox" checked data-mod-id="${mod.id}" data-source-id="${mod.sourceId}" data-file-url="${latest.files?.[0]?.url||''}" data-file-name="${latest.files?.[0]?.filename||''}" data-new-ver="${latest.latestVersion}" data-new-ver-id="${latest.latestVersionId||''}" style="accent-color:#6366f1">
+                <input type="checkbox" checked data-mod-id="${mod.id}" data-source-id="${mod.sourceId}" data-file-url="${latest.files?.[0]?.url||''}" data-file-name="${latest.files?.[0]?.filename||''}" data-new-ver="${latest.latestVersion}" data-new-ver-id="${latest.latestVersionId||''}">
                 Update
               </label>
             </div>
@@ -12597,7 +12820,7 @@ function showServerItemUpdateModal(updates, srvId, type) {
                 </div>
               </div>
               <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer">
-                <input type="checkbox" checked data-item-id="${mod.id}" data-source-id="${mod.sourceId}" data-file-url="${latest.files?.[0]?.url||''}" data-file-name="${latest.files?.[0]?.filename||''}" data-new-ver="${latest.latestVersion}" style="accent-color:#6366f1">Update
+                <input type="checkbox" checked data-item-id="${mod.id}" data-source-id="${mod.sourceId}" data-file-url="${latest.files?.[0]?.url||''}" data-file-name="${latest.files?.[0]?.filename||''}" data-new-ver="${latest.latestVersion}">Update
               </label>
             </div>
           `).join('')}
@@ -13136,7 +13359,7 @@ function liRenderInstanceList() {
       packLine = '<div style="font-size:10px;color:var(--accent-bright);margin-top:3px">Pack: ' + escHtml(label) + ' \u00b7 ' + tracked + '</div>';
     }
     return '<label style="display:flex;gap:10px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;align-items:flex-start">'
-      + '<input type="checkbox" data-index="' + index + '" onchange="liToggleOne(' + index + ', this.checked)" style="margin-top:2px;accent-color:#6366f1">'
+      + '<input type="checkbox" data-index="' + index + '" onchange="liToggleOne(' + index + ', this.checked)" style="margin-top:2px">'
       + '<div style="flex:1;min-width:0">'
       + '<div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(inst.name) + '</div>'
       + '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + escHtml(bits) + '</div>'
@@ -13810,7 +14033,7 @@ async function startAppUpdate(auto) {
       </div>
     </div>
     <label style="display:flex;align-items:center;gap:8px;margin-bottom:18px;cursor:pointer;font-size:11px;color:var(--text-muted);user-select:none">
-      <input type="checkbox" id="modpackUpdateSkipCheck" style="accent-color:var(--accent);width:13px;height:13px;cursor:pointer">
+      <input type="checkbox" id="modpackUpdateSkipCheck">
       Don't check for updates on launch for this instance
     </label>
     <div style="display:flex;gap:8px">
