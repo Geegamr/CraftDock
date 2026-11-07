@@ -368,6 +368,29 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .modal-title{font-size:16px;font-weight:800;margin-bottom:4px}
 .modal-sub{font-size:12px;color:var(--text-muted);margin-bottom:20px}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+
+/* ── LEGAL (Terms / Privacy) ── */
+.legal-modal{width:760px;max-height:86vh;display:flex;flex-direction:column;padding:0;overflow:hidden}
+.legal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px 24px 10px}
+.legal-head .modal-sub{margin-bottom:0}
+.legal-close{background:transparent;border:none;color:var(--text-muted);font-size:18px;line-height:1;cursor:pointer;padding:2px 7px;border-radius:6px}
+.legal-close:hover{color:var(--text-primary);background:rgba(255,255,255,0.07)}
+.legal-tabs{display:flex;gap:6px;padding:0 24px 12px;border-bottom:1px solid var(--border)}
+.legal-tab{background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-family:inherit;font-size:11px;font-weight:700;color:var(--text-muted);cursor:pointer}
+.legal-tab.active{background:rgba(99,102,241,0.16);border-color:rgba(99,102,241,0.5);color:var(--accent-bright)}
+.legal-body{flex:1;min-height:0;overflow-y:auto;padding:16px 24px 10px;font-size:12.5px;line-height:1.7;color:var(--text-secondary)}
+.legal-body h1{font-size:15px;font-weight:800;color:var(--text-primary);margin:0 0 6px}
+.legal-body h2{font-size:12.5px;font-weight:800;color:var(--text-primary);margin:16px 0 5px}
+.legal-body h3{font-size:12px;font-weight:700;color:var(--text-primary);margin:14px 0 4px}
+.legal-body p{margin:0 0 8px}
+.legal-body ul{margin:0 0 8px;padding-left:18px}
+.legal-body li{margin:0 0 5px}
+.legal-body a{color:var(--accent-bright);text-decoration:none}
+.legal-body a:hover{text-decoration:underline}
+.legal-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 24px 16px;border-top:1px solid var(--border)}
+.app-legal-footer{text-align:center;padding:18px 0 6px;color:var(--text-muted);font-size:10px}
+.app-legal-footer a{color:var(--text-muted);text-decoration:underline;cursor:pointer}
+.app-legal-footer a:hover{color:var(--text-secondary)}
 .export-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
 .export-opt{background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius);padding:16px;cursor:pointer;transition:all 0.15s;text-align:center}
 .export-opt:hover{border-color:var(--accent);background:var(--accent-subtle)}
@@ -649,7 +672,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
     <img src="../assets/icon.svg" width="20" height="20" style="border-radius:4px;image-rendering:pixelated;flex-shrink:0" alt="CraftDock">
     CRAFTDOCK
   </div>
-  <div class="titlebar-center" data-tauri-drag-region><span>v<span class="app-version">0.8.4</span></span><span class="beta-badge">Public Beta</span></div>
+  <div class="titlebar-center" data-tauri-drag-region><span>v<span class="app-version">0.8.5</span></span><span class="beta-badge">Public Beta</span></div>
   <div class="titlebar-controls">
     <button class="tc-btn min" onclick="winCtrl('minimize')" aria-label="Minimize" title="Minimize">─</button>
     <button class="tc-btn max" onclick="winCtrl('maximize')" aria-label="Maximize" title="Maximize">□</button>
@@ -697,6 +720,17 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
   <div class="home-view">
     <div class="home-greeting" id="homeGreeting">Welcome to CraftDock</div>
     <div class="home-sub" id="homeSub">Sign in or add an instance to get started.</div>
+
+    <!-- Re-auth banner: an account signed in under a different app registration
+         cannot refresh its token, so surface it here instead of only on Accounts. -->
+    <div id="acctReauthBanner" style="display:none;align-items:center;gap:12px;background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.35);border-radius:var(--radius);padding:12px 16px;margin-bottom:20px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2" width="18" height="18" style="flex-shrink:0"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <div style="flex:1;min-width:0">
+        <div id="acctReauthTitle" style="font-size:13px;font-weight:700;color:var(--yellow)">Sign-in expired</div>
+        <div id="acctReauthText" style="font-size:11px;color:var(--text-secondary);margin-top:2px">Sign in again to keep playing online.</div>
+      </div>
+      <button class="btn-ghost" style="justify-content:center;flex-shrink:0" onclick="reauthFromBanner()">Sign in again</button>
+    </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
       <div class="stat-card"><div class="stat-label">Instances</div><div class="stat-value" id="statInstances">0</div><div class="stat-detail" id="statInstancesDetail">No instances yet</div></div>
       <div class="stat-card"><div class="stat-label">Play Time</div><div class="stat-value" id="statPlayTime">0h</div><div class="stat-detail" id="statPlayTimeDetail">No sessions yet</div></div>
@@ -1594,7 +1628,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
 <div class="page" id="page-settings">
   <div class="settings-view">
     <div style="font-size:18px;font-weight:800;margin-bottom:4px">Settings</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v<span class="app-version">0.8.4</span></div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v<span class="app-version">0.8.5</span></div>
 
     <!-- Java Management -->
     <div class="settings-section">
@@ -1759,7 +1793,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Version</div></div>
-        <span style="font-size:12px;color:var(--text-muted)">CraftDock v<span class="app-version">0.8.4</span></span>
+        <span style="font-size:12px;color:var(--text-muted)">CraftDock v<span class="app-version">0.8.5</span></span>
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Electron version</div></div>
@@ -1774,8 +1808,28 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
         <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px" onclick="settingsOpenGithub()">Report Issue</button>
       </div>
     </div>
-    <div style="text-align:center;padding:18px 0 6px;color:var(--text-muted);font-size:10px">
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+        Legal
+      </div>
+      <div class="settings-row">
+        <div class="settings-label"><div class="settings-label-text">Terms of Service</div><div class="settings-label-desc">The agreement for using CraftDock</div></div>
+        <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px" onclick="openLegal('terms')">Read</button>
+      </div>
+      <div class="settings-row" style="border-bottom:none">
+        <div class="settings-label"><div class="settings-label-text">Privacy Policy</div><div class="settings-label-desc">What stays on your PC, and what goes to other services</div></div>
+        <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px" onclick="openLegal('privacy')">Read</button>
+      </div>
+    </div>
+
+    <div class="app-legal-footer">
       Copyright &copy; 2026 Geegamr
+      &nbsp;&middot;&nbsp;
+      <a onclick="openLegal('terms')">Terms of Service</a>
+      &nbsp;&middot;&nbsp;
+      <a onclick="openLegal('privacy')">Privacy Policy</a>
     </div>
   </div>
 </div>
@@ -2530,7 +2584,7 @@ const hasCraftDockInstances = typeof window.craftdockInstance !== 'undefined';
 // The one version string: everything the UI shows and every API call it makes
 // reads this. Startup refreshes it from package.json through the main process,
 // so the literal here only has to cover the browser fallback and the first paint.
-let APP_VERSION = '0.8.4';
+let APP_VERSION = '0.8.5';
 
 // Everything that prints the version reads .app-version, and the main process
 // owns the value, so bumping package.json is the only edit a release needs.
@@ -2814,7 +2868,7 @@ const SkinStore = {
 //  Flow: MS Device Code → MS Access Token → Xbox Live Token
 //       → XSTS Token → Minecraft Bearer → Profile
 // ═══════════════════════════════════════════════════════════
-const MS_CLIENT_ID = 'craftdock-launcher'; // Replace with real Azure app client_id
+const MS_CLIENT_ID = '8add992a-33be-447d-a184-8e029eb1a176'; // CraftDock's app registration (approved for Minecraft API access)
 const MS_SCOPE     = 'XboxLive.signin offline_access';
 let msAuthPollTimer = null;
 
@@ -2959,6 +3013,7 @@ async function completeMsAuth(msTokens) {
       msRefreshToken: msTokens.refresh_token || '',
       minecraftToken: mcToken,
       mcTokenExpiry:  result.mcTokenExpiry || (Date.now() + 23 * 60 * 60 * 1000),
+      authClientId:   result.clientId,
       type:           'microsoft',
       addedAt:        Date.now(),
       active:         false,
@@ -2985,8 +3040,22 @@ async function completeMsAuth(msTokens) {
 
 async function _saveAndShowAccount(profile) {
   _completingMsAuth = false; // allow future logins
+  const reauthId = window._reauthAccountId || null;
+  window._reauthAccountId = null;
+  // A re-sign-in normally returns the same Minecraft UUID; if the user picked a
+  // different account, drop the stale record instead of leaving it behind.
+  if (reauthId && reauthId !== profile.id) await AccountStore.remove(reauthId);
+
   const allAccts = await AccountStore.getAll();
+  const existing = allAccts.find(a => a.id === profile.id);
+  if (existing) {
+    // Keep the user's active choice and original join date across re-sign-in.
+    profile.active  = existing.active;
+    profile.addedAt = existing.addedAt || profile.addedAt;
+  }
   if (!allAccts.length) profile.active = true;
+  delete profile.needsReauth;
+  delete profile.reauthReason;
   await AccountStore.save(profile);
 
   // Immediately trigger a background refresh so the MS refresh token gets
@@ -3057,6 +3126,8 @@ function closeMsLogin() {
 // ═══════════════════════════════════════════════════════════
 //  ACCOUNTS PAGE RENDERING
 // ═══════════════════════════════════════════════════════════
+let _reauthNoticeShown = false;
+
 async function renderAccountsPage() {
   const accounts = await AccountStore.getAll();
   const hero = document.getElementById('acctSignInHero');
@@ -3064,6 +3135,13 @@ async function renderAccountsPage() {
 
   // Show/hide sign-in hero
   if (hero) hero.style.display = accounts.length ? 'none' : 'block';
+
+  const reauth = accounts.filter(a => a.needsReauth);
+  if (reauth.length && !_reauthNoticeShown) {
+    _reauthNoticeShown = true;
+    const who = reauth.length === 1 ? reauth[0].name : `${reauth.length} accounts`;
+    showNotif('Sign in again', `${who} need${reauth.length === 1 ? 's' : ''} a fresh Microsoft sign-in.`);
+  }
 
   if (!grid) return;
   if (!accounts.length) { grid.innerHTML = ''; return; }
@@ -3087,6 +3165,7 @@ async function renderAccountsPage() {
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.name}</div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Microsoft Premium</div>
+          ${a.needsReauth ? '<div style="font-size:10px;color:var(--yellow);margin-top:2px;font-weight:700">SIGN-IN EXPIRED</div>' : ''}
           ${a.active ? '<div style="font-size:10px;color:var(--green);margin-top:2px;font-weight:700">● ACTIVE</div>' : ''}
         </div>
         <div style="display:flex;gap:4px">
@@ -3098,7 +3177,9 @@ async function renderAccountsPage() {
       </div>
       <div style="font-size:10px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-bottom:12px;padding:6px 8px;background:var(--bg-input);border-radius:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.id}</div>
       <div style="display:flex;gap:6px">
-        ${!a.active ? `<button class="btn-ghost" style="flex:1;justify-content:center" onclick="setActiveAccount('${a.id}')">Set Active</button>` : '<div style="flex:1"></div>'}
+        ${a.needsReauth
+          ? `<button class="btn-ghost" style="flex:1;justify-content:center;color:var(--yellow)" onclick="signInAgain('${a.id}')">Sign in again</button>`
+          : (!a.active ? `<button class="btn-ghost" style="flex:1;justify-content:center" onclick="setActiveAccount('${a.id}')">Set Active</button>` : '<div style="flex:1"></div>')}
         <button class="btn-ghost" style="justify-content:center;padding:5px 10px" onclick="refreshAccount('${a.id}')" title="Refresh token">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
         </button>
@@ -3108,6 +3189,22 @@ async function renderAccountsPage() {
       </div>
     </div>
   `).join('');
+}
+
+// Re-run the normal device-code flow for an account whose stored refresh token
+// was issued to a different client ID (or was rejected by Microsoft).
+async function signInAgain(id) {
+  window._reauthAccountId = id;
+  await startMicrosoftLogin();
+}
+
+// Banner action: one affected account goes straight into the device-code flow;
+// with several, send the user to Accounts so they can pick which to renew.
+async function reauthFromBanner() {
+  const reauth = (await AccountStore.getAll()).filter(a => a.needsReauth);
+  if (reauth.length === 1) { await signInAgain(reauth[0].id); return; }
+  switchPage('accounts', document.querySelectorAll('.rail-btn')[5]);
+  await renderAccountsPage();
 }
 
 async function setActiveAccount(id) {
@@ -3125,6 +3222,9 @@ async function removeAccount(id) {
 }
 
 async function refreshAccount(id) {
+  const accounts = await AccountStore.getAll();
+  const acct = accounts.find(a => a.id === id);
+  if (acct?.needsReauth) { await signInAgain(id); return; }
   showNotif('Refreshing', 'Refreshing Xbox Live token...');
   // Real: exchange refresh_token for new access_token
   // POST https://login.microsoftonline.com/consumers/oauth2/v2.0/token
@@ -3152,6 +3252,24 @@ async function refreshHomePage() {
   if (sub)   sub.textContent   = instances.length
     ? `Ready to play? ${instances.length} instance${instances.length===1?'':'s'} ready to launch.`
     : 'Browse modpacks or sign in to get started.';
+
+  // Re-auth banner — expired accounts are easy to miss if the user never opens
+  // the Accounts page, so surface them on Home.
+  const reauthBanner = document.getElementById('acctReauthBanner');
+  if (reauthBanner) {
+    const reauth = accounts.filter(a => a.needsReauth);
+    if (reauth.length) {
+      const title = document.getElementById('acctReauthTitle');
+      const text  = document.getElementById('acctReauthText');
+      if (title) title.textContent = reauth.length === 1
+        ? `${reauth[0].name} needs a fresh sign-in`
+        : `${reauth.length} accounts need a fresh sign-in`;
+      if (text) text.textContent = 'Your saved Microsoft session is no longer valid. Sign in again to keep playing online.';
+      reauthBanner.style.display = 'flex';
+    } else {
+      reauthBanner.style.display = 'none';
+    }
+  }
 
   // Stats
   const modpacks  = instances.filter(i => i.source).length;
@@ -12526,6 +12644,256 @@ function settingsOpenDataFolder() {
   }).catch(error => console.error('Could not open the data folder:', error));
 }
 
+// ═══════════════════════════════════════════════════════════
+//  LEGAL — Terms of Service and Privacy Policy
+//  This is the only copy of the text. scripts/export-legal-docs.js
+//  writes TERMS.md and PRIVACY.md from it, so the repo copies match.
+//  Keep it plain markdown: headings, dashes for bullets, **bold**, [link](url).
+// ═══════════════════════════════════════════════════════════
+const LEGAL_VERSION = '1.0';
+const LEGAL_UPDATED = '5 November 2026';
+
+const LEGAL_TERMS = `# Terms of Service
+
+**Last updated: 5 November 2026, version 1.0**
+
+CraftDock is a free, open-source Minecraft launcher made by an individual developer ("CraftDock", "we", "us"). These Terms are the agreement between you and that developer. Please read them before you install or use CraftDock.
+
+## 1. Agreeing to these Terms
+
+By downloading, installing, or using CraftDock, you agree to these Terms and to the Privacy Policy. If you do not agree, do not use CraftDock: uninstall it and delete its data folder.
+
+If you are under the age of majority where you live, use CraftDock only with the involvement of a parent or guardian.
+
+## 2. What CraftDock is
+
+CraftDock is an unofficial, third-party launcher. It is not affiliated with, endorsed by, or sponsored by Mojang Studios, Microsoft, Xbox, Modrinth, CurseForge or Overwolf, Prism Launcher, MultiMC, ATLauncher, the Modrinth App, or any mod, modpack, plugin, or server author. All names, logos, and trademarks belong to their owners.
+
+CraftDock does not include, sell, or license Minecraft. It downloads game files from Mojang's servers on your behalf, using the copy of Minecraft tied to your own Microsoft account.
+
+## 3. Your Microsoft and Minecraft account
+
+You need your own legitimate Minecraft: Java Edition account. You are responsible for keeping its credentials safe and for everything done with it.
+
+When you sign in, CraftDock uses Microsoft's device-code flow. It never asks for your password and never sees it. Your authentication tokens are stored only on your computer, encrypted. The Privacy Policy explains this in detail.
+
+You must follow the Minecraft End User Licence Agreement and the Minecraft Usage Guidelines at all times.
+
+## 4. Mods, modpacks, and other third-party content
+
+CraftDock can find and download mods, modpacks, resource packs, shaders, data packs, plugins, and server software from third-party services and their download servers.
+
+- That content is made and licensed by other people, not by us.
+- Your right to use it comes from its author and from the service you got it from, not from CraftDock.
+- We do not review, audit, or guarantee third-party content. Mods can be broken, outdated, or malicious. Install only what you trust, and check where it came from.
+- If a server, mod, or platform has rules that apply to you, you must follow them.
+
+## 5. Your files, and backups
+
+Everything CraftDock manages lives on your computer: instances, worlds, mods, configs, screenshots, servers, backups, and logs. We have no copy of any of it and no way to recover it.
+
+CraftDock is beta software. Bugs happen, and a bug can damage or delete files. Keep your own backups of anything you care about, especially worlds and server data, and do not treat CraftDock's backup feature as your only backup.
+
+To the extent the law allows, we are not responsible for files that are lost, damaged, or corrupted, or for lost playtime or server data.
+
+## 6. Acceptable use
+
+Do not use CraftDock to:
+
+- break the law or infringe anyone's rights;
+- get around Minecraft authentication, licensing, or account restrictions, or use an account that is not yours;
+- distribute malware or content you have no right to share;
+- attack, overload, or disrupt servers, services, or other players, including through the server manager;
+- resell CraftDock as your own product, or present it as official or endorsed by anyone it is not.
+
+CraftDock's source code is released under the Apache License 2.0. That licence governs your rights to the code and is not restricted by these Terms; these Terms cover using the app itself.
+
+## 7. Updates
+
+CraftDock checks GitHub for new releases when it starts. Depending on your settings, it can download an update and restart, or wait for you to confirm. You can turn automatic updates off in Settings. Updates are still beta software and are still covered by these Terms.
+
+## 8. Privacy
+
+The Privacy Policy explains what leaves your computer and where it goes. In short: CraftDock has no account system of its own, no analytics, no telemetry, and no advertising, and runs no server that receives your data.
+
+## 9. No warranty
+
+CraftDock is provided "as is" and "as available", without warranties of any kind, express or implied, including merchantability, fitness for a particular purpose, and non-infringement. We do not promise that it will work, that it will work with any particular mod, modpack, server, or Java version, or that it will be free of bugs or interruptions. It is free software that you run at your own risk.
+
+## 10. Limitation of liability
+
+To the maximum extent permitted by law, the developer is not liable for indirect, incidental, special, consequential, or punitive damages, or for lost data, lost accounts, lost profits, or damage to your computer, arising out of or related to CraftDock, even if told such damage was possible.
+
+Where liability cannot be excluded, total liability is limited to the greater of the amount you paid for CraftDock, which is zero, and the minimum the law requires.
+
+Some places do not allow these exclusions or limits, so parts of this section may not apply to you. Nothing here removes rights you have that cannot legally be waived.
+
+## 11. Changes to these Terms
+
+These Terms may change as CraftDock changes. The current version always ships in the app, under Settings, Legal, and in the project repository. If you keep using CraftDock after an update, the updated Terms apply.
+
+## 12. Ending this agreement
+
+You can end this agreement at any time by uninstalling CraftDock and deleting its data folder. We may stop distributing CraftDock or stop supporting a version at any time. Sections 5, 9, and 10 continue to apply after it ends.
+
+## 13. Governing law
+
+These Terms are governed by the laws of the State of New Mexico, United States, without regard to conflict-of-law rules. Any dispute that is not covered by mandatory consumer-protection law where you live is brought in the state or federal courts located in New Mexico, and both sides agree to their jurisdiction. This does not remove consumer protections you have where you live.
+
+## 14. Contact
+
+- GitHub issues: [Geegamr/CraftDock](https://github.com/Geegamr/CraftDock/issues)
+- Discord: [discord.gg/zfmemagrZR](https://discord.gg/zfmemagrZR)`;
+
+const LEGAL_PRIVACY = `# Privacy Policy
+
+**Last updated: 5 November 2026, version 1.0**
+
+CraftDock is a desktop Minecraft launcher. There is no CraftDock account, no CraftDock server, and no analytics. This page explains what stays on your computer and what goes to other services when you use the app.
+
+## The short version
+
+- No telemetry, no analytics, no crash reporting, no advertising, no tracking.
+- No personal data is sold or shared, because none is collected.
+- Instances, worlds, mods, settings, and playtime stay on your computer.
+- Microsoft sign-in tokens stay on your computer, encrypted.
+- Some features ask other services for data. Those services see your IP address and what you asked for, as they would if you used them in a browser.
+
+## Who is responsible
+
+CraftDock is developed by an individual developer. Contact: [GitHub issues](https://github.com/Geegamr/CraftDock/issues) or [Discord](https://discord.gg/zfmemagrZR).
+
+## Data stored on your computer
+
+CraftDock keeps its data in a folder named craftdock-data:
+
+- In the portable build, next to the executable.
+- In the installed build, in your user profile: the CraftDock folder inside your application data folder, for example the AppData/Roaming folder on Windows, and the equivalent application-support folder on macOS and Linux.
+- In a development build, in the project folder.
+
+That folder holds:
+
+- Instances: mods, worlds, configs, resource packs, screenshots, and logs.
+- Servers: server files, backups, and console logs.
+- Accounts: your Minecraft username and UUID, skin address, and your Microsoft and Xbox authentication tokens, in craftdock_accounts.json.
+- Settings: Java paths, preferences, playtime counters, and cached lists and images.
+
+Tokens are encrypted with AES-256-GCM using a random key created per installation and stored beside the data. That protects them from casual reading of the file, but not from someone who already controls your user account or has your disk. Treat the data folder as sensitive.
+
+None of it is uploaded anywhere. Delete the data folder or uninstall CraftDock to remove all of it.
+
+## What is sent to other services
+
+CraftDock talks directly to the services below. Each request exposes your IP address, a User-Agent with the app name and version, and whatever the request needs, as any app or browser would. Each service handles that data under its own privacy policy.
+
+- Microsoft account and Xbox Live (login.microsoftonline.com, user.auth.xboxlive.com, xsts.auth.xboxlive.com): only when you sign in or a token refreshes. Receives the device code, client ID, and tokens. [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement)
+- Minecraft services (api.minecraftservices.com, textures.minecraft.net): your Minecraft profile, entitlements, and skin. [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement)
+- Mojang metadata and asset servers (launchermeta.mojang.com, resources.download.minecraft.net): version metadata, libraries, assets, and server jars. [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement)
+- Modrinth (api.modrinth.com): search terms, project and version IDs, and downloads. [Modrinth privacy policy](https://modrinth.com/legal/privacy)
+- CurseForge (api.curseforge.com, edge.forgecdn.net): search terms, mod and modpack IDs, and downloads. Requests are made with an API key belonging to the CraftDock developer, so CurseForge can associate them with that key. [CurseForge privacy policy](https://www.curseforge.com/legal/privacy)
+- Mod loaders and server software (meta.fabricmc.net, meta.quiltmc.org, maven.neoforged.net, files.minecraftforge.net, maven.minecraftforge.net, fill.papermc.io, api.purpurmc.org, hangar.papermc.io, api.spiget.org, www.spigotmc.org): version lists and downloads, under their own policies.
+- Adoptium (api.adoptium.net): Java runtime downloads, only when CraftDock needs a Java version you do not have. [Eclipse Foundation privacy policy](https://www.eclipse.org/legal/privacy/)
+- GitHub (api.github.com): the update check, once per launch, and update downloads. [GitHub privacy statement](https://docs.github.com/site-policy/privacy-policies/github-privacy-statement)
+- Cloudflare cdnjs (cdnjs.cloudflare.com): loads the three.js library used by the 3D skin preview, on every launch. [Cloudflare privacy policy](https://www.cloudflare.com/privacypolicy/)
+- mc-heads.net: player avatar images, when an avatar is displayed. [mc-heads.net](https://mc-heads.net)
+- ipify (api.ipify.org): only if you press Reveal IP while creating a server; returns your public IP so it can be filled in. [ipify privacy policy](https://www.ipify.org/legal/privacy-policy)
+
+We do not receive any of these requests and run no server that logs them.
+
+## Logs
+
+CraftDock keeps an in-app console log on your computer for troubleshooting. It can contain file paths that include your Windows username, player names, server addresses, and download links. It is not uploaded automatically. If you paste a log into a bug report, you are publishing it, so remove anything you do not want public.
+
+## Children
+
+CraftDock is not directed at children under 13. Using Minecraft requires a Microsoft account, which has its own age requirements. No data is knowingly collected from anyone, of any age, because no data is collected at all.
+
+## Your rights
+
+Laws such as the GDPR and the CCPA/CPRA give you rights to access, correct, delete, and port your personal data and to object to its processing. CraftDock stores your data only on your computer and never sends it to us, so you exercise those rights directly: open the data folder, change it, or delete it. If you contact us we will help where we can, but we cannot access or delete data we never received.
+
+The services listed above process data under their own policies. Contact them directly for requests about their records.
+
+Where the GDPR applies, processing happens because you asked for it (signing in, downloading a mod) and for the legitimate interest of making the app work. No personal data is sold, used for targeted advertising, or used for automated decision-making.
+
+## Security
+
+Traffic to these services uses HTTPS, and tokens are encrypted at rest as described above. No system is perfectly secure. Protect your computer account and your Microsoft account with a strong password and two-factor authentication.
+
+## Changes to this policy
+
+If this policy changes, the new version ships with the app under Settings, Legal, and the date at the top changes. Significant changes are noted in the release notes.`;
+
+function legalInline(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      (m, label, url) => '<a href="#" data-legal-url="' + url + '">' + label + '</a>');
+}
+
+function legalToHtml(md) {
+  const out = [];
+  let inList = false;
+  for (const raw of md.split('\n')) {
+    const line = raw.trim();
+    if (!line) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      continue;
+    }
+    if (line.startsWith('- ')) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push('<li>' + legalInline(line.slice(2)) + '</li>');
+      continue;
+    }
+    if (inList) { out.push('</ul>'); inList = false; }
+    if (line.startsWith('### '))      out.push('<h3>' + legalInline(line.slice(4)) + '</h3>');
+    else if (line.startsWith('## '))  out.push('<h2>' + legalInline(line.slice(3)) + '</h2>');
+    else if (line.startsWith('# '))   out.push('<h1>' + legalInline(line.slice(2)) + '</h1>');
+    else                              out.push('<p>' + legalInline(line) + '</p>');
+  }
+  if (inList) out.push('</ul>');
+  return out.join('\n');
+}
+
+function renderLegal(kind) {
+  const privacy = kind === 'privacy';
+  document.getElementById('legalTitle').textContent = privacy ? 'Privacy Policy' : 'Terms of Service';
+  document.getElementById('legalSub').textContent = 'Version ' + LEGAL_VERSION + ' \u00b7 Last updated ' + LEGAL_UPDATED;
+  const body = document.getElementById('legalBody');
+  body.innerHTML = legalToHtml(privacy ? LEGAL_PRIVACY : LEGAL_TERMS);
+  body.scrollTop = 0;
+  document.querySelectorAll('.legal-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.doc === (privacy ? 'privacy' : 'terms'));
+  });
+}
+
+function openLegal(kind) {
+  renderLegal(kind === 'privacy' ? 'privacy' : 'terms');
+  document.getElementById('legalModal').classList.add('open');
+}
+
+function closeLegal() {
+  document.getElementById('legalModal').classList.remove('open');
+}
+
+// Links inside the legal text open in the real browser, like every other
+// external link in the app, instead of navigating the launcher window.
+function legalLinkClick(event) {
+  const link = event.target.closest('a[data-legal-url]');
+  if (!link) return;
+  event.preventDefault();
+  const url = link.getAttribute('data-legal-url');
+  if (window.craftdock?.openExternal) window.craftdock.openExternal(url);
+  else window.open(url, '_blank');
+}
+
+document.addEventListener('keydown', function (event) {
+  if (event.key === 'Escape') closeLegal();
+});
+
 function settingsOpenGithub() {
   const url = 'https://github.com/Geegamr/CraftDock/issues';
   const invokeTauri = window.__TAURI__?.core?.invoke;
@@ -14042,6 +14410,26 @@ async function startAppUpdate(auto) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="margin-right:5px"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 1 0 .49-3.21"/></svg>
         Update &amp; Launch
       </button>
+    </div>
+  </div>
+</div>
+<!-- ══ LEGAL MODAL (Terms of Service / Privacy Policy) ══ -->
+<div class="modal-overlay" id="legalModal" onclick="if(event.target===this)closeLegal()">
+  <div class="modal legal-modal">
+    <div class="legal-head">
+      <div>
+        <div class="modal-title" id="legalTitle">Terms of Service</div>
+        <div class="modal-sub" id="legalSub">Version 1.0</div>
+      </div>
+      <button class="legal-close" onclick="closeLegal()" aria-label="Close">&#215;</button>
+    </div>
+    <div class="legal-tabs">
+      <button class="legal-tab active" data-doc="terms" onclick="renderLegal('terms')">Terms of Service</button>
+      <button class="legal-tab" data-doc="privacy" onclick="renderLegal('privacy')">Privacy Policy</button>
+    </div>
+    <div class="legal-body" id="legalBody" onclick="legalLinkClick(event)"></div>
+    <div class="legal-foot">
+      <button class="btn-secondary" onclick="closeLegal()">Close</button>
     </div>
   </div>
 </div>

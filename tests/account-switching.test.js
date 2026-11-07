@@ -161,3 +161,24 @@ test('switching the active account changes the next launch identity and token', 
     );
   });
 });
+
+test('accounts signed in under another client ID are flagged for a fresh sign-in', async () => {
+  await withTempRoot(async root => {
+    const app = loadApp(root, { env: { MS_CLIENT_ID: 'client-current' } });
+    const store = app.exposed.craftdock.store;
+
+    await store.set('craftdock:accounts', [
+      { id: 'ms_old', name: 'Old', authClientId: 'client-legacy', active: true },
+      { id: 'ms_new', name: 'New', authClientId: 'client-current' },
+      { id: 'ms_unknown', name: 'Unknown' },
+    ]);
+
+    const accounts = await store.get('craftdock:accounts');
+    const byId = id => accounts.find(item => item.id === id);
+
+    assert.equal(byId('ms_old').needsReauth, true);
+    assert.equal(byId('ms_old').reauthReason, 'client_changed');
+    assert.equal(byId('ms_new').needsReauth, undefined);
+    assert.equal(byId('ms_unknown').needsReauth, undefined);
+  });
+});

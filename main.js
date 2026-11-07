@@ -282,12 +282,10 @@ function decryptToken(stored) {
   }
 }
 
-// Microsoft OAuth - loaded from .env (falls back to public Minecraft client ID)
-// Xbox/Minecraft auth client ID options (in order of reliability):
-// '00000000402b5328' — original Xbox client (being deprecated by MS)
-// 'XboxLive.signin' scope requires a client registered for consumers tenant
-// Prism Launcher's registered client ID — works for device code flow with personal MS accounts
-const MS_CLIENT_ID = process.env.MS_CLIENT_ID || 'c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb';
+// Microsoft OAuth — CraftDock's own app registration, approved by Mojang for
+// Minecraft API access (AppID review, November 2026). Public client, device code
+// flow, consumers tenant. MS_CLIENT_ID overrides it for development.
+const MS_CLIENT_ID = process.env.MS_CLIENT_ID || '8add992a-33be-447d-a184-8e029eb1a176';
 const MS_SCOPE     = 'XboxLive.signin offline_access';
 
 let mainWindow;
@@ -336,7 +334,14 @@ async function refreshMcToken(msRefreshToken) {
   const body = `client_id=${MS_CLIENT_ID}&refresh_token=${encodeURIComponent(msRefreshToken)}&grant_type=refresh_token&scope=${encodeURIComponent(MS_SCOPE)}`;
   const r = await post('login.microsoftonline.com', '/consumers/oauth2/v2.0/token',
     { 'Content-Type': 'application/x-www-form-urlencoded' }, body);
-  if (r.status !== 200) throw new Error(`MS refresh failed: ${r.status} — ${JSON.stringify(r.body)}`);
+  if (r.status !== 200) {
+    // Carry the machine-readable code so callers can tell a rejected refresh
+    // token (definitive, needs re-login) from a transient network failure.
+    const err = new Error(`MS refresh failed: ${r.status} — ${JSON.stringify(r.body)}`);
+    err.status = r.status;
+    err.code = (r.body && r.body.error) || 'unknown';
+    throw err;
+  }
   const newMsToken      = r.body.access_token;
   const newRefreshToken = r.body.refresh_token || msRefreshToken; // Live may rotate it
   // Step 2: Full MC auth chain with fresh MS token
@@ -364,6 +369,18 @@ async function backgroundRefreshAllAccounts() {
     const msRefresh = decryptToken(encRefresh);
     if (!msRefresh) continue; // undecryptable (safe: legacy) — skip
 
+    // Refresh tokens are issued to the client that created them, so an account
+    // stamped with a different app registration can never refresh. Flag it for
+    // a clean re-sign-in instead of retrying a request that is guaranteed to fail.
+    if (acct.authClientId && acct.authClientId !== MS_CLIENT_ID) {
+      if (!acct.needsReauth) {
+        accounts[i] = { ...acct, needsReauth: true, reauthReason: 'client_changed' };
+        anyChanged = true;
+      }
+      continue;
+    }
+    if (acct.needsReauth) continue;
+
     // Refresh if expired or expiring within the next 2 hours
     const expiry     = acct.mcTokenExpiry || 0;
     const twoHours   = 2 * 60 * 60 * 1000;
@@ -390,8 +407,13 @@ async function backgroundRefreshAllAccounts() {
       console.log(`[CraftDock] Token refreshed successfully for ${accounts[i].minecraftUsername || 'account ' + i}`);
     } catch(e) {
       console.warn(`[CraftDock] Background token refresh failed for account ${i}: ${e.message}`);
-      // Don't mark broken here — it may be a transient network error.
-      // We'll retry next cycle.
+      // A rejected grant is definitive: only a fresh sign-in can recover it.
+      // Anything else (network, 5xx) may be transient, so retry next cycle.
+      if (e && e.status === 400 && ['invalid_grant', 'invalid_client', 'unauthorized_client'].includes(e.code)) {
+        accounts[i] = { ...acct, needsReauth: true, reauthReason: 'refresh_rejected' };
+        anyChanged = true;
+        console.warn(`[CraftDock] Account ${i} needs a fresh sign-in (${e.code}).`);
+      }
     }
   }
   if (anyChanged) {
@@ -447,7 +469,7 @@ async function doCompleteLogin(msAccessToken) {
   if (profR.status !== 200) throw new Error(`Profile failed: ${profR.status}`);
 
   const mcTokenExpiry = Date.now() + 23 * 60 * 60 * 1000; // MC tokens valid ~24h; refresh 1h early
-  return { profile: profR.body, mcToken, mcTokenExpiry }; // profile = { id, name, skins, capes }
+  return { profile: profR.body, mcToken, mcTokenExpiry, clientId: MS_CLIENT_ID }; // profile = { id, name, skins, capes }
 }
 
 // ── Window ─────────────────────────────────────────────────
@@ -629,6 +651,12 @@ ipcMain.handle('store-get', (_, key) => {
         }
         // Flag bad accounts so the renderer can prompt re-login
         if (anyBad) out._tokensBroken = true;
+        // Accounts signed in under a different app registration cannot refresh;
+        // surface that immediately so the UI offers a fresh sign-in.
+        if (out.authClientId && out.authClientId !== MS_CLIENT_ID) {
+          out.needsReauth = true;
+          out.reauthReason = out.reauthReason || 'client_changed';
+        }
         return out;
       });
       return accounts;
@@ -2054,7 +2082,9 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
         const expiry = active.mcTokenExpiry || 0;
         const needsRefresh = Date.now() >= expiry;
 
-        if (needsRefresh) {
+        if (active.needsReauth || (active.authClientId && active.authClientId !== MS_CLIENT_ID)) {
+          send('progress', 'Account needs a fresh sign-in — launching with the cached session');
+        } else if (needsRefresh) {
           const encRefresh = active._msRefreshToken;
           const msRefresh  = encRefresh ? (decryptToken(encRefresh) || '') : (active.msRefreshToken || '');
 
