@@ -6,8 +6,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const {
-  loadApp, plain, prepareClientCache, projectRoot, withTempRoot, writeInstance,
+  loadApp, seedAccount, plain, prepareClientCache, projectRoot, withTempRoot, writeInstance,
 } = require('./helpers/electron-app');
+
+function loadLaunchApp(root, options) {
+  const app = loadApp(root, options);
+  seedAccount(root);
+  return app;
+}
 
 const MANIFEST_ROUTE = {
   'https://launchermeta.mojang.com/mc/game/version_manifest_v2.json': {
@@ -71,7 +77,7 @@ test('a matching Java already on the machine is used and nothing is downloaded',
     const jdk = path.join(root, 'jdk-21');
     const systemJava = makeJava(root, path.join('jdk-21', 'bin', 'java.exe'));
 
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'win32',
       env: { JAVA_HOME: jdk },
       javaVersion: command => (command === systemJava ? 21 : 0),
@@ -95,7 +101,7 @@ test('a matching Java already on the machine is used and nothing is downloaded',
 test('without system Java the launcher reuses the private Java it installed earlier', async () => {
   await withTempRoot(async root => {
     prepareClientCache(root, '1.20.4');
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'win32',
       env: { JAVA_HOME: '' },
       javaVersion: command => (command.includes(`${path.sep}java21${path.sep}`) ? 21 : 0),
@@ -115,7 +121,7 @@ test('without system Java the launcher reuses the private Java it installed earl
 test('a launch installs the missing Java once, then reuses it without downloading again', async () => {
   await withTempRoot(async root => {
     prepareClientCache(root, '1.20.4');
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'linux',
       env: { JAVA_HOME: '' },
       javaVersion: command => (command.includes(`${path.sep}java21${path.sep}`) ? 21 : 0),
@@ -149,7 +155,7 @@ test('a launch installs the missing Java once, then reuses it without downloadin
 test('a Java 16 install falls back to the JDK build when there is no JRE image', async () => {
   await withTempRoot(async root => {
     prepareClientCache(root, '1.17');
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'linux',
       env: { JAVA_HOME: '' },
       javaVersion: command => (command.includes(`${path.sep}java16${path.sep}`) ? 16 : 0),
@@ -177,7 +183,7 @@ test('a Java 16 install falls back to the JDK build when there is no JRE image',
 
 test('the startup Java check reports what is available and never downloads', async () => {
   await withTempRoot(async root => {
-    const empty = loadApp(root, {
+    const empty = loadLaunchApp(root, {
       platform: 'win32',
       env: { JAVA_HOME: '' },
       javaVersion: () => 0,
@@ -199,7 +205,7 @@ test('the startup Java check reports what is available and never downloads', asy
   await withTempRoot(async root => {
     const jdk = path.join(root, 'jdk-21');
     const systemJava = makeJava(root, path.join('jdk-21', 'bin', 'java.exe'));
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'win32',
       env: { JAVA_HOME: jdk },
       javaVersion: command => (command === systemJava ? 21 : 0),
@@ -219,7 +225,7 @@ test('install-missing downloads only the versions this machine cannot run', asyn
   await withTempRoot(async root => {
     const jdk = path.join(root, 'jdk-8');
     const systemJava = makeJava(root, path.join('jdk-8', 'bin', 'java'));
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'linux',
       env: { JAVA_HOME: jdk },
       javaVersion: command => (command === systemJava ? 8 : 0),
@@ -256,7 +262,7 @@ test('install-missing downloads only the versions this machine cannot run', asyn
 
 test('install-missing reports progress for each Java version it downloads', async () => {
   await withTempRoot(async root => {
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'linux',
       env: { JAVA_HOME: '' },
       javaVersion: () => 0,
@@ -305,7 +311,7 @@ test('a slow Java download reports throughput before it finishes', async () => {
     // Twelve 8 KB pieces 60 ms apart: the download lasts longer than one rate
     // sample window, so a measurement lands while kilobytes still remain.
     const chunk = Buffer.alloc(8192, 7);
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'linux',
       env: { JAVA_HOME: '' },
       javaVersion: () => 0,
@@ -344,7 +350,7 @@ test('a slow Java download reports throughput before it finishes', async () => {
 
 test('a Java install can be cancelled while a download is in flight', async () => {
   await withTempRoot(async root => {
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'linux',
       env: { JAVA_HOME: '' },
       javaVersion: () => 0,
@@ -379,7 +385,7 @@ test('a Java install can be cancelled while a download is in flight', async () =
 
 test('install-missing reports a failed download without throwing', async () => {
   await withTempRoot(async root => {
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'linux',
       env: { JAVA_HOME: '' },
       javaVersion: () => 0,
@@ -563,7 +569,7 @@ test('the settings panel shows per-version install progress and can cancel it', 
 test('a 26.2 instance gets Java 25 instead of falling through to Java 8', async () => {
   await withTempRoot(async root => {
     prepareClientCache(root, '26.2');
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'linux',
       env: { JAVA_HOME: '' },
       javaVersion: command => (command.includes(`${path.sep}java25${path.sep}`) ? 25 : 0),
@@ -602,7 +608,7 @@ test('the Java stated in the version JSON is used when it differs', async () => 
 
     const jdk = path.join(root, 'jdk-21');
     const systemJava = makeJava(root, path.join('jdk-21', 'bin', 'java'));
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'linux',
       env: { JAVA_HOME: jdk },
       javaVersion: command => (command === systemJava ? 21 : 0),
@@ -646,7 +652,7 @@ test('java detection prefers the user\'s Java over a launcher copy and never dow
   await withTempRoot(async root => {
     const jdk = path.join(root, 'jdk-17');
     const systemJava = makeJava(root, path.join('jdk-17', 'bin', 'java.exe'));
-    const app = loadApp(root, {
+    const app = loadLaunchApp(root, {
       platform: 'win32',
       env: { JAVA_HOME: jdk },
       javaVersion: command => {

@@ -2,8 +2,8 @@
 """Check whether CraftDock's configured key can search CurseForge Minecraft mods.
 
 Uses CF_API_KEY from the process environment when set; otherwise the key
-embedded for packaged builds (cf-key.js), then the legacy main.js fallback. This
-script never reads .env or prints the key.
+embedded for packaged builds (cf-key.js). This script never reads .env or prints
+the key.
 """
 
 import json
@@ -23,14 +23,6 @@ def get_api_key():
     key = os.environ.get("CF_API_KEY", "").strip()
     if key:
         return key, "CF_API_KEY environment variable"
-
-    main_js = (PROJECT_ROOT / "main.js").read_text(encoding="utf-8")
-    match = re.search(
-        r"const\s+CF_API_KEY\s*=\s*process\.env\.CF_API_KEY\s*\|\|\s*(['\"])(.*?)\1\s*;",
-        main_js,
-    )
-    if match and match.group(2).strip():
-        return match.group(2).strip(), "main.js fallback"
 
     # Packaged builds embed the key through scripts/embed-cf-key.js as a masked
     # byte array, which main.js decodes in memory.
@@ -60,7 +52,7 @@ def get_api_key():
 def main():
     api_key, key_source = get_api_key()
     if not api_key:
-        print("No CurseForge API key found in the process environment or main.js fallback.")
+        print("No CurseForge API key found in the process environment or cf-key.js.")
         print("Set CF_API_KEY in your shell and rerun; .env is intentionally not read.")
         return 2
 

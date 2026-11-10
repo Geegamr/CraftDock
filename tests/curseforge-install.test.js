@@ -208,13 +208,53 @@ test('without a configured key the install fails before any request', async () =
   });
 });
 
+test('a chosen CurseForge pack file is installed instead of the newest upload', async () => {
+  await withTempRoot(async root => {
+    const pack = makeZip([
+      ['manifest.json', JSON.stringify({
+        minecraft: { version: '1.21.4', modLoaders: [{ id: 'fabric-0.15.11', primary: true }] },
+        name: 'Picked Pack',
+        files: [],
+      })],
+    ]);
+    const network = routingFetch(url => {
+      const { pathname } = new URL(url);
+      if (pathname === '/v1/mods/900/files/500') {
+        return jsonResponse({ data: {
+          id: 500,
+          fileName: 'picked.zip',
+          displayName: 'Picked Pack 1.0',
+          downloadUrl: 'https://cdn.example/picked.zip',
+        } });
+      }
+      return jsonResponse({ message: 'not found' }, { ok: false, status: 404, text: 'not found' });
+    });
+    const app = loadApp(root, {
+      fetch: network.impl,
+      routes: { 'https://cdn.example/picked.zip': pack },
+    });
+    const created = await app.exposed.craftdockInstance.create({ id: 'inst_picked', name: 'Picked Pack' });
+
+    const result = await app.exposed.craftdockInstance.installCurseForgeModpack(
+      'inst_picked', 900, '1.21.4', 'fabric', '500',
+    );
+
+    assert.equal(result.success, true);
+    const meta = JSON.parse(fs.readFileSync(path.join(created.dir, 'instance.json'), 'utf8'));
+    assert.equal(meta.sourceVersionId, '500');
+    assert.equal(meta.sourceVersionName, 'Picked Pack 1.0');
+    assert.equal(network.calls[0].url, 'https://api.curseforge.com/v1/mods/900/files/500');
+    assert.equal(network.calls.some(call => new URL(call.url).pathname === '/v1/mods/900/files'), false);
+  });
+});
+
 test('the renderer installs CurseForge packs instead of marking them manual', () => {
   const renderer = fs.readFileSync(path.join(projectRoot, 'src', 'index.html'), 'utf8');
   const preload = fs.readFileSync(path.join(projectRoot, 'preload.js'), 'utf8');
 
   assert.match(renderer, /pack\.source === 'curseforge' && isCraftDock && window\.craftdockInstance\?\.installCurseForgeModpack/);
-  assert.match(renderer, /installCurseForgeModpack\(instId, pack\.id, mcVersion, loader\)/);
+  assert.match(renderer, /installCurseForgeModpack\(instId, pack\.id, mcVersion, loader, selectedRelease\?\.id \|\| ''\)/);
   assert.match(renderer, /inst2\.downloadStatus = 'error'/);
-  assert.match(preload, /installCurseForgeModpack: \(id, modId, mcVer, loader\) =>/);
-  assert.match(preload, /invoke\('instance-install-cf-modpack', id, modId, mcVer, loader\)/);
+  assert.match(preload, /installCurseForgeModpack: \(id, modId, mcVer, loader, fileId\) =>/);
+  assert.match(preload, /invoke\('instance-install-cf-modpack', id, modId, mcVer, loader, fileId \|\| ''\)/);
 });

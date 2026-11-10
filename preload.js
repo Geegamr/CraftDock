@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld('craftdock', {
   curseforgeSearch: (query, version, loader, classId, sortField, index, pageSize) =>
     ipcRenderer.invoke('curseforge-search', query, version, loader, classId, sortField, index, pageSize),
 
+  curseforgeMod: (modId) =>
+    ipcRenderer.invoke('cf-mod-details', modId),
+
+  curseforgeModFiles: (modId, version, loader) =>
+    ipcRenderer.invoke('cf-mod-files', modId, version, loader),
+
   getMinecraftVersions: () =>
     ipcRenderer.invoke('cf-get-mc-versions'),
   },
@@ -115,6 +121,9 @@ contextBridge.exposeInMainWorld('craftdockInstance', {
   create:         (meta)      => ipcRenderer.invoke('instance-create',          meta),
   update:         (meta)      => ipcRenderer.invoke('instance-update',          meta),
   delete:         (id)        => ipcRenderer.invoke('instance-delete',          id),
+  copy:           (id)        => ipcRenderer.invoke('instance-copy',            id),
+  pauseCopy:      (id, paused)=> ipcRenderer.invoke('instance-copy-pause',      id, !!paused),
+  cancelCopy:     (id)        => ipcRenderer.invoke('instance-copy-cancel',     id),
   list:           ()          => ipcRenderer.invoke('instance-list'),
   get:            (id)        => ipcRenderer.invoke('instance-get',             id),
   launch:         (inst, serverIp) => ipcRenderer.invoke('instance-launch', inst, serverIp || null),
@@ -124,11 +133,13 @@ contextBridge.exposeInMainWorld('craftdockInstance', {
   toggleMod:      (id,f,en)   => ipcRenderer.invoke('instance-toggle-mod',      id, f, en),
   deleteMod:      (id,f)      => ipcRenderer.invoke('instance-delete-mod',      id, f),
   listScreenshots:(id)        => ipcRenderer.invoke('instance-list-screenshots', id),
+  syncOptions:    (id)        => ipcRenderer.invoke('instance-sync-options',     id),
   openFolder:     (id,sub)        => ipcRenderer.invoke('instance-open-folder',        id, sub),
   applyResourceTag:   (id, tag)  => ipcRenderer.invoke('instance-apply-resource-tag',  id, tag),
   applyShaderTag:     (id, tag)  => ipcRenderer.invoke('instance-apply-shader-tag',    id, tag),
   listConfigFiles:    (id)       => ipcRenderer.invoke('instance-list-config-files',    id),
-  readScreenshot:     (p)        => ipcRenderer.invoke('instance-read-screenshot',       p),
+  readScreenshot:     (p, opts)  => ipcRenderer.invoke('instance-read-screenshot',       p, opts),
+  saveScreenshotCopy: (id, p, dataUrl) => ipcRenderer.invoke('instance-save-screenshot', id, p, dataUrl),
   listLauncherJava:   ()         => ipcRenderer.invoke('list-launcher-java'),
   refreshTokensNow:   ()         => ipcRenderer.invoke('refresh-tokens-now'),
   openConfigFile:     (p)        => ipcRenderer.invoke('instance-open-config-file',     p),
@@ -150,9 +161,10 @@ contextBridge.exposeInMainWorld('craftdockInstance', {
   listWorldTags:      ()              => ipcRenderer.invoke('instance-list-world-tags'),
   getBuilds:          (sw,ver)        => ipcRenderer.invoke('server-get-builds',            sw, ver),
   installModpack:     (id, url)       => ipcRenderer.invoke('instance-install-modpack',     id, url),
-  installCurseForgeModpack: (id, modId, mcVer, loader) =>
-    ipcRenderer.invoke('instance-install-cf-modpack', id, modId, mcVer, loader),
+  installCurseForgeModpack: (id, modId, mcVer, loader, fileId) =>
+    ipcRenderer.invoke('instance-install-cf-modpack', id, modId, mcVer, loader, fileId || ''),
   onLaunchStatus:     (cb)            => ipcRenderer.on('instance-launch-status',     (_,id,st,msg) => cb(id, st, msg)),
+  onCopyProgress:     (cb)            => ipcRenderer.on('instance-copy-progress',     (_,payload) => cb(payload)),
   onInstallProgress:  (cb)            => ipcRenderer.on('instance-install-progress',  (_,id,pct,msg) => cb(id, pct, msg)),
   onLauncherImportProgress: (cb)      => ipcRenderer.on('launcher-import-progress',   (_, payload) => cb(payload)),
   onConsoleLog:       (cb)            => ipcRenderer.on('instance-console-log',        (_,id,line) => cb(id, line)),

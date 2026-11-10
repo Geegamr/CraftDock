@@ -367,6 +367,14 @@ fn instance_delete(app: tauri::AppHandle, id: String) -> Value {
 }
 
 #[tauri::command]
+fn instance_sync_options(app: tauri::AppHandle, source_id: String) -> Value {
+    match instance_store(&app).and_then(|store| store.sync_options(&source_id)) {
+        Ok(result) => result,
+        Err(error) => json!({ "success": false, "error": error }),
+    }
+}
+
+#[tauri::command]
 fn instance_open_folder(app: tauri::AppHandle, id: String, sub: Option<String>) -> Value {
     let target = match instance_store(&app)
         .and_then(|store| store.folder_to_open(&id, sub.as_deref()))
@@ -565,6 +573,38 @@ async fn cf_get_mc_versions() -> Value {
     curseforge_get("/minecraft/version", &[]).await
 }
 
+#[tauri::command]
+async fn cf_mod_files(
+    mod_id: u32,
+    game_version: Option<String>,
+    loader: Option<String>,
+) -> Value {
+    let mut params: Vec<(&str, String)> = vec![("pageSize", "50".to_string())];
+
+    if let Some(version) = game_version.filter(|value| !value.trim().is_empty()) {
+        params.push(("gameVersion", version));
+    }
+    if let Some(loader) = loader {
+        let loader_type = match loader.trim().to_ascii_lowercase().as_str() {
+            "forge" => Some(1),
+            "fabric" => Some(4),
+            "quilt" => Some(5),
+            "neoforge" => Some(6),
+            _ => None,
+        };
+        if let Some(loader_type) = loader_type {
+            params.push(("modLoaderType", loader_type.to_string()));
+        }
+    }
+
+    curseforge_get(&format!("/mods/{mod_id}/files"), &params).await
+}
+
+#[tauri::command]
+async fn cf_mod_details(mod_id: u32) -> Value {
+    curseforge_get(&format!("/mods/{mod_id}"), &[]).await
+}
+
 // ── Shared browse cache ────────────────────────────────────
 // Same bounded `browse-cache.json` file Electron writes, so the Tauri build
 // paints cached browse results too.
@@ -608,10 +648,13 @@ fn main() {
             instance_list_worlds,
             instance_list_mods,
             instance_delete,
+            instance_sync_options,
             instance_open_folder,
             open_folder,
             curseforge_search,
             cf_get_mc_versions,
+            cf_mod_files,
+            cf_mod_details,
             browse_cache_read,
             browse_cache_write,
             browse_cache_stats,

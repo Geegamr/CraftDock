@@ -111,6 +111,8 @@ test('CurseForge calls reach the Rust command with explicit arguments', async ()
   const api = vm.runInContext('resourceApi()', context);
   assert.equal(await api.getMinecraftVersions().then(result => result.success), true);
   await api.curseforgeSearch('sodium', '1.21.1', '4', 6, 2, 20, 20);
+  await api.curseforgeModFiles('238222', '1.21.1', 'fabric');
+  await api.curseforgeMod('238222');
 
   assert.deepEqual(plainCalls(calls), [
     ['cf_get_mc_versions', null],
@@ -123,6 +125,12 @@ test('CurseForge calls reach the Rust command with explicit arguments', async ()
       index: 20,
       pageSize: 20,
     }],
+    ['cf_mod_files', {
+      modId: 238222,
+      gameVersion: '1.21.1',
+      loader: 'fabric',
+    }],
+    ['cf_mod_details', { modId: 238222 }],
   ]);
 });
 
@@ -150,9 +158,13 @@ test('the mods browser asks CurseForge for Minecraft mods, not plugins, and page
   }]]);
 });
 
-test('Electron forwards the same CurseForge pagination arguments', () => {
+test('Electron forwards the same CurseForge pagination and file requests', () => {
   assert.match(preload, /curseforgeSearch: \(query, version, loader, classId, sortField, index, pageSize\)/);
   assert.match(preload, /invoke\('curseforge-search', query, version, loader, classId, sortField, index, pageSize\)/);
+  assert.match(preload, /curseforgeModFiles: \(modId, version, loader\)/);
+  assert.match(preload, /invoke\('cf-mod-files', modId, version, loader\)/);
+  assert.match(preload, /curseforgeMod: \(modId\)/);
+  assert.match(preload, /invoke\('cf-mod-details', modId\)/);
 });
 
 test('Rust pins Minecraft, injects the API key server-side, and registers the new commands', () => {
@@ -164,7 +176,7 @@ test('Rust pins Minecraft, injects the API key server-side, and registers the ne
 
   const handler = rustEntry.match(/generate_handler!\[([\s\S]*?)\]/);
   assert.ok(handler, 'commands are registered');
-  for (const command of ['store_get', 'store_set', 'store_delete', 'curseforge_search', 'cf_get_mc_versions']) {
+  for (const command of ['store_get', 'store_set', 'store_delete', 'curseforge_search', 'cf_get_mc_versions', 'cf_mod_files', 'cf_mod_details']) {
     assert.match(handler[1], new RegExp(`\\b${command}\\b`));
   }
 });

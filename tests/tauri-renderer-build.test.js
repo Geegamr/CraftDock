@@ -17,6 +17,7 @@ test('Tauri renderer bundle mirrors the existing renderer', () => {
     fs.readFileSync(path.join(projectRoot, 'src', 'index.html'), 'utf8'),
   );
   assert.ok(fs.existsSync(path.join(outputRoot, 'assets', 'icon.svg')));
+  assert.ok(fs.existsSync(path.join(outputRoot, 'gallery.js')), 'the gallery script is copied into the bundle');
 });
 
 test('every relative renderer reference resolves inside the bundle', () => {

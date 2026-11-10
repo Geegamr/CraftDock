@@ -1,6 +1,6 @@
 [package]
 name = "craftdock"
-version = "0.8.5"
+version = "0.8.6"
 description = "CraftDock Tauri migration slice"
 authors = ["CraftDock Team"]
 edition = "2024"

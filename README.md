@@ -4,7 +4,7 @@
   <p>A lightweight, modern Minecraft launcher built with Electron.</p>
 
   <img src="https://img.shields.io/badge/status-Public%20Beta-22c55e?style=flat-square">
-  <img src="https://img.shields.io/badge/version-0.8.5-6366f1?style=flat-square">
+  <img src="https://img.shields.io/badge/version-0.8.6-6366f1?style=flat-square">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square">
   <img src="https://img.shields.io/badge/license-Apache 2.0-22c55e?style=flat-square">
 
@@ -28,7 +28,7 @@
 - **Modpack browser** — search and install from Modrinth and CurseForge
 - **Import / Export** — import CurseForge `.zip` or Modrinth `.mrpack`; copy instances straight over from Prism Launcher, MultiMC, the Modrinth App, the CurseForge app or ATLauncher; export as zip, mrpack, CF code, or Modrinth link
 - **Instance manager** — isolated folder per instance with mods, saves, configs, screenshots, and resource packs
-- **Mod browser & version picker** — browse Modrinth with version compatibility badges for your MC version and loader
+- **Mod browser & version picker** — browse Modrinth and CurseForge, then pick a compatible file for your MC version and loader
 - **Mod update checker** — check and update mods per-instance individually or in bulk
 - **Direct Java launch** — no external launcher needed; supports Fabric, Forge, NeoForge, and Quilt
 - **Auto Java management** — picks the right Java per MC version; auto-downloads it privately if missing — system Java never touched
@@ -68,11 +68,11 @@ Versions are `MAJOR_VERSION.MAJOR_BUG_FIX.MINOR_BUG_FIX`, three numbers, bumped 
 
 | Position | Bumped for | Example |
 |----------|-----------|---------|
-| `MAJOR_VERSION` | A milestone or a change that breaks compatibility with older data | `0.9.0` → `1.0.0` |
-| `MAJOR_BUG_FIX` | A significant batch of fixes, or a new feature | `0.7.1` → `0.8.0` |
-| `MINOR_BUG_FIX` | One small, contained fix | `0.8.0` → `0.8.1` |
+| `MAJOR_VERSION` | The planned v1.0.0 milestone, or a change that breaks compatibility with older data | `0.9.0` → `1.0.0` |
+| `MAJOR_BUG_FIX` | A big feature | `0.8.6` → `0.9.0` |
+| `MINOR_BUG_FIX` | A small feature or a contained fix | `0.8.5` → `0.8.6` |
 
-`package.json` is the only place a version is written. The main process reads it, the window asks the main process for it, and every label and User-Agent string is built from that one value — nothing is typed twice. The updater compares the three numbers numerically, so `0.10.0` is newer than `0.9.0` and a local build ahead of the newest release is never told to update.
+`package.json` is the app-facing source of truth. The Tauri manifests and the renderer's fallback version are kept in sync with it. The updater compares the three numbers numerically, so `0.10.0` is newer than `0.9.0` and a local build ahead of the newest release is never told to update.
 
 ---
 
@@ -85,7 +85,6 @@ For general feedback and discussion, join the [Discord server](https://discord.g
 
 ## Credits
 
-- The CraftDock logo is heavily inspired by [ATLauncher](https://atlauncher.com)'s icon, which has been one of my favourite launcher looks since the early days. Thanks to the ATLauncher team. CraftDock is not affiliated with ATLauncher and is not endorsed by it.
 - Built with [Electron](https://www.electronjs.org), with native helpers in Rust.
 
 ---

@@ -349,6 +349,78 @@ impl InstanceStore {
         Ok(json!({ "success": true }))
     }
 
+    /// Copy `options.txt` from one instance to every other instance folder.
+    /// Tauri does not launch game processes, so it has no running set to skip.
+    pub fn sync_options(&self, source_id: &str) -> Result<Value, String> {
+        const MAX_OPTIONS_BYTES: u64 = 1024 * 1024;
+        let source_dir = self.dir_for(source_id)?;
+        let source_meta = self.read_meta(source_id).unwrap_or_else(|| json!({}));
+        let source_path = source_dir.join("options.txt");
+        let metadata = std::fs::metadata(&source_path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                "The source instance has no options.txt yet. Launch it once, then try again."
+                    .to_string()
+            } else {
+                format!("Could not read options.txt: {error}")
+            }
+        })?;
+        if !metadata.is_file() {
+            return Err("options.txt is not a file".to_string());
+        }
+        if metadata.len() > MAX_OPTIONS_BYTES {
+            return Err("options.txt is too large to sync".to_string());
+        }
+        let data = std::fs::read(&source_path)
+            .map_err(|error| format!("Could not read options.txt: {error}"))?;
+        let source_name = source_meta
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or(source_id)
+            .to_string();
+
+        let mut copied = Vec::new();
+        let mut failed = Vec::new();
+        for instance in self.list() {
+            let Some(id) = instance.get("id").and_then(Value::as_str) else {
+                continue;
+            };
+            if id == source_id {
+                continue;
+            }
+            let name = instance
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or(id)
+                .to_string();
+            let destination = match self.dir_for(id) {
+                Ok(directory) => directory.join("options.txt"),
+                Err(error) => {
+                    failed.push(json!({ "id": id, "name": name, "error": error }));
+                    continue;
+                }
+            };
+            let temporary = destination.with_extension("txt.craftdock-sync");
+            match std::fs::write(&temporary, &data)
+                .and_then(|_| std::fs::rename(&temporary, &destination))
+            {
+                Ok(()) => copied.push(json!({ "id": id, "name": name })),
+                Err(error) => {
+                    let _ = std::fs::remove_file(&temporary);
+                    failed.push(json!({ "id": id, "name": name, "error": error.to_string() }));
+                }
+            }
+        }
+
+        Ok(json!({
+            "success": true,
+            "source": { "id": source_id, "name": source_name },
+            "copied": copied.len(),
+            "copiedInstances": copied,
+            "skipped": Vec::<Value>::new(),
+            "failed": failed,
+        }))
+    }
+
     /// `instance-list-worlds`: folders under `<instance>/saves`, newest first.
     ///
     /// Mirrors Electron's handler, including returning an empty list (rather
@@ -602,6 +674,33 @@ mod tests {
         assert!(store.create(json!({ "id": "with space", "name": "Bad" })).is_err());
         assert!(store.update(json!({ "id": "../../etc" })).is_err());
         assert!(store.read_meta("../escape").is_none());
+    }
+
+    #[test]
+    fn syncs_options_to_every_other_instance() {
+        let (store, root) = temp_store("options-sync");
+        store.create(json!({ "id": "inst_source", "name": "Source" })).unwrap();
+        store.create(json!({ "id": "inst_existing", "name": "Existing" })).unwrap();
+        store.create(json!({ "id": "inst_empty", "name": "Empty" })).unwrap();
+
+        let source_dir = store.dir_for("inst_source").unwrap();
+        let existing_dir = store.dir_for("inst_existing").unwrap();
+        let empty_dir = store.dir_for("inst_empty").unwrap();
+        std::fs::write(source_dir.join("options.txt"), b"fov:90\nlang:en_us").unwrap();
+        std::fs::write(existing_dir.join("options.txt"), b"fov:30").unwrap();
+
+        let result = store.sync_options("inst_source").unwrap();
+        assert_eq!(result["success"], json!(true));
+        assert_eq!(result["source"]["name"], json!("Source"));
+        assert_eq!(result["copied"], json!(2));
+        assert_eq!(result["skipped"], json!([]));
+        assert_eq!(result["failed"], json!([]));
+        assert_eq!(std::fs::read(source_dir.join("options.txt")).unwrap(), b"fov:90\nlang:en_us");
+        assert_eq!(std::fs::read(existing_dir.join("options.txt")).unwrap(), b"fov:90\nlang:en_us");
+        assert_eq!(std::fs::read(empty_dir.join("options.txt")).unwrap(), b"fov:90\nlang:en_us");
+
+        assert!(store.sync_options("inst_missing").is_err());
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

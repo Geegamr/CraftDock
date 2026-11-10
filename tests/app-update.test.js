@@ -5,6 +5,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const { loadApp, plain, projectRoot, withTempRoot } = require('./helpers/electron-app');
 
 const RELEASE_API = 'https://api.github.com/repos/Geegamr/CraftDock/releases/latest';
@@ -182,6 +183,164 @@ test('installing an update on an installed build runs the setup silently', async
     assert.deepEqual(plain(installer.args), ['--updated'], 'the update flag installs without pages and reopens the app');
     assert.equal(installer.options.detached, true);
   });
+});
+
+test('the startup update check runs before the first token refresh attempt', () => {
+  const renderer = fs.readFileSync(path.join(projectRoot, 'src', 'index.html'), 'utf8');
+  const checkStart = renderer.indexOf('async function _startupUpdateCheck()');
+  const checkEnd = renderer.indexOf('\nasync function _runUpdateCheck', checkStart);
+  assert.ok(checkStart >= 0 && checkEnd > checkStart, 'the startup update check exists');
+  const checkSource = renderer.slice(checkStart, checkEnd);
+  assert.match(checkSource, /finally\s*\{\s*_refreshTokensAfterStartupCheck\(\);\s*\}/);
+  assert.match(renderer, /async function _refreshTokensAfterStartupCheck\(attempt = 0\) \{[\s\S]*?await window\.craftdockInstance\.refreshTokensNow\(\)/);
+
+  const main = fs.readFileSync(path.join(projectRoot, 'main.js'), 'utf8');
+  assert.match(main, /return \{ retryable \};/);
+  assert.match(main, /retryable: !!result\?\.retryable/);
+  const timerStart = main.indexOf('function startBackgroundTokenRefresh()');
+  const timerEnd = main.indexOf('\nasync function doCompleteLogin', timerStart);
+  assert.ok(timerStart >= 0 && timerEnd > timerStart, 'the background refresh timer exists');
+  const timerSource = main.slice(timerStart, timerEnd);
+  assert.match(timerSource, /setInterval/);
+  const timerSetup = timerSource.slice(0, timerSource.indexOf('_bgRefreshTimer = setInterval'));
+  assert.doesNotMatch(timerSetup, /backgroundRefreshAllAccounts\(\)/,
+    'the startup refresh must not run before the update check');
+});
+
+test('startup token refresh waits for the check, and still runs when it fails or is disabled', async () => {
+  const renderer = fs.readFileSync(path.join(projectRoot, 'src', 'index.html'), 'utf8');
+  const start = renderer.indexOf('async function _startupUpdateCheck()');
+  const end = renderer.indexOf('\nasync function _runUpdateCheck', start);
+  assert.ok(start >= 0 && end > start, 'the startup update check exists');
+  const source = renderer.slice(start, end);
+
+  async function callsFor(settings, checkBehavior) {
+    const calls = [];
+    const sandbox = {
+      isCraftDock: true,
+      window: {
+        craftdockInstance: {
+          refreshTokensNow: async () => { calls.push('refresh'); },
+        },
+      },
+      getSettings: async () => settings,
+      _runUpdateCheck: async () => {
+        calls.push('check');
+        if (checkBehavior === 'throw') throw new Error('offline');
+      },
+    };
+    vm.runInNewContext(source, sandbox);
+    await sandbox._startupUpdateCheck();
+    return calls;
+  }
+
+  assert.deepEqual(await callsFor({ checkUpdatesOnStartup: true }), ['check', 'refresh']);
+  assert.deepEqual(await callsFor({ checkUpdatesOnStartup: true }, 'throw'), ['check', 'refresh']);
+  assert.deepEqual(await callsFor({ checkUpdatesOnStartup: false }), ['refresh']);
+});
+
+test('startup token refresh retries transient failures with bounded backoff', async () => {
+  const renderer = fs.readFileSync(path.join(projectRoot, 'src', 'index.html'), 'utf8');
+  const start = renderer.indexOf('const STARTUP_REFRESH_RETRY_DELAYS');
+  const end = renderer.indexOf('\nasync function _runUpdateCheck', start);
+  assert.ok(start >= 0 && end > start, 'the startup refresh retry helper exists');
+  const source = renderer.slice(start, end);
+
+  let calls = 0;
+  const timers = [];
+  const sandbox = {
+    isCraftDock: true,
+    window: {
+      craftdockInstance: {
+        refreshTokensNow: async () => {
+          calls++;
+          return { success: true, retryable: calls < 3 };
+        },
+      },
+    },
+    setTimeout: (fn, delay) => { timers.push({ fn, delay }); return timers.length; },
+  };
+  vm.runInNewContext(source, sandbox);
+
+  await sandbox._refreshTokensAfterStartupCheck();
+  assert.equal(calls, 1);
+  assert.deepEqual(timers.map(timer => timer.delay), [15000], 'the first retry waits 15 seconds');
+
+  await timers[0].fn();
+  assert.equal(calls, 2);
+  assert.deepEqual(timers.map(timer => timer.delay), [15000, 60000], 'the second retry backs off to a minute');
+
+  await timers[1].fn();
+  assert.equal(calls, 3);
+  assert.equal(timers.length, 2, 'a successful recovery stops the retry chain');
+});
+
+test('startup token refresh retries an IPC rejection and gives up after the bounded delays', async () => {
+  const renderer = fs.readFileSync(path.join(projectRoot, 'src', 'index.html'), 'utf8');
+  const start = renderer.indexOf('const STARTUP_REFRESH_RETRY_DELAYS');
+  const end = renderer.indexOf('\nasync function _runUpdateCheck', start);
+  const source = renderer.slice(start, end);
+
+  let calls = 0;
+  const timers = [];
+  const sandbox = {
+    isCraftDock: true,
+    window: {
+      craftdockInstance: {
+        refreshTokensNow: async () => { calls++; throw new Error('offline'); },
+      },
+    },
+    setTimeout: (fn, delay) => { timers.push({ fn, delay }); return timers.length; },
+  };
+  vm.runInNewContext(source, sandbox);
+
+  await sandbox._refreshTokensAfterStartupCheck();
+  for (let i = 0; i < 3; i++) await timers[i].fn();
+
+  assert.equal(calls, 4, 'the initial attempt plus all three retries run');
+  assert.deepEqual(timers.map(timer => timer.delay), [15000, 60000, 300000]);
+});
+
+test('startup token refresh retries immediately when the connection comes back', async () => {
+  const renderer = fs.readFileSync(path.join(projectRoot, 'src', 'index.html'), 'utf8');
+  const start = renderer.indexOf('const STARTUP_REFRESH_RETRY_DELAYS');
+  const end = renderer.indexOf('\nasync function _runUpdateCheck', start);
+  const source = renderer.slice(start, end);
+
+  let calls = 0;
+  let offline = true;
+  const timers = [];
+  const cancelled = [];
+  const listeners = {};
+  const sandbox = {
+    isCraftDock: true,
+    window: {
+      craftdockInstance: {
+        refreshTokensNow: async () => {
+          calls++;
+          return { success: true, retryable: offline };
+        },
+      },
+      addEventListener: (type, handler) => { listeners[type] = handler; },
+    },
+    setTimeout: (fn, delay) => {
+      const timer = { fn, delay };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeout: timer => cancelled.push(timer),
+  };
+  vm.runInNewContext(source, sandbox);
+
+  await sandbox._refreshTokensAfterStartupCheck();
+  assert.equal(calls, 1);
+  assert.equal(timers.length, 1, 'an offline failure schedules a backoff retry');
+
+  offline = false;
+  await listeners.online();
+  assert.equal(calls, 2, 'the reconnect refreshes immediately instead of waiting for the timer');
+  assert.deepEqual(cancelled, [timers[0]], 'the pending backoff is cancelled');
+  assert.equal(timers.length, 1, 'a successful reconnect does not schedule another retry');
 });
 
 test('installing a portable update hands the swap to a helper that waits for the app to exit', async () => {

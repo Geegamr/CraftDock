@@ -95,6 +95,7 @@ test('Rust registers every instance and folder command the renderer uses', () =>
     'instance_delete',
     'instance_list_worlds',
     'instance_list_mods',
+    'instance_sync_options',
     'instance_open_folder',
     'open_folder',
     'get_data_root',
@@ -123,7 +124,7 @@ test('Tauri creates a new instance through the Rust command', async () => {
   assert.deepEqual(plain(calls[1][1]), { meta: { id: 'inst_1', name: 'My Pack', mcVersion: '1.21.4' } });
   // UI-only fields keep using the Rust key/value store.
   assert.deepEqual(stored.get('craftdock:inst-meta'), {
-    inst_1: { categoryId: null, color: null, iconUrl: null, notes: null },
+    inst_1: { categoryId: null, color: null, iconUrl: null, notes: null, iconAccent: null },
   });
   assert.equal(rendered.length, 1, 'the list re-renders after saving');
 });
@@ -170,6 +171,23 @@ test('Tauri surfaces a refused folder open instead of failing silently', async (
   await api.openActiveInstanceFolder('mods');
 
   assert.deepEqual(notifications, [['Open Folder', 'Only paths inside CraftDock\'s data folder']]);
+});
+
+test('Tauri syncs options through the Rust command', async () => {
+  const payload = {
+    success: true,
+    source: { id: 'inst_1', name: 'Pack' },
+    copied: 2,
+    copiedInstances: [{ id: 'inst_2', name: 'Second' }, { id: 'inst_3', name: 'Third' }],
+    skipped: [],
+    failed: [],
+  };
+  const { api, calls } = loadBridge({ invoke: () => payload });
+
+  const result = await api.instanceBridge().syncOptions('inst_1');
+
+  assert.deepEqual(plain(result), payload);
+  assert.deepEqual(plain(calls), [['instance_sync_options', { sourceId: 'inst_1' }]]);
 });
 
 test('Tauri opens the data folder through the same bridge', async () => {

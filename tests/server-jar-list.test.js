@@ -8,6 +8,7 @@ const { test } = require('node:test');
 const { EventEmitter } = require('node:events');
 const zlib = require('node:zlib');
 const { createServerJarListReader, listJarFilesFallback } = require('../server-jar-list');
+const { seedAccount } = require('./helpers/electron-app');
 
 const projectRoot = path.resolve(__dirname, '..');
 const binaryName = process.platform === 'win32' ? 'craftdock-server-jar-list.exe' : 'craftdock-server-jar-list';
@@ -83,6 +84,7 @@ function makeZip(entries) {
 }
 
 function loadProductionIpc(tempRoot, handlers, options = {}) {
+  seedAccount(tempRoot);
   const exposed = {};
   const app = {
     isPackaged: false, setAppUserModelId() {}, setName() {}, on() {},

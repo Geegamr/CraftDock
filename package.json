@@ -1,6 +1,6 @@
 {
   "name": "craftdock",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "CraftDock \u2014 A lightweight Minecraft launcher",
   "main": "main.js",
   "scripts": {
@@ -42,8 +42,8 @@
       "modpack-metadata.js",
       "instance-mod-toggle.js",
       "skin-library.js",
-      "browse-cache.js",
-    "launcher-import.js",
+      "browse-cache.js",      "launcher-import.js",
+      "instance-copy.js",
       "cf-key.js",
       "preload.js",
       "console-preload.js",

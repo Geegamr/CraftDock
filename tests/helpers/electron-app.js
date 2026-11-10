@@ -267,6 +267,26 @@ function loadPreload(handlers, invocations, sender) {
   return exposed;
 }
 
+// Writes a signed-in Microsoft account into a test data root. Launches now
+// require one, so launch-focused tests call this after loadApp().
+function seedAccount(root, overrides = {}) {
+  const dataDir = path.join(root, 'craftdock-data', 'data');
+  fs.mkdirSync(dataDir, { recursive: true });
+  const account = {
+    id: 'ms_test_account',
+    name: 'TestPlayer',
+    minecraftUsername: 'TestPlayer',
+    minecraftUuid: '00000000-0000-0000-0000-000000000001',
+    minecraftToken: 'test-minecraft-token',
+    mcTokenExpiry: Date.now() + 24 * 60 * 60 * 1000,
+    type: 'microsoft',
+    active: true,
+    ...overrides,
+  };
+  fs.writeFileSync(path.join(dataDir, 'craftdock_accounts.json'), JSON.stringify([account], null, 2));
+  return account;
+}
+
 // Loads the production main process into an isolated data root.
 //
 // options:
@@ -281,6 +301,7 @@ function loadPreload(handlers, invocations, sender) {
 //   fsOverrides   overrides for the fs module
 //   env           extra environment variables
 //   platform      override process.platform (defaults to the host)
+//   nativeImage   override Electron's nativeImage (screenshot thumbnails)
 function loadApp(root, options = {}) {
   const handlers = new Map();
   const invocations = [];
@@ -331,7 +352,7 @@ function loadApp(root, options = {}) {
     shell: { openPath: () => '', openExternal: async () => true },
     Tray: class Tray { setToolTip() {} setContextMenu() {} on() {} destroy() {} },
     Menu: { buildFromTemplate: () => ({}) },
-    nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
+    nativeImage: options.nativeImage || { createFromPath: () => ({ isEmpty: () => true }) },
   };
 
   const mainFs = Object.keys(options.fsOverrides || {}).length
@@ -457,6 +478,7 @@ module.exports = {
   withTempRoot,
   createNetworkMock,
   loadApp,
+  seedAccount,
   prepareClientCache,
   writeInstance,
   projectRoot,

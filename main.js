@@ -349,18 +349,19 @@ async function refreshMcToken(msRefreshToken) {
   return { ...result, newMsToken, newRefreshToken };
 }
 
-// ── Background token refresh — checks every 30 min, refreshes tokens nearing expiry ──
+// ── Background token refresh — runs after the startup updater and every 30 min ──
 let _bgRefreshTimer = null;
 
 async function backgroundRefreshAllAccounts() {
   const accountsFile = path.join(dataDir, 'craftdock_accounts.json');
-  if (!fs.existsSync(accountsFile)) return;
+  if (!fs.existsSync(accountsFile)) return { retryable: false };
   let accounts;
   try { accounts = JSON.parse(fs.readFileSync(accountsFile, 'utf8')); }
-  catch(e) { return; }
-  if (!Array.isArray(accounts) || !accounts.length) return;
+  catch(e) { return { retryable: false }; }
+  if (!Array.isArray(accounts) || !accounts.length) return { retryable: false };
 
   let anyChanged = false;
+  let retryable = false;
   for (let i = 0; i < accounts.length; i++) {
     const acct = accounts[i];
     const encRefresh = acct._msRefreshToken;
@@ -413,6 +414,8 @@ async function backgroundRefreshAllAccounts() {
         accounts[i] = { ...acct, needsReauth: true, reauthReason: 'refresh_rejected' };
         anyChanged = true;
         console.warn(`[CraftDock] Account ${i} needs a fresh sign-in (${e.code}).`);
+      } else {
+        retryable = true;
       }
     }
   }
@@ -420,11 +423,11 @@ async function backgroundRefreshAllAccounts() {
     try { fs.writeFileSync(accountsFile, JSON.stringify(accounts, null, 2)); }
     catch(e) { console.warn('[CraftDock] Failed to save refreshed tokens:', e.message); }
   }
+  return { retryable };
 }
 
 function startBackgroundTokenRefresh() {
-  // Run immediately on startup, then every 30 minutes (checks expiry internally)
-  backgroundRefreshAllAccounts().catch(e => console.warn('[CraftDock] Initial token refresh error:', e.message));
+  // The renderer triggers the first refresh after its startup update check.
   _bgRefreshTimer = setInterval(() => {
     backgroundRefreshAllAccounts().catch(e => console.warn('[CraftDock] BG token refresh error:', e.message));
   }, 30 * 60 * 1000); // 30 minutes
@@ -791,6 +794,29 @@ ipcMain.handle('curseforge-search', async (_, query = '', gameVersion = '', modL
   try {
     const data = await cfSearch(432, classId, query, gameVersion, modLoaderType, pageSize, sortField, index);
     return { success: true, data: data.data || [], pagination: data.pagination || null };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+ipcMain.handle('cf-mod-details', async (_, modId) => {
+  try {
+    const id = Number(modId);
+    if (!Number.isInteger(id) || id <= 0) throw new Error('Invalid CurseForge mod id.');
+    const headers = { 'Accept': 'application/json', 'x-api-key': requireCurseForgeApiKey() };
+    const [res, descriptionRes] = await Promise.all([
+      fetch(`${CF_BASE_URL}/mods/${id}`, { method: 'GET', headers }),
+      fetch(`${CF_BASE_URL}/mods/${id}/description`, { method: 'GET', headers }).catch(() => null),
+    ]);
+    if (!res.ok) throw new Error(`CurseForge API ${res.status}: ${await res.text().catch(() => '')}`);
+    const data = await res.json();
+    const mod = data.data || null;
+    if (mod && descriptionRes?.ok) {
+      try {
+        const description = await descriptionRes.json();
+        if (typeof description.data === 'string' && description.data.trim()) mod.description = description.data;
+      } catch {}
+    }
+    return { success: true, data: mod };
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -1805,6 +1831,177 @@ ipcMain.handle('instance-delete', async (_, id) => {
   return { success: true, removedPools };
 });
 
+const instanceCopiesInFlight = new Map();
+
+function copyCancelledError() {
+  const error = new Error('Copy cancelled');
+  error.code = 'ECOPY_CANCELLED';
+  return error;
+}
+
+ipcMain.handle('instance-copy', async (event, id) => {
+  const { copyInstanceDirectory, removeTree } = require('./instance-copy');
+  const sourceId = String(id || '');
+  let newId = '';
+  let destDir = '';
+  let staging = '';
+  let registered = false;
+  let tracked = false;
+  let control = null;
+  try {
+    if (!sourceId) return { success: false, error: 'No instance selected' };
+    if (instanceCopiesInFlight.has(sourceId)) {
+      return { success: false, error: 'That instance is already being copied' };
+    }
+    const sourceDir = instDir(sourceId);
+    const sourceMeta = readInstMeta(sourceId);
+    if (!sourceMeta) return { success: false, error: 'Instance not found' };
+    if ((runningMcProcs.get(sourceId) || []).length) {
+      return { success: false, error: 'Stop the instance before copying it' };
+    }
+
+    control = { paused: false, cancelled: false, completed: false, waiters: [] };
+    instanceCopiesInFlight.set(sourceId, control);
+    tracked = true;
+    const checkpoint = async () => {
+      if (control.cancelled) throw copyCancelledError();
+      while (control.paused && !control.cancelled) {
+        await new Promise(resolve => control.waiters.push(resolve));
+      }
+      if (control.cancelled) throw copyCancelledError();
+    };
+
+    const usedNames = new Set(listInstanceIds().map(instanceId =>
+      String(readInstMeta(instanceId)?.name || '').trim().toLowerCase()));
+    const originalName = String(sourceMeta.name || 'Instance').trim() || 'Instance';
+    const nameRoot = originalName.replace(/\s+\(Copy(?:\s+\d+)?\)$/i, '') || originalName;
+    let name = `${nameRoot} (Copy)`;
+    let suffix = 2;
+    while (usedNames.has(name.toLowerCase())) name = `${nameRoot} (Copy ${suffix++})`;
+
+    newId = `inst_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    registerSlug(newId, name, instancesBase);
+    registered = true;
+    destDir = instDir(newId);
+    staging = path.join(instancesBase, `.${newId}.copying`);
+    await removeTree(staging);
+
+    let lastReport = 0;
+    const report = state => {
+      if (event.sender.isDestroyed()) return;
+      const total = (state.totalFiles || 0) + (state.totalLinks || 0);
+      const copied = (state.copiedFiles || 0) + (state.copiedLinks || 0);
+      const pct = total > 0 ? Math.round((copied / total) * 100) : 100;
+      const now = Date.now();
+      if (now - lastReport < 120 && pct < 100) return;
+      lastReport = now;
+      event.sender.send('instance-copy-progress', {
+        sourceId,
+        id: newId,
+        pct,
+        copiedFiles: state.copiedFiles || 0,
+        totalFiles: state.totalFiles || 0,
+        copiedBytes: state.copiedBytes || 0,
+        totalBytes: state.totalBytes || 0,
+        paused: Boolean(control.paused),
+        cancelling: Boolean(control.cancelled),
+      });
+    };
+
+    const copied = await copyInstanceDirectory(sourceDir, staging, {
+      onProgress: report,
+      onCheckpoint: checkpoint,
+      isCancelled: () => control.cancelled,
+    });
+    await checkpoint();
+    const copiedMetaPath = path.join(staging, 'instance.json');
+    let copiedMeta = {};
+    try { copiedMeta = JSON.parse(fs.readFileSync(copiedMetaPath, 'utf8')); } catch (_) {}
+    const nextMeta = {
+      ...copiedMeta,
+      id: newId,
+      name,
+      addedAt: Date.now(),
+      lastPlayed: null,
+      totalPlayMinutes: 0,
+    };
+    fs.writeFileSync(copiedMetaPath, JSON.stringify(nextMeta, null, 2));
+    fs.renameSync(staging, destDir);
+    staging = '';
+    control.completed = true;
+
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('instance-copy-progress', {
+        sourceId,
+        id: newId,
+        pct: 100,
+        copiedFiles: copied.files,
+        totalFiles: copied.files,
+        copiedBytes: copied.bytes,
+        totalBytes: copied.bytes,
+        done: true,
+        paused: false,
+      });
+    }
+    return {
+      success: true,
+      id: newId,
+      name,
+      files: copied.files,
+      bytes: copied.bytes,
+      links: copied.links,
+    };
+  } catch (error) {
+    const wasCancelled = Boolean(control?.cancelled || error?.code === 'ECOPY_CANCELLED');
+    const message = wasCancelled ? 'Copy cancelled' : error.message;
+    if (staging) await removeTree(staging);
+    if (registered && destDir && !fs.existsSync(destDir)) {
+      delete slugMap[newId];
+      saveSlugMap();
+    }
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('instance-copy-progress', {
+        sourceId,
+        id: newId,
+        pct: 100,
+        error: message,
+        cancelled: wasCancelled,
+        paused: false,
+      });
+    }
+    return { success: false, cancelled: wasCancelled, error: message };
+  } finally {
+    if (tracked && instanceCopiesInFlight.get(sourceId) === control) {
+      instanceCopiesInFlight.delete(sourceId);
+    }
+  }
+});
+
+ipcMain.handle('instance-copy-pause', (_, id, paused) => {
+  const control = instanceCopiesInFlight.get(String(id || ''));
+  if (!control || control.completed) {
+    return { success: false, error: 'No copy in progress' };
+  }
+  control.paused = Boolean(paused);
+  if (!control.paused) {
+    const waiters = control.waiters.splice(0);
+    for (const wake of waiters) wake();
+  }
+  return { success: true, paused: control.paused };
+});
+
+ipcMain.handle('instance-copy-cancel', (_, id) => {
+  const control = instanceCopiesInFlight.get(String(id || ''));
+  if (!control || control.completed) {
+    return { success: false, error: 'No copy in progress' };
+  }
+  control.cancelled = true;
+  control.paused = false;
+  const waiters = control.waiters.splice(0);
+  for (const wake of waiters) wake();
+  return { success: true };
+});
+
 ipcMain.handle('instance-list', () => {
   const ids = listInstanceIds();
   return ids.map(id => {
@@ -1849,11 +2046,78 @@ ipcMain.handle('instance-list-screenshots', async (_, id) => {
   return await readScreenshotList(ssPath);
 });
 
+ipcMain.handle('instance-sync-options', (_, sourceId) => {
+  const source = String(sourceId || '');
+  try {
+    const ids = listInstanceIds();
+    if (!source || !ids.includes(source)) {
+      return { success: false, error: 'Source instance not found' };
+    }
+    const sourceMeta = readInstMeta(source);
+    if (!sourceMeta) return { success: false, error: 'Source instance not found' };
+    if ((runningMcProcs.get(source) || []).length) {
+      return { success: false, error: 'Stop the source instance before syncing its options' };
+    }
+
+    const sourcePath = path.join(instDir(source), 'options.txt');
+    let sourceData;
+    try {
+      const stat = fs.statSync(sourcePath);
+      if (!stat.isFile()) throw new Error('options.txt is not a file');
+      if (stat.size > 1024 * 1024) throw new Error('options.txt is too large to sync');
+      sourceData = fs.readFileSync(sourcePath);
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return {
+          success: false,
+          error: 'The source instance has no options.txt yet. Launch it once, then try again.',
+        };
+      }
+      return { success: false, error: `Could not read options.txt: ${error.message}` };
+    }
+
+    const copied = [];
+    const skipped = [];
+    const failed = [];
+    for (const id of ids) {
+      if (id === source) continue;
+      const meta = readInstMeta(id);
+      const name = meta?.name || id;
+      if ((runningMcProcs.get(id) || []).length) {
+        skipped.push({ id, name, reason: 'running' });
+        continue;
+      }
+
+      const destination = path.join(instDir(id), 'options.txt');
+      const temporary = `${destination}.craftdock-sync`;
+      try {
+        fs.writeFileSync(temporary, sourceData);
+        fs.renameSync(temporary, destination);
+        copied.push({ id, name });
+      } catch (error) {
+        try { fs.unlinkSync(temporary); } catch {}
+        failed.push({ id, name, error: error.message });
+      }
+    }
+
+    return {
+      success: true,
+      source: { id: source, name: sourceMeta.name || source },
+      copied: copied.length,
+      copiedInstances: copied,
+      skipped,
+      failed,
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Trigger a foreground token refresh (called after login or when renderer detects stale state)
 ipcMain.handle('refresh-tokens-now', async () => {
   try {
-    await backgroundRefreshAllAccounts();
-    return { success: true };
+    const result = await backgroundRefreshAllAccounts();
+    return { success: true, retryable: !!result?.retryable };
   } catch(e) {
     return { success: false, error: e.message };
   }
@@ -1862,13 +2126,75 @@ ipcMain.handle('refresh-tokens-now', async () => {
 // List launcher-managed Java installs (for settings display)
 ipcMain.handle('list-launcher-java', () => listLauncherJavaInstalls());
 
-ipcMain.handle('instance-read-screenshot', (_, filePath) => {
+const SCREENSHOT_THUMB_MAX_EDGE = 480;
+const SCREENSHOT_THUMB_QUALITY = 82;
+
+function screenshotThumbnailDataUrl(data) {
+  const image = nativeImage.createFromBuffer(data);
+  if (!image || image.isEmpty()) throw new Error('Could not decode screenshot');
+  const { width, height } = image.getSize();
+  if (!width || !height) throw new Error('Screenshot has no dimensions');
+  const scale = Math.min(1, SCREENSHOT_THUMB_MAX_EDGE / Math.max(width, height));
+  const resized = scale < 1
+    ? image.resize({
+        width: Math.max(1, Math.round(width * scale)),
+        height: Math.max(1, Math.round(height * scale)),
+        quality: 'good',
+      })
+    : image;
+  const thumb = resized.toJPEG(SCREENSHOT_THUMB_QUALITY);
+  if (!thumb || !thumb.length) throw new Error('Could not encode screenshot thumbnail');
+  return `data:image/jpeg;base64,${thumb.toString('base64')}`;
+}
+
+ipcMain.handle('instance-read-screenshot', (_, filePath, options) => {
   try {
     const data = fs.readFileSync(resolveInside(instancesBase, filePath));
+    if (options && options.thumbnail === true) {
+      return { success: true, dataUrl: screenshotThumbnailDataUrl(data) };
+    }
     const ext  = path.extname(filePath).toLowerCase().replace('.', '');
     const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
     return { success: true, dataUrl: `data:${mime};base64,${data.toString('base64')}` };
   } catch(e) { return { success: false, error: e.message }; }
+});
+
+// The screenshot editor always writes a new file beside the source. Keeping the
+// original untouched means a bad crop or annotation can never destroy a capture.
+const SCREENSHOT_EDIT_MAX_BYTES = 40 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+ipcMain.handle('instance-save-screenshot', (_, id, filePath, dataUrl) => {
+  try {
+    const instanceId = String(id || '');
+    if (!listInstanceIds().includes(instanceId)) throw new Error('Instance not found');
+    const screenshotsDir = path.resolve(path.join(instDir(instanceId), 'screenshots'));
+    const source = path.resolve(String(filePath || ''));
+    const relative = path.relative(screenshotsDir, source);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error('Screenshot is outside this instance');
+    }
+    if (!fs.existsSync(source) || !fs.statSync(source).isFile()) throw new Error('Screenshot not found');
+    if (typeof dataUrl !== 'string') throw new Error('Edited image is missing');
+    const match = dataUrl.match(/^data:image\/png;base64,([A-Za-z0-9+/=\r\n]+)$/);
+    if (!match) throw new Error('Edited image must be a PNG');
+    const data = Buffer.from(match[1], 'base64');
+    if (!data.length || data.length > SCREENSHOT_EDIT_MAX_BYTES) throw new Error('Edited image is too large');
+    if (!data.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) throw new Error('Edited image is not a valid PNG');
+    if (!fs.existsSync(screenshotsDir)) fs.mkdirSync(screenshotsDir, { recursive: true });
+    const stem = path.basename(source, path.extname(source)).replace(/[^\w.-]+/g, '_').slice(0, 64) || 'screenshot';
+    let sequence = 1;
+    let name = `${stem}-edited-${Date.now()}.png`;
+    let destination = path.join(screenshotsDir, name);
+    while (fs.existsSync(destination)) {
+      name = `${stem}-edited-${Date.now()}-${sequence++}.png`;
+      destination = path.join(screenshotsDir, name);
+    }
+    fs.writeFileSync(destination, data, { flag: 'wx' });
+    return { success: true, path: destination, name };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });
 
 ipcMain.handle('instance-download-mod', async (_, id, url, filename) => {
@@ -2046,8 +2372,57 @@ ipcMain.handle('stop-instance', (_, instId) => {
   return { success: true, killed: alive.length };
 });
 
+// Split a user-entered JVM argument string without invoking a shell. Quotes
+// group spaces while backslashes stay intact, which matters for Windows paths.
+function parseJavaArguments(text) {
+  const args = [];
+  let current = '';
+  let quote = '';
+  for (const ch of String(text || '')) {
+    if (quote) {
+      if (ch === quote) quote = '';
+      else current += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (/\s/.test(ch)) {
+      if (current) { args.push(current); current = ''; }
+    } else {
+      current += ch;
+    }
+  }
+  if (current) args.push(current);
+  return args;
+}
+
 ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
   const send = (status, msg) => event.sender.send('instance-launch-status', inst.id, status, msg);
+
+  // Refuse to launch as an offline "Player" when nobody is signed in: the game
+  // would start, but online servers reject it. Stop before creating files or
+  // spawning Java so a signed-out click can never half-launch an instance.
+  const accountsFile = path.join(dataDir, 'craftdock_accounts.json');
+  let launchAccounts = [];
+  try {
+    if (fs.existsSync(accountsFile)) {
+      const parsed = JSON.parse(fs.readFileSync(accountsFile, 'utf8'));
+      if (Array.isArray(parsed)) launchAccounts = parsed;
+    }
+  } catch (e) { console.warn('[CraftDock] Account read error:', e.message); }
+  const markedActive = launchAccounts.findIndex(a => a.active);
+  const launchActiveIdx = markedActive >= 0 ? markedActive : (launchAccounts.length ? 0 : -1);
+  const launchActive = launchActiveIdx >= 0 ? launchAccounts[launchActiveIdx] : null;
+  const encLaunchToken = launchActive && (launchActive._minecraftToken || launchActive._mcToken);
+  const launchToken = launchActive
+    ? (encLaunchToken ? (decryptToken(encLaunchToken) || '') : (launchActive.minecraftToken || launchActive.mcToken || ''))
+    : '';
+  if (!launchActive || !launchToken || launchToken === '0') {
+    const error = launchActive
+      ? 'Your saved Minecraft session is missing. Sign in again to launch.'
+      : 'Sign in with Microsoft before launching Minecraft.';
+    send(launchActive ? 'auth-required' : 'error', error);
+    return { success: false, code: launchActive ? 'SIGN_IN_REQUIRED' : 'NO_ACCOUNT', error };
+  }
+
   const dir = ensureInstance(inst.id);
   const meta = readInstMeta(inst.id) || inst;
   const playStartTime = Date.now();
@@ -2060,6 +2435,9 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
   const loader    = (meta.loader || inst.loader || '').toLowerCase();
   const ramMin    = meta.ramMin || inst.ramMin || 2048;
   const ramMax    = meta.ramMax || inst.ramMax || 4096;
+  const customJavaArgs = Array.isArray(meta.javaArgs)
+    ? meta.javaArgs.filter(arg => typeof arg === 'string' && arg.trim()).map(arg => arg.trim())
+    : parseJavaArguments(meta.javaArgs);
 
   // ── Get active account — refresh MC token if expired ────────
   let playerName = 'Player', accessToken = '0', playerUuid = '00000000-0000-0000-0000-000000000000';
@@ -2194,6 +2572,8 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
 
     // ── Step 5b: Install mod loader (Fabric / Quilt / Forge / NeoForge) ─────
     let mainClass = vJson.mainClass || 'net.minecraft.client.main.Main';
+    let loaderJvmArgs = [];
+    let loaderGameArgs = [];
     const loaderCacheDir = path.join(clientsDir, 'loaders');
     if (!fs.existsSync(loaderCacheDir)) fs.mkdirSync(loaderCacheDir, { recursive: true });
 
@@ -2212,6 +2592,7 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
         } catch(e) { console.warn(`[CraftDock] ${loader} versions fetch failed:`, e.message); }
       }
 
+      let fabricProfileLoaded = false;
       if (loaderVer) {
         const profileCacheKey = `${loader}-${mcVersion}-${loaderVer}.json`;
         const profilePath = path.join(loaderCacheDir, profileCacheKey);
@@ -2226,8 +2607,9 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
             fs.writeFileSync(profilePath, JSON.stringify(loaderProfile));
           } catch(e) { console.warn(`[CraftDock] ${loader} profile fetch failed:`, e.message); }
         }
-        if (loaderProfile) {
-          mainClass = loaderProfile.mainClass || mainClass;
+        if (loaderProfile && loaderProfile.mainClass && loaderProfile.mainClass !== vJson.mainClass) {
+          mainClass = loaderProfile.mainClass;
+          fabricProfileLoaded = true;
           for (const lib of (loaderProfile.libraries || [])) {
             if (!lib.name || !lib.url) continue;
             const [group, artifact, version] = lib.name.split(':');
@@ -2245,59 +2627,156 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
           }
         }
       }
+      if (!fabricProfileLoaded) {
+        const versionLabel = loaderVer ? ` ${loaderVer}` : '';
+        throw new Error(`${loader}${versionLabel} could not be installed for Minecraft ${mcVersion}. Launch cancelled so the world is not opened without its mods.`);
+      }
     } else if (loader === 'forge' || loader === 'neoforge') {
       const forgeCacheDir = path.join(loaderCacheDir, `${loader}-${mcVersion}`);
-      const forgeMarker   = path.join(forgeCacheDir, 'installed.json');
-      if (!fs.existsSync(forgeMarker)) {
-        send('progress', `Installing ${loader} (first launch — may take ~30s)…`);
+      const forgeLibsDir = path.join(forgeCacheDir, 'libraries');
+      const forgeVersionsDir = path.join(forgeCacheDir, 'versions');
+      const wantedLoaderVersion = meta.loaderVersion ? String(meta.loaderVersion) : null;
+
+      // Profile directories also contain the seeded vanilla version. Skip that
+      // one and pick the loader profile matching the requested version when known.
+      const readForgeProfile = (versionHint) => {
+        if (!fs.existsSync(forgeVersionsDir)) return null;
+        const profiles = [];
+        for (const vd of fs.readdirSync(forgeVersionsDir)) {
+          if (vd === mcVersion) continue;
+          const vjson = path.join(forgeVersionsDir, vd, `${vd}.json`);
+          if (!fs.existsSync(vjson)) continue;
+          try {
+            const fv = JSON.parse(fs.readFileSync(vjson, 'utf8'));
+            if (fv?.mainClass) profiles.push({ fv, vd });
+          } catch {}
+        }
+        if (!profiles.length) return null;
+        if (versionHint) {
+          return profiles.find(p => p.vd.includes(versionHint) || String(p.fv.id || '').includes(versionHint)) || null;
+        }
+        return profiles[0];
+      };
+
+      const installForge = async () => {
+        send('progress', `Installing ${loader}${wantedLoaderVersion ? ` ${wantedLoaderVersion}` : ''} — first launch may take ~30s…`);
+        if (!fs.existsSync(forgeCacheDir)) fs.mkdirSync(forgeCacheDir, { recursive: true });
+
+        let loaderVersion = wantedLoaderVersion;
+        if (!loaderVersion) {
+          if (loader === 'neoforge') {
+            const vers = await fetchJsonHttp('https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge');
+            const prefix = mcVersion.replace(/^1\./, '');
+            const candidates = (vers.versions || [])
+              .filter(v => String(v).startsWith(prefix + '.'))
+              .sort((a, b) => {
+                const pa = String(a).split('.').map(Number);
+                const pb = String(b).split('.').map(Number);
+                for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+                  const diff = (pa[i] || 0) - (pb[i] || 0);
+                  if (diff !== 0) return diff;
+                }
+                return 0;
+              });
+            loaderVersion = candidates[candidates.length - 1] || null;
+          } else {
+            const promos = await fetchJsonHttp('https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json');
+            loaderVersion = promos.promos?.[`${mcVersion}-recommended`] || promos.promos?.[`${mcVersion}-latest`] || null;
+          }
+        }
+        if (!loaderVersion) throw new Error(`no compatible ${loader} version was found`);
+
+        const installerUrl = loader === 'neoforge'
+          ? `https://maven.neoforged.net/releases/net/neoforged/neoforge/${loaderVersion}/neoforge-${loaderVersion}-installer.jar`
+          : `https://maven.minecraftforge.net/net/minecraftforge/forge/${mcVersion}-${loaderVersion}/forge-${mcVersion}-${loaderVersion}-installer.jar`;
+
+        // Both installers expect a Minecraft installation layout. An empty
+        // cache directory is rejected with "There is no minecraft installation".
+        const vanillaVersionDir = path.join(forgeVersionsDir, mcVersion);
+        fs.mkdirSync(vanillaVersionDir, { recursive: true });
+        const vanillaJson = path.join(vanillaVersionDir, `${mcVersion}.json`);
+        const vanillaJar = path.join(vanillaVersionDir, `${mcVersion}.jar`);
+        if (!fs.existsSync(vanillaJson)) fs.writeFileSync(vanillaJson, JSON.stringify(vJson));
+        if (!fs.existsSync(vanillaJar) || fs.statSync(vanillaJar).size !== fs.statSync(clientJar).size) {
+          fs.copyFileSync(clientJar, vanillaJar);
+        }
+        const profilesFile = path.join(forgeCacheDir, 'launcher_profiles.json');
+        if (!fs.existsSync(profilesFile)) fs.writeFileSync(profilesFile, '{"profiles":{}}');
+
+        const installerJar = path.join(forgeCacheDir, 'installer.jar');
+        await downloadFile(installerUrl, installerJar, null, 120000);
+        const installerJava = await findBestJava(17, meta.javaPath || null, mcVersion, (msg) => send('progress', msg), statedJava);
+        await runCommandAsync(installerJava.exe, ['-jar', installerJar, '--installClient', forgeCacheDir], 300000);
+
+        const installed = readForgeProfile(String(loaderVersion));
+        if (!installed) throw new Error('the installer produced no loader profile');
+        fs.writeFileSync(path.join(forgeCacheDir, 'installed.json'), JSON.stringify({ mcVersion, loader, loaderVersion, installedAt: Date.now() }));
+        return installed;
+      };
+
+      let forgeProfile = readForgeProfile(wantedLoaderVersion);
+      if (!forgeProfile) {
         try {
-          if (!fs.existsSync(forgeCacheDir)) fs.mkdirSync(forgeCacheDir, { recursive: true });
-          let loaderVersion = meta.loaderVersion || null;
-          let installerUrl;
-          if (!loaderVersion) {
-            if (loader === 'neoforge') {
-              const vers = await fetchJsonHttp('https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge');
-              const prefix = mcVersion.replace(/^1\./, '');
-              loaderVersion = (vers.versions || []).filter(v => v.startsWith(prefix)).reverse()[0];
-              installerUrl = loaderVersion ? `https://maven.neoforged.net/releases/net/neoforged/neoforge/${loaderVersion}/neoforge-${loaderVersion}-installer.jar` : null;
-            } else {
-              const promos = await fetchJsonHttp('https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json');
-              loaderVersion = promos.promos[`${mcVersion}-recommended`] || promos.promos[`${mcVersion}-latest`];
-              installerUrl = loaderVersion ? `https://maven.minecraftforge.net/net/minecraftforge/forge/${mcVersion}-${loaderVersion}/forge-${mcVersion}-${loaderVersion}-installer.jar` : null;
-            }
-          }
-          if (installerUrl) {
-            const installerJar = path.join(forgeCacheDir, 'installer.jar');
-            await downloadFile(installerUrl, installerJar, null, 120000);
-            const javaInfo2 = await findBestJava(17, meta.javaPath || null, mcVersion, (msg) => send('progress', msg), statedJava);
-            await runCommandAsync(javaInfo2.exe, ['-jar', installerJar, '--installClient', forgeCacheDir], 180000);
-            fs.writeFileSync(forgeMarker, JSON.stringify({ mcVersion, loaderVersion, installedAt: Date.now() }));
-          }
+          forgeProfile = await installForge();
         } catch(e) {
           console.warn(`[CraftDock] ${loader} installer failed:`, e.message);
-          send('progress', `Warning: ${loader} install failed — launching vanilla.`);
+          throw new Error(`${loader} could not be installed for Minecraft ${mcVersion}: ${e.message}. Launch cancelled so the world is not opened without its mods.`);
         }
       }
-      // Load forge version profile if present
-      const forgeVersionsDir = path.join(forgeCacheDir, 'versions');
-      if (fs.existsSync(forgeVersionsDir)) {
-        try {
-          for (const vd of fs.readdirSync(forgeVersionsDir)) {
-            const vjson = path.join(forgeVersionsDir, vd, `${vd}.json`);
-            if (fs.existsSync(vjson)) {
-              const fv = JSON.parse(fs.readFileSync(vjson, 'utf8'));
-              if (fv.mainClass) mainClass = fv.mainClass;
-              for (const lib of (fv.libraries || [])) {
-                if (lib.downloads?.artifact?.path) {
-                  const dest = path.join(libsDir, lib.downloads.artifact.path);
-                  if (fs.existsSync(dest)) classpath.push(dest);
-                }
-              }
-              break;
-            }
-          }
-        } catch {}
+      if (!forgeProfile) {
+        throw new Error(`${loader} profile is missing for Minecraft ${mcVersion}. Launch cancelled so the world is not opened without its mods.`);
       }
+      if (forgeProfile.fv.mainClass === vJson.mainClass) {
+        throw new Error(`${loader} did not install a loader main class. Launch cancelled so the world is not opened without its mods.`);
+      }
+
+      mainClass = forgeProfile.fv.mainClass;
+      const loaderVersionName = forgeProfile.fv.id || forgeProfile.vd;
+      for (const lib of (forgeProfile.fv.libraries || [])) {
+        if (!lib.downloads?.artifact?.path) continue;
+        const globalPath = path.join(libsDir, lib.downloads.artifact.path);
+        const installedPath = path.join(forgeLibsDir, lib.downloads.artifact.path);
+        const dest = fs.existsSync(globalPath) ? globalPath : installedPath;
+        if (fs.existsSync(dest)) classpath.push(dest);
+      }
+
+      const loaderClasspathSep = isWin ? ';' : ':';
+      const replacements = {
+        '${library_directory}': forgeLibsDir,
+        '${classpath_separator}': loaderClasspathSep,
+        '${version_name}': loaderVersionName,
+        '${launcher_name}': 'CraftDock',
+        '${launcher_version}': '',
+        '${auth_player_name}': playerName,
+        '${auth_uuid}': playerUuid,
+        '${auth_access_token}': accessToken,
+        '${game_directory}': dir,
+        '${assets_root}': path.join(clientsDir, 'assets'),
+        '${assets_index_name}': vJson.assetIndex?.id || mcVersion,
+      };
+      const resolveLoaderArg = value => {
+        if (typeof value !== 'string') return null;
+        return Object.entries(replacements).reduce((out, [token, replacement]) => out.split(token).join(replacement), value);
+      };
+      // NeoForge's ignore list names the files it must not treat as modules.
+      // The loader profile leaves ${version_name} pointing at the loader id,
+      // while FML matches the actual client jar on CraftDock's classpath. Add
+      // both the canonical name and the real cached filename; otherwise the
+      // vanilla client and the patched client can both become modules and
+      // export the same Minecraft packages.
+      const buildIgnoreList = value => {
+        const entries = new Set(['client-extra', `client-${mcVersion}.jar`, path.basename(clientJar)]);
+        for (const raw of value.slice('-DignoreList='.length).split(',')) {
+          const resolved = resolveLoaderArg(raw.trim());
+          if (resolved && !resolved.includes('${') && resolved !== `${loaderVersionName}.jar`) entries.add(resolved);
+        }
+        return `-DignoreList=${[...entries].join(',')}`;
+      };
+      loaderJvmArgs = (forgeProfile.fv.arguments?.jvm || []).map(value => {
+        if (typeof value === 'string' && value.startsWith('-DignoreList=')) return buildIgnoreList(value);
+        return resolveLoaderArg(value);
+      }).filter(v => v !== null);
+      loaderGameArgs = (forgeProfile.fv.arguments?.game || []).map(resolveLoaderArg).filter(v => v !== null);
     }
 
     send('progress', 'Starting Minecraft…');
@@ -2470,11 +2949,13 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
     }
 
     const jvmArgs = [
+      ...loaderJvmArgs,
       `-Xms${ramMin}m`, `-Xmx${ramMax}m`,
       '-XX:+UseG1GC', '-XX:+ParallelRefProcEnabled', '-XX:MaxGCPauseMillis=200',
       '-Djava.awt.headless=false',
       `-Djava.library.path=${nativesDir}`,
       `-Dorg.lwjgl.librarypath=${nativesDir}`,
+      ...customJavaArgs,
       '-cp', cpStr,
       mainClass,
       '--username', playerName,
@@ -2486,6 +2967,7 @@ ipcMain.handle('instance-launch', async (event, inst, serverIp) => {
       '--accessToken', accessToken,
       '--userType', accessToken === '0' ? 'offline' : 'mojang',
       '--versionType', 'release',
+      ...loaderGameArgs,
     ];
 
     // ── Auto-connect to server if serverIp provided ──────────
@@ -2798,24 +3280,32 @@ function cfCdnUrl(fileId, fileName) {
   return `https://edge.forgecdn.net/files/${Math.floor(fileId / 1000)}/${fileId % 1000}/${fileName}`;
 }
 
-ipcMain.handle('instance-install-cf-modpack', async (event, instId, modId, mcVersion, loader) => {
+ipcMain.handle('instance-install-cf-modpack', async (event, instId, modId, mcVersion, loader, fileId = '') => {
   const dir = ensureInstance(instId);
   const send = (pct, msg) => {
     if (!event.sender.isDestroyed()) event.sender.send('instance-install-progress', instId, pct, msg);
   };
 
   try {
-    send(2, 'Finding the newest pack file…');
-    const params = new URLSearchParams({ pageSize: '50' });
-    if (mcVersion) params.append('gameVersion', mcVersion);
-    const loaderType = CF_MODLOADER_TYPES[String(loader || '').toLowerCase()];
-    if (loaderType) params.append('modLoaderType', String(loaderType));
+    let packFile;
+    if (fileId) {
+      send(2, 'Fetching the selected pack file…');
+      const chosen = await cfGetJson(`/mods/${encodeURIComponent(modId)}/files/${encodeURIComponent(fileId)}`);
+      packFile = chosen.data;
+      if (!packFile || !packFile.fileName) throw new Error('The selected CurseForge file is unavailable');
+    } else {
+      send(2, 'Finding the newest pack file…');
+      const params = new URLSearchParams({ pageSize: '50' });
+      if (mcVersion) params.append('gameVersion', mcVersion);
+      const loaderType = CF_MODLOADER_TYPES[String(loader || '').toLowerCase()];
+      if (loaderType) params.append('modLoaderType', String(loaderType));
 
-    const listing = await cfGetJson(`/mods/${encodeURIComponent(modId)}/files?${params}`);
-    const packFiles = (listing.data || [])
-      .filter(file => file && file.id && String(file.fileName || '').toLowerCase().endsWith('.zip'))
-      .sort((a, b) => Number(b.id) - Number(a.id)); // CF file ids grow with each upload
-    const packFile = packFiles[0];
+      const listing = await cfGetJson(`/mods/${encodeURIComponent(modId)}/files?${params}`);
+      const packFiles = (listing.data || [])
+        .filter(file => file && file.id && String(file.fileName || '').toLowerCase().endsWith('.zip'))
+        .sort((a, b) => Number(b.id) - Number(a.id)); // CF file ids grow with each upload
+      packFile = packFiles[0];
+    }
     if (!packFile) {
       throw new Error(mcVersion
         ? `No CurseForge pack file for Minecraft ${mcVersion}`
@@ -2928,6 +3418,26 @@ ipcMain.handle('cf-latest-mod-files', async (_, requests) => {
     }));
   }
   return { success: true, results };
+});
+
+// List a CurseForge project's files for the selected Minecraft version/loader.
+// Search responses only carry the newest file, so the per-instance version
+// picker asks for this project's files on demand.
+ipcMain.handle('cf-mod-files', async (_, modId, gameVersion = '', loader = '') => {
+  const projectId = String(modId || '');
+  if (!/^\d+$/.test(projectId)) return { success: false, error: 'Invalid CurseForge mod id' };
+
+  const params = new URLSearchParams({ pageSize: '50' });
+  if (gameVersion) params.append('gameVersion', String(gameVersion));
+  const loaderType = CF_MODLOADER_TYPES[String(loader || '').toLowerCase()];
+  if (loaderType) params.append('modLoaderType', String(loaderType));
+
+  try {
+    const data = await cfGetJson(`/mods/${projectId}/files?${params}`);
+    return { success: true, data: Array.isArray(data.data) ? data.data : [] };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 });
 
 ipcMain.handle('shared-worlds-path', () => sharedWorldsDir);
@@ -5234,7 +5744,8 @@ app.whenReady().then(() => {
 
   createWindow();
 
-  // Start background token refresh — silently keeps all MS tokens perpetually fresh
+  // Start the periodic refresh timer. The renderer runs the first refresh
+  // after its startup update check, so account work does not race the updater.
   startBackgroundTokenRefresh();
 });
 // A Minecraft server must not outlive the launcher. Closing CraftDock used to

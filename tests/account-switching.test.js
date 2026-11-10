@@ -162,6 +162,109 @@ test('switching the active account changes the next launch identity and token', 
   });
 });
 
+test('launch is refused when no Microsoft account is signed in', async () => {
+  await withTempRoot(async root => {
+    const app = loadApp(root);
+    writeInstance(app, 'inst_no_account');
+
+    const result = await app.exposed.craftdockInstance.launch({ id: 'inst_no_account' });
+    assert.equal(result.success, false);
+    assert.equal(result.code, 'NO_ACCOUNT');
+    assert.equal(
+      app.spawnCalls.filter(call => Array.isArray(call.args) && call.args.includes('--gameDir')).length,
+      0,
+      'no Java process was spawned',
+    );
+
+    const statuses = app.events.filter(([channel]) => channel === 'instance-launch-status');
+    assert.ok(statuses.some(([, , status]) => status === 'error'), 'the UI is told the launch failed');
+    assert.ok(!statuses.some(([, , status]) => status === 'starting'), 'the launch never started');
+  });
+});
+
+test('account heads use the in-game UUID or username and the account card no longer prints the identifier', () => {
+  const start = renderer.indexOf('function accountHeadUrl');
+  const end = renderer.indexOf('const InstanceStore = {', start);
+  assert.ok(start >= 0 && end > start, 'the renderer defines its Minecraft head helper');
+  const sandbox = {};
+  vm.runInNewContext(`${renderer.slice(start, end)}\nglobalThis.accountHeadUrl = accountHeadUrl;`, sandbox);
+
+  assert.equal(
+    sandbox.accountHeadUrl({ minecraftUuid: 'abc-123', minecraftUsername: 'Steve' }),
+    'https://mc-heads.net/avatar/abc-123/64',
+    'the profile UUID is preferred for the in-game head',
+  );
+  assert.equal(
+    sandbox.accountHeadUrl({ minecraftUsername: 'A B' }),
+    'https://mc-heads.net/avatar/A%20B/64',
+    'the in-game username is the fallback when no UUID is stored',
+  );
+  assert.equal(sandbox.accountHeadUrl(null), '');
+
+  const cardStart = renderer.indexOf('grid.innerHTML = accounts.map');
+  const cardEnd = renderer.indexOf('async function renderInstanceAccountPicker', cardStart);
+  const cards = renderer.slice(cardStart, cardEnd);
+  assert.match(cards, /accountHeadMarkup\(a\)/);
+  assert.doesNotMatch(cards, /\$\{a\.id\}<\/div>/);
+  assert.match(renderer, /id="instanceAccountPicker"/);
+  assert.match(renderer, /id="libraryAccountPicker"/);
+  assert.match(renderer, /id="homeAccountPicker"/);
+  assert.match(renderer, /data-account-id/);
+  assert.match(renderer, /querySelectorAll\('\[data-account-picker\]'\)/);
+
+  const homeStart = renderer.indexOf('<div class="page active" id="page-home">');
+  const homeEnd = renderer.indexOf('<!-- ── INSTANCES ── -->', homeStart);
+  const home = renderer.slice(homeStart, homeEnd);
+  assert.match(home, /id="homeAccountPicker"/, 'the home stat slot holds the account picker');
+  assert.doesNotMatch(home, /id="statAccounts"/, 'the home account count is gone');
+  assert.doesNotMatch(renderer, /statAccounts/, 'nothing still updates a home account count');
+  assert.match(renderer, /function refreshHomePage\(\) \{[\s\S]*?renderInstanceAccountPicker\(\)/,
+    'refreshing Home hydrates its account picker');
+  assert.doesNotMatch(renderer, /\.library-account-picker \.instance-account-head\{[^}]*border-radius:50%/,
+    'the library account head is a rounded square, not a circle');
+  assert.match(renderer, /\.home-account-picker \.home-account-head\{width:38px;height:38px;border-radius:9px\}/,
+    'the home account head is a rounded square');
+
+  const toolbarStart = renderer.indexOf('<div class="library-toolbar">');
+  const toolbarEnd = renderer.indexOf('<div class="library-scroll">', toolbarStart);
+  assert.match(renderer.slice(toolbarStart, toolbarEnd), /id="libraryAccountPicker"/,
+    'the library toolbar carries its own account picker');
+  assert.match(renderer, /function showLibraryView\(\) \{[\s\S]*?renderInstanceAccountPicker\(\)/,
+    'opening the library refreshes the picker');
+});
+
+test('selecting an expired account from the picker starts the Microsoft sign-in flow', async () => {
+  const start = renderer.indexOf('async function selectInstanceAccount');
+  const end = renderer.indexOf('\ndocument.addEventListener', start);
+  assert.ok(start >= 0 && end > start, 'the picker selection helper exists');
+  const source = renderer.slice(start, end);
+
+  const calls = [];
+  const accounts = [
+    { id: 'ms_healthy', name: 'Healthy', active: true },
+    { id: 'ms_expired', name: 'Expired', needsReauth: true },
+  ];
+  const sandbox = {
+    closeInstanceAccountMenu: () => calls.push('close'),
+    AccountStore: { getAll: async () => accounts },
+    setActiveAccount: async id => calls.push(`active:${id}`),
+    signInAgain: async id => calls.push(`signin:${id}`),
+  };
+  vm.runInNewContext(`${source}\nglobalThis.selectInstanceAccount = selectInstanceAccount;`, sandbox);
+
+  await sandbox.selectInstanceAccount('ms_expired');
+  assert.deepEqual(calls, ['close', 'active:ms_expired', 'signin:ms_expired']);
+
+  calls.length = 0;
+  await sandbox.selectInstanceAccount('ms_healthy');
+  assert.deepEqual(calls, ['close'], 'a healthy active account needs no extra work');
+
+  calls.length = 0;
+  accounts[0].needsReauth = true;
+  await sandbox.selectInstanceAccount('ms_healthy');
+  assert.deepEqual(calls, ['close', 'signin:ms_healthy'], 'an expired active account goes straight to sign-in');
+});
+
 test('accounts signed in under another client ID are flagged for a fresh sign-in', async () => {
   await withTempRoot(async root => {
     const app = loadApp(root, { env: { MS_CLIENT_ID: 'client-current' } });

@@ -10,7 +10,7 @@ fs.rmSync(outputRoot, { recursive: true, force: true });
 fs.mkdirSync(path.join(outputRoot, 'assets'), { recursive: true });
 
 for (const entry of fs.readdirSync(rendererRoot)) {
-  if (path.extname(entry) !== '.html') continue;
+  if (!['.html', '.js'].includes(path.extname(entry))) continue;
   fs.copyFileSync(path.join(rendererRoot, entry), path.join(outputRoot, entry));
 }
 

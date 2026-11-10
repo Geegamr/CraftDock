@@ -132,3 +132,70 @@ test('Minecraft version browsing reuses the key and unwraps the data array', asy
     assert.equal(call.init.headers['x-api-key'], 'test-cf-key');
   });
 });
+
+test('a mod version lookup asks for the selected Minecraft version and loader', async () => {
+  await withTempRoot(async root => {
+    const fetchMock = recordingFetch({ data: [{ id: 123, fileName: 'sodium-0.5.11.jar' }] });
+    const app = loadApp(root, { fetch: fetchMock.impl });
+
+    const result = await app.exposed.craftdock.api.curseforgeModFiles('238222', '1.21.1', 'fabric');
+
+    assert.equal(result.success, true);
+    assert.deepEqual(plain(result.data), [{ id: 123, fileName: 'sodium-0.5.11.jar' }]);
+
+    const { base, params, headers } = paramsOf(fetchMock.calls[0]);
+    assert.equal(base, 'https://api.curseforge.com/v1/mods/238222/files');
+    assert.equal(params.pageSize, '50');
+    assert.equal(params.gameVersion, '1.21.1');
+    assert.equal(params.modLoaderType, '4');
+    assert.equal(headers['x-api-key'], 'test-cf-key');
+  });
+});
+
+test('a project detail lookup asks for one mod and unwraps its data', async () => {
+  await withTempRoot(async root => {
+    const fetchMock = recordingFetch({ data: { id: 238222, name: 'JEI', summary: 'Recipe viewer' } });
+    const app = loadApp(root, { fetch: fetchMock.impl });
+
+    const result = await app.exposed.craftdock.api.curseforgeMod('238222');
+
+    assert.equal(result.success, true);
+    assert.deepEqual(plain(result.data), { id: 238222, name: 'JEI', summary: 'Recipe viewer' });
+    const call = fetchMock.calls[0];
+    assert.equal(call.url, 'https://api.curseforge.com/v1/mods/238222');
+    assert.equal(call.init.headers['x-api-key'], 'test-cf-key');
+  });
+
+test('a project detail includes the separately hosted description HTML', async () => {
+  await withTempRoot(async root => {
+    const calls = [];
+    const app = loadApp(root, {
+      fetch: async url => {
+        const address = String(url);
+        calls.push(address);
+        if (address.endsWith('/description')) return jsonResponse({ data: '<p>Recipe viewer</p>' });
+        return jsonResponse({ data: { id: 238222, name: 'JEI', summary: 'Recipe viewer' } });
+      },
+    });
+
+    const result = await app.exposed.craftdock.api.curseforgeMod('238222');
+
+    assert.equal(result.success, true);
+    assert.equal(result.data.description, '<p>Recipe viewer</p>');
+    assert.equal(calls[1], 'https://api.curseforge.com/v1/mods/238222/description');
+  });
+});
+});
+
+test('an invalid project detail id is rejected without a network request', async () => {
+  await withTempRoot(async root => {
+    const fetchMock = recordingFetch();
+    const app = loadApp(root, { fetch: fetchMock.impl });
+
+    const result = await app.exposed.craftdock.api.curseforgeMod('not-an-id');
+
+    assert.equal(result.success, false);
+    assert.match(result.error, /Invalid CurseForge mod id/);
+    assert.deepEqual(fetchMock.calls, []);
+  });
+});
