@@ -65,6 +65,13 @@ contextBridge.exposeInMainWorld('craftdock', {
   // File system helpers
   openFolder:  (p)  => ipcRenderer.invoke('open-folder',    p),
   getDataRoot: ()   => ipcRenderer.invoke('get-data-root'),
+
+  // App settings data tools
+  appData: {
+    createBackup: ()              => ipcRenderer.invoke('app-data-backup'),
+    cacheStats:   (versions)      => ipcRenderer.invoke('app-cache-stats', versions),
+    cleanCache:   (versions)      => ipcRenderer.invoke('app-cache-clean', versions),
+  },
 });
 
 contextBridge.exposeInMainWorld('craftdockServer', {
@@ -122,6 +129,7 @@ contextBridge.exposeInMainWorld('craftdockInstance', {
   update:         (meta)      => ipcRenderer.invoke('instance-update',          meta),
   delete:         (id)        => ipcRenderer.invoke('instance-delete',          id),
   copy:           (id)        => ipcRenderer.invoke('instance-copy',            id),
+  convertToServer:(id, sid, name) => ipcRenderer.invoke('instance-convert-to-server', id, sid, name),
   pauseCopy:      (id, paused)=> ipcRenderer.invoke('instance-copy-pause',      id, !!paused),
   cancelCopy:     (id)        => ipcRenderer.invoke('instance-copy-cancel',     id),
   list:           ()          => ipcRenderer.invoke('instance-list'),

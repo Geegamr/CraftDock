@@ -9,7 +9,7 @@ const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'src', 'index.html'), 'utf8');
 const galleryScript = fs.readFileSync(path.join(root, 'src', 'gallery.js'), 'utf8');
 
-test('the rail is wider and stacks the top-three most played packs vertically', () => {
+test('the rail is wider and stacks the top-three most played packs below Gallery', () => {
   assert.match(html, /\.icon-rail\{width:81\.9px/);
   assert.match(html, /\.rail-top-list\{[^}]*flex-direction:column/);
   assert.match(html, /\.rail-btn\{width:46\.2px;height:46\.2px/);
@@ -23,8 +23,9 @@ test('the rail is wider and stacks the top-three most played packs vertically', 
   assert.match(html, /id="railTopPacks"/);
   assert.match(html, /id="railTopList"/);
   const rail = html.slice(html.indexOf('<div class="icon-rail">'), html.indexOf('<div class="main-content">'));
-  assert.ok(rail.indexOf('rail-spacer') < rail.indexOf('railTopPacks'), 'the top-three block sits below the flexible spacer');
-  assert.ok(rail.indexOf('railTopPacks') < rail.indexOf('consolRailBtn'), 'the top-three block sits directly above Console');
+  assert.ok(rail.indexOf("switchPage('gallery',this)") < rail.indexOf('railTopPacks'), 'the top-three block sits below the Gallery button');
+  assert.ok(rail.indexOf('railTopPacks') < rail.indexOf('rail-spacer'), 'the top-three block sits above the flexible spacer');
+  assert.ok(rail.indexOf('railTopPacks') < rail.indexOf('consolRailBtn'), 'the top-three block stays above Console');
   assert.match(html, /renderRailTopPacks\(allInstances\)/);
   assert.match(galleryScript, /\.slice\(0, 3\)/);
   assert.match(galleryScript, /totalPlayMinutes/);

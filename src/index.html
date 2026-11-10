@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CraftDock</title>
+<script>
+// Apply the last chosen theme before the stylesheet paints so a reload never
+// flashes the dark navy palette at a light or OLED user.
+(function () {
+  try {
+    var saved = JSON.parse(localStorage.getItem('craftdock:appSettings') || '{}');
+    var theme = saved && saved.theme;
+    if (theme !== 'light' && theme !== 'dark' && theme !== 'oled') theme = 'dark';
+    document.documentElement.dataset.theme = theme;
+  } catch (_) {
+    document.documentElement.dataset.theme = 'dark';
+  }
+})();
+</script>
 <style>
 /* Bundled fonts: no network request, works offline. Manrope and JetBrains Mono
    are variable, so one file each covers every weight the UI uses. */
@@ -34,7 +48,63 @@
   --border-hover: rgba(59,130,246,0.3);
   --radius: 10px;
   --radius-sm: 6px;
+  --track: rgba(255,255,255,0.07);
+  color-scheme: dark;
 }
+
+/* Dark is the original navy palette and remains the default. Light lifts the
+   same blue accent onto neutral surfaces; OLED keeps the navy accent but turns
+   every surface true black to avoid lighting unused pixels. */
+:root[data-theme="light"] {
+  --bg-darkest: #e3e9f2;
+  --bg-dark: #dbe4f0;
+  --bg-mid: #eef2f8;
+  --bg-panel: #e7edf6;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f7faff;
+  --bg-input: #f3f6fb;
+  --accent: #2563eb;
+  --accent-bright: #1d4ed8;
+  --accent-subtle: rgba(37,99,235,0.11);
+  --green: #15803d;
+  --yellow: #a16207;
+  --red: #dc2626;
+  --purple: #7e22ce;
+  --text-primary: #0f1b2d;
+  --text-secondary: #40526a;
+  --text-muted: #54677d;
+  --border: rgba(30,58,95,0.18);
+  --border-hover: rgba(37,99,235,0.45);
+  --track: rgba(15,23,42,0.10);
+  color-scheme: light;
+}
+:root[data-theme="light"] .settings-section{box-shadow:0 1px 2px rgba(15,23,42,0.05)}
+:root[data-theme="light"] .settings-section-header{background:#f4f7fc}
+:root[data-theme="oled"] {
+  --bg-darkest: #000000;
+  --bg-dark: #000000;
+  --bg-mid: #05070b;
+  --bg-panel: #080b11;
+  --bg-card: #0b1018;
+  --bg-card-hover: #111923;
+  --bg-input: #05080d;
+  --accent-subtle: rgba(59,130,246,0.1);
+  --border: rgba(96,165,250,0.16);
+  --border-hover: rgba(96,165,250,0.38);
+  --text-muted: #64748b;
+  --track: rgba(255,255,255,0.1);
+  color-scheme: dark;
+}
+:root[data-theme="light"] input[type=checkbox]{border-color:rgba(15,23,42,0.24)}
+:root[data-theme="light"] .tc-btn.min,
+:root[data-theme="light"] .tc-btn.max{background:rgba(15,23,42,0.06)}
+:root[data-theme="light"] .tc-btn:hover.min,
+:root[data-theme="light"] .tc-btn:hover.max{background:rgba(15,23,42,0.12)}
+:root[data-theme="light"] .library-sort-select,
+:root[data-theme="light"] .browse-filter-select{color-scheme:light}
+:root[data-theme="light"] .hero-overlay{background:linear-gradient(to bottom,rgba(8,12,20,0) 0%,rgba(8,12,20,0.62) 100%)}
+:root[data-theme="light"] .instance-hero .hero-title,
+:root[data-theme="light"] .instance-hero .hero-sub{color:#f8fafc}
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
@@ -422,6 +492,52 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .section-heading{font-size:16px;font-weight:700}
 
+/* ── NEW-USER HOME ── */
+.home-welcome{max-width:1180px;margin:0 auto;padding:14px 0 36px}
+.home-welcome[hidden]{display:none}
+.home-welcome-eyebrow{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+.home-welcome-title{font-size:34px;line-height:1.08;font-weight:800;letter-spacing:-.035em;max-width:700px;margin:0 0 12px}
+.home-welcome-sub{font-size:13px;line-height:1.65;color:var(--text-secondary);max-width:660px;margin:0}
+.home-popular-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:34px 0 14px}
+.home-popular-title{font-size:16px;font-weight:800}
+.home-popular-sub{font-size:11px;color:var(--text-muted);margin-top:4px}
+.home-browse-all{border:0;background:transparent;color:var(--accent-bright);font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;padding:4px 0;white-space:nowrap}
+.home-browse-all:hover{color:var(--text-primary)}
+.home-popular-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;min-height:190px}
+.home-popular-state{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;min-height:170px;padding:24px;text-align:center;border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:12px}
+.home-popular-error{font-size:11px;color:var(--text-muted);max-width:360px;overflow-wrap:anywhere}
+.home-popular-error-row{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;padding:12px 16px;border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:11px;text-align:center}
+.home-pack-card{display:flex;flex-direction:column;min-width:0;padding:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-card);transition:border-color .15s,transform .15s,box-shadow .15s}
+.home-pack-card:hover{border-color:var(--border-hover);transform:translateY(-1px);box-shadow:0 8px 22px rgba(0,0,0,.18)}
+.home-pack-head{display:flex;align-items:center;gap:11px;min-width:0}
+.home-pack-icon{position:relative;display:flex;align-items:center;justify-content:center;width:46px;height:46px;flex-shrink:0;overflow:hidden;border:1px solid var(--border);border-radius:9px;background:var(--bg-panel);color:var(--accent-bright)}
+.home-pack-icon img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.home-pack-icon svg{width:22px;height:22px}
+.home-pack-copy{min-width:0}
+.home-pack-name{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-pack-author{display:flex;align-items:center;gap:6px;min-width:0;font-size:10px;color:var(--text-muted);margin-top:3px}
+.home-pack-author-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-pack-source{flex-shrink:0;padding:1px 5px;border:1px solid;border-radius:999px;font-size:8px;line-height:1.4;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.home-pack-source.modrinth{color:#4ade80;border-color:rgba(34,197,94,.25);background:rgba(34,197,94,.1)}
+.home-pack-source.curseforge{color:#facc15;border-color:rgba(234,179,8,.25);background:rgba(234,179,8,.1)}
+.home-pack-desc{font-size:11px;line-height:1.5;color:var(--text-secondary);margin-top:11px;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.home-pack-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:auto;padding-top:13px}
+.home-pack-downloads{display:inline-flex;align-items:center;gap:4px;min-width:0;font-size:10px;color:var(--text-muted);white-space:nowrap}
+.home-pack-downloads svg{width:11px;height:11px;flex-shrink:0}
+.home-pack-foot .btn-install-pack{padding:6px 15px;flex-shrink:0}
+.home-welcome-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;padding-top:18px;border-top:1px solid var(--border)}
+.home-welcome-note{font-size:11px;color:var(--text-muted)}
+.home-welcome-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+@media (max-width:980px){
+  .home-popular-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:720px){
+  .home-welcome-title{font-size:28px}
+  .home-popular-head{align-items:flex-start;flex-direction:column;gap:8px}
+  .home-popular-grid{grid-template-columns:1fr}
+  .home-welcome-footer{align-items:flex-start;flex-direction:column}
+}
+
 /* ── INSTANCE LIBRARY ── */
 .library-view{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;background:var(--bg-mid)}
 .library-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:28px 30px 20px;flex-shrink:0;border-bottom:1px solid rgba(59,130,246,0.08)}
@@ -429,10 +545,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .library-title{font-size:28px;line-height:1;font-weight:800;letter-spacing:-0.02em}
 .library-sub{font-size:12px;color:var(--text-muted);margin-top:8px}
 .library-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.library-sort{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:999px;color:var(--text-secondary);transition:border-color 0.15s,background 0.15s}
+.library-sort{display:flex;align-items:center;gap:8px;height:36px;padding:0 10px 0 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:999px;color:var(--text-secondary);cursor:pointer;flex-shrink:0;transition:border-color 0.15s,background 0.15s}
+.library-sort:hover{border-color:var(--border-hover);background:var(--bg-card-hover)}
 .library-sort:focus-within{border-color:var(--accent)}
 .library-sort-label{font-size:10px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)}
-.library-sort-select{border:0;background:transparent;color:var(--text-primary);font-family:inherit;font-size:11px;font-weight:700;outline:none;cursor:pointer;padding:0 1px;color-scheme:dark}
+.library-sort-select{min-width:92px;max-width:156px;height:34px;border:0;background:transparent;color:var(--text-primary);font-family:inherit;font-size:11px;font-weight:700;outline:none;cursor:pointer;padding:0 1px;color-scheme:inherit}
+.library-sort-select option{background:var(--bg-panel);color:var(--text-primary)}
+.library-size{display:flex;align-items:center;gap:2px;height:36px;padding:3px;background:var(--bg-card);border:1px solid var(--border);border-radius:999px;flex-shrink:0}
+.library-size-btn{height:28px;min-width:29px;padding:0 7px;border:0;border-radius:999px;background:transparent;color:var(--text-muted);font-family:inherit;font-size:9px;font-weight:800;letter-spacing:.04em;cursor:pointer;transition:background .15s,color .15s}
+.library-size-btn:hover{background:var(--bg-card-hover);color:var(--text-primary)}
+.library-size-btn.active{background:var(--accent);color:#fff}
+.library-size-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .library-search{position:relative;width:230px;display:block}
 .library-search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--text-muted);pointer-events:none}
 .library-search input{width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:999px;padding:9px 14px 9px 34px;color:var(--text-primary);font-family:inherit;font-size:12px;outline:none;transition:border-color 0.15s}
@@ -464,9 +587,29 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-darkest);co
 .library-card-art{position:relative;flex:1;min-height:138px;margin-bottom:9px;border-radius:11px;overflow:hidden;background:transparent}
 .library-card-icon{position:absolute;inset:0;width:auto;height:auto;border-radius:11px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:transparent;border:none}
 .library-card-icon.is-fallback{background:linear-gradient(135deg,#1a3a6b,#2563a0);border:1px solid rgba(255,255,255,0.08)}
-.library-card-icon img{width:100%;height:100%;object-fit:cover;display:block;transition:none}
+.library-card-icon img{width:100%;height:100%;object-fit:contain;display:block;transition:none}
 .library-card-icon svg{width:48px;height:48px;color:rgba(255,255,255,0.9)}
 .library-card-badge{position:absolute;top:6px;right:6px;z-index:1;font-size:8px;font-weight:800;letter-spacing:0.06em;padding:2px 6px;border-radius:999px;background:rgba(8,12,20,0.82);border:1px solid rgba(255,255,255,0.08);color:var(--text-secondary)}
+.library-card-update,.library-card-lock{position:absolute;top:6px;left:6px;z-index:4;width:23px;height:23px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(8px);transition:transform .15s,background .15s,border-color .15s,color .15s}
+.library-card-update{background:rgba(245,158,11,.2);border:1px solid rgba(245,158,11,.65);color:#fbbf24;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.library-card-update:focus-visible,.library-card-lock:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px}
+.library-card-update:hover{background:#d97706;color:#fff;transform:scale(1.08)}
+.library-card-lock{background:rgba(8,12,20,.66);border:1px solid rgba(255,255,255,.16);color:var(--text-muted)}
+.library-card-lock:hover{background:var(--bg-panel);border-color:var(--border-hover);color:var(--text-primary);transform:scale(1.06)}
+.library-card-update svg,.library-card-lock svg{width:13px;height:13px}
+:root[data-theme="light"] .library-card-update{background:#fff7ed;border-color:#f59e0b;color:#b45309;box-shadow:0 3px 9px rgba(180,83,9,.18)}
+:root[data-theme="light"] .library-card-update:hover{background:#b45309;color:#fff}
+:root[data-theme="light"] .library-card-lock{background:rgba(255,255,255,.92);border-color:rgba(30,58,95,.22);color:#5f7085}
+:root[data-theme="light"] .library-card-lock:hover{background:var(--bg-card-hover);color:var(--text-primary)}
+.library-view[data-card-size="medium"] .library-cards{grid-template-columns:repeat(7,minmax(0,1fr))}
+.library-view[data-card-size="large"] .library-cards{grid-template-columns:repeat(5,minmax(0,1fr))}
+.library-view[data-card-size="medium"] .library-card,
+.library-view[data-card-size="large"] .library-card{min-height:0;aspect-ratio:38/51}
+.library-view[data-card-size="medium"] .library-card-art,
+.library-view[data-card-size="large"] .library-card-art{min-height:0}
+@media (max-width:1200px){.library-view[data-card-size="medium"] .library-cards{grid-template-columns:repeat(6,minmax(0,1fr))}}
+@media (max-width:960px){.library-view[data-card-size="medium"] .library-cards{grid-template-columns:repeat(5,minmax(0,1fr))}.library-view[data-card-size="large"] .library-cards{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:700px){.library-view[data-card-size="medium"] .library-cards,.library-view[data-card-size="large"] .library-cards{grid-template-columns:repeat(auto-fill,minmax(128px,1fr))}}
 .library-card-body{position:relative;padding-right:38px;min-width:0}
 .library-card-name{font-size:13px;font-weight:800;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .library-card-meta{font-size:9px;color:var(--text-muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -636,6 +779,33 @@ body.inst-dragging .library-card{cursor:grabbing}
 .settings-view{padding:24px;max-width:760px;overflow-y:auto;flex:1;will-change:scroll-position;contain:strict}
 .settings-section{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden}
 .settings-section-header{padding:14px 18px;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);display:flex;align-items:center;gap:8px}
+.theme-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:14px 18px}
+.theme-choice{display:flex;flex-direction:column;gap:8px;min-width:0;padding:8px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text-secondary);font-family:inherit;text-align:left;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
+.theme-choice:hover{border-color:var(--border-hover);background:var(--bg-card-hover)}
+.theme-choice.active{border-color:var(--accent);background:var(--accent-subtle);box-shadow:0 0 0 1px var(--accent) inset}
+.theme-choice:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.theme-preview{display:flex;gap:4px;height:48px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--bg-darkest);overflow:hidden}
+.theme-preview-rail{width:10px;border-radius:3px;background:var(--bg-panel)}
+.theme-preview-main{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.theme-preview-line{height:6px;border-radius:2px;background:var(--bg-card)}
+.theme-preview-line:first-child{width:64%;background:var(--accent)}
+.theme-preview-light{background:#f4f7fc}
+.theme-preview-light .theme-preview-rail{background:#e2e9f4}
+.theme-preview-light .theme-preview-line{background:#dbe5f3}
+.theme-preview-light .theme-preview-line:first-child{background:#2563eb}
+.theme-preview-oled{background:#000}
+.theme-preview-oled .theme-preview-rail{background:#07090e}
+.theme-preview-oled .theme-preview-line{background:#111821}
+.theme-preview-oled .theme-preview-line:first-child{background:#3b82f6}
+.theme-choice-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
+.theme-choice-name{font-size:11px;font-weight:800;color:var(--text-primary)}
+.theme-choice-note{font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.settings-toolbar{display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
+.settings-file-input{display:none}
+.settings-status{font-size:10px;color:var(--text-muted);line-height:1.5;overflow-wrap:anywhere}
+.settings-status.error{color:#ef4444}
+.settings-status.ok{color:var(--green)}
+@media (max-width:640px){.theme-grid{grid-template-columns:1fr}.settings-row{flex-wrap:wrap}.settings-toolbar{justify-content:flex-start}}
 .java-status{display:flex;gap:8px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--border)}
 .java-badge{padding:4px 10px;border-radius:var(--radius-sm);font-size:11px;font-weight:700}
 .java-badge.ok{background:rgba(34,197,94,0.12);color:var(--green)}
@@ -651,6 +821,9 @@ body.inst-dragging .library-card{cursor:grabbing}
 .modal-overlay.open{display:flex}
 .modal{background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;padding:24px;width:480px;max-width:90vw;box-shadow:0 24px 80px rgba(0,0,0,0.6)}
 .modal.modal-wide{width:760px}
+.modal.confirm-modal{width:440px;color-scheme:inherit}
+.confirm-modal #confirmOk{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff}
+select option{background:var(--bg-panel);color:var(--text-primary)}
 .modal-title{font-size:16px;font-weight:800;margin-bottom:4px}
 .modal-sub{font-size:12px;color:var(--text-muted);margin-bottom:20px}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
@@ -927,7 +1100,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
 .srv-console-input:focus { border-color:var(--accent); }
 .srv-prop-row {
   display:grid; grid-template-columns:220px 1fr; gap:10px;
-  align-items:center; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.04);
+  align-items:center; padding:8px 0; border-bottom:1px solid var(--border);
 }
 .srv-prop-row:last-child { border-bottom:none; }
 .srv-prop-key { font-size:11px; font-family:monospace; color:var(--text-secondary); }
@@ -1057,7 +1230,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
     <img src="../assets/icon.svg" width="20" height="20" style="border-radius:4px;image-rendering:pixelated;flex-shrink:0" alt="CraftDock">
     CRAFTDOCK
   </div>
-  <div class="titlebar-center" data-tauri-drag-region><span>v<span class="app-version">0.8.6</span></span><span class="beta-badge">Public Beta</span></div>
+  <div class="titlebar-center" data-tauri-drag-region><span>v<span class="app-version">0.10.0</span></span><span class="beta-badge">Public Beta</span></div>
   <div class="titlebar-controls">
     <button class="tc-btn min" onclick="winCtrl('minimize')" aria-label="Minimize" title="Minimize">─</button>
     <button class="tc-btn max" onclick="winCtrl('maximize')" aria-label="Maximize" title="Maximize">□</button>
@@ -1090,10 +1263,10 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
   <button class="rail-btn" onclick="switchPage('gallery',this)" title="Screenshot gallery">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="14" height="14" rx="2"/><circle cx="8" cy="10" r="1.5"/><polyline points="17,15 13,11 5,19"/><path d="M7 2h12a3 3 0 013 3v12"/></svg><span>GALLERY</span>
   </button>
-  <div class="rail-spacer"></div>
   <div class="rail-top" id="railTopPacks" hidden>
     <div class="rail-top-list" id="railTopList"></div>
   </div>
+  <div class="rail-spacer"></div>
   <button class="rail-btn" id="consolRailBtn" onclick="switchPage('console',this)" title="App Console" style="position:relative">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polyline points="4,17 10,11 4,5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
     <span>Console</span>
@@ -1109,6 +1282,29 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
 <!-- ── HOME ── -->
 <div class="page active" id="page-home">
   <div class="home-view">
+    <div class="home-welcome" id="homeOnboarding" hidden>
+      <div class="home-welcome-eyebrow">Welcome to CraftDock</div>
+      <h1 class="home-welcome-title">Your first modpack is one click away.</h1>
+      <p class="home-welcome-sub">Choose a popular pack and CraftDock will create your first instance and install it for you. You only need an account when you're ready to play.</p>
+      <div class="home-popular-head">
+        <div>
+          <div class="home-popular-title">Popular modpacks</div>
+          <div class="home-popular-sub">Four top packs from Modrinth and CurseForge.</div>
+        </div>
+        <button class="home-browse-all" type="button" onclick="switchPage('browse', document.querySelector('.rail-btn[title=Browse]'))">Browse all <span aria-hidden="true">→</span></button>
+      </div>
+      <div class="home-popular-grid" id="homePopularPacks" aria-live="polite" aria-busy="true">
+        <div class="home-popular-state"><span class="launch-spinner" style="width:22px;height:22px;margin:0 auto 10px"></span><div>Finding popular modpacks…</div></div>
+      </div>
+      <div class="home-welcome-footer">
+        <div class="home-welcome-note">Already have a pack? Bring your worlds with you.</div>
+        <div class="home-welcome-actions">
+          <button class="btn-secondary" type="button" onclick="openLauncherImportModal()">Import a pack</button>
+          <button class="btn-secondary" type="button" onclick="switchPage('accounts', document.querySelector('.rail-btn[title=Accounts]'))">Sign in with Microsoft</button>
+        </div>
+      </div>
+    </div>
+    <div id="homeRegular">
     <div class="home-greeting" id="homeGreeting">Welcome to CraftDock</div>
     <div class="home-sub" id="homeSub">Sign in or add an instance to get started.</div>
 
@@ -1152,12 +1348,13 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
         </div>
       </div>
     </div>
+    </div><!-- /homeRegular -->
   </div>
 </div>
 
 <!-- ── INSTANCES ── -->
 <div class="page" id="page-instances" style="flex-direction:column">
-  <div class="library-view" id="libraryView">
+  <div class="library-view" id="libraryView" data-card-size="small">
     <div class="library-head">
       <div>
         <div class="library-eyebrow">Your collection</div>
@@ -1178,6 +1375,11 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input id="librarySearch" type="search" placeholder="Search library..." autocomplete="off" aria-label="Search library" oninput="filterLibrary(this.value)">
         </label>
+        <div class="library-size" role="group" aria-label="Card size">
+          <button class="library-size-btn active" type="button" data-library-size="small" onclick="setLibraryCardSize('small')" title="Small cards — current size" aria-label="Small cards" aria-pressed="true">S</button>
+          <button class="library-size-btn" type="button" data-library-size="medium" onclick="setLibraryCardSize('medium')" title="Medium cards — 7 per row" aria-label="Medium cards" aria-pressed="false">M</button>
+          <button class="library-size-btn" type="button" data-library-size="large" onclick="setLibraryCardSize('large')" title="Large cards — 5 per row" aria-label="Large cards" aria-pressed="false">L</button>
+        </div>
         <button class="library-tool-btn" type="button" onclick="openNewCategoryModal()" title="New category">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
           Category
@@ -2148,13 +2350,59 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
 <div class="page" id="page-settings">
   <div class="settings-view">
     <div style="font-size:18px;font-weight:800;margin-bottom:4px">Settings</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v<span class="app-version">0.8.6</span></div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v<span class="app-version">0.10.0</span></div>
 
-    <!-- Java Management -->
+    <!-- Appearance -->
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/><path d="M7.5 7.5c2.5 2.5 2.5 6.5 0 9M16.5 7.5c-2.5 2.5-2.5 6.5 0 9"/></svg>
+        Appearance
+      </div>
+      <div class="theme-grid" role="radiogroup" aria-label="App theme">
+        <button type="button" class="theme-choice active" data-theme-choice="dark" role="radio" aria-checked="true" onclick="settingsSetTheme('dark')">
+          <span class="theme-preview theme-preview-dark"><span class="theme-preview-rail"></span><span class="theme-preview-main"><span class="theme-preview-line"></span><span class="theme-preview-line"></span><span class="theme-preview-line"></span></span></span>
+          <span class="theme-choice-copy"><span class="theme-choice-name">Deep Navy</span><span class="theme-choice-note">Default · dark</span></span>
+        </button>
+        <button type="button" class="theme-choice" data-theme-choice="light" role="radio" aria-checked="false" onclick="settingsSetTheme('light')">
+          <span class="theme-preview theme-preview-light"><span class="theme-preview-rail"></span><span class="theme-preview-main"><span class="theme-preview-line"></span><span class="theme-preview-line"></span><span class="theme-preview-line"></span></span></span>
+          <span class="theme-choice-copy"><span class="theme-choice-name">Light</span><span class="theme-choice-note">Bright and neutral</span></span>
+        </button>
+        <button type="button" class="theme-choice" data-theme-choice="oled" role="radio" aria-checked="false" onclick="settingsSetTheme('oled')">
+          <span class="theme-preview theme-preview-oled"><span class="theme-preview-rail"></span><span class="theme-preview-main"><span class="theme-preview-line"></span><span class="theme-preview-line"></span><span class="theme-preview-line"></span></span></span>
+          <span class="theme-choice-copy"><span class="theme-choice-name">OLED Black</span><span class="theme-choice-note">True black surfaces</span></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Community translations -->
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.7 2.5 4.2 5.6 4.2 9S14.7 18.5 12 21M12 3c-2.7 2.5-4.2 5.6-4.2 9S9.3 18.5 12 21"/></svg>
+        Community Translations
+      </div>
+      <div class="settings-row" style="align-items:flex-start">
+        <div class="settings-label">
+          <div class="settings-label-text">Language</div>
+          <div class="settings-label-desc">Import a community JSON pack. Missing strings fall back to English.</div>
+          <div class="settings-label-desc" style="margin-top:4px">Pack fields: <code>{ code, name, nativeName, strings }</code>.</div>
+          <div id="settingsLocaleStatus" class="settings-status" style="margin-top:6px">Built-in English</div>
+        </div>
+        <div class="settings-toolbar">
+          <select id="settingsLanguage" class="settings-select" data-no-i18n style="min-width:170px;max-width:220px" onchange="settingsSetLanguage(this.value)" aria-label="Language pack">
+            <option value="en">English</option>
+          </select>
+          <button type="button" class="btn-ghost" style="width:auto;padding:5px 10px;font-size:10px" onclick="document.getElementById('settingsLocaleFile').click()">Import pack</button>
+          <button type="button" class="btn-ghost" id="settingsLocaleRemoveBtn" style="display:none;width:auto;padding:5px 10px;font-size:10px" onclick="settingsRemoveLocale()">Remove</button>
+        </div>
+      </div>
+      <input id="settingsLocaleFile" class="settings-file-input" type="file" accept=".json,application/json" onchange="settingsImportLocaleFile(this)">
+    </div>
+
+    <!-- Java & Minecraft -->
     <div class="settings-section">
       <div class="settings-section-header">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-        Java Management
+        Java &amp; Minecraft
         <button class="btn-ghost" style="width:auto;padding:3px 10px;font-size:10px;margin-left:auto" onclick="settingsScanJava()">↻ Scan</button>
         <button class="btn-ghost" style="width:auto;padding:3px 10px;font-size:10px;margin-left:6px" id="javaInstallMissingBtn" onclick="settingsInstallMissingJava()" title="Download only the Java versions this PC doesn't already have">⤓ Install missing</button>
       </div>
@@ -2166,14 +2414,14 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;font-size:11px">
           <div style="padding:5px 0;color:var(--text-secondary);font-weight:700;border-bottom:1px solid var(--border)">Minecraft Version</div>
           <div style="padding:5px 0;color:var(--text-secondary);font-weight:700;border-bottom:1px solid var(--border)">Java Version</div>
-          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">26.1 and later</div>
-          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 25</div>
-          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">1.20 – 1.21</div>
-          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 21</div>
-          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">1.18 – 1.19</div>
-          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 17</div>
-          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">1.17</div>
-          <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);color:#a5b4fc">Java 16</div>
+          <div style="padding:5px 0;border-bottom:1px solid var(--border)">26.1 and later</div>
+          <div style="padding:5px 0;border-bottom:1px solid var(--border);color:#a5b4fc">Java 25</div>
+          <div style="padding:5px 0;border-bottom:1px solid var(--border)">1.20 – 1.21</div>
+          <div style="padding:5px 0;border-bottom:1px solid var(--border);color:#a5b4fc">Java 21</div>
+          <div style="padding:5px 0;border-bottom:1px solid var(--border)">1.18 – 1.19</div>
+          <div style="padding:5px 0;border-bottom:1px solid var(--border);color:#a5b4fc">Java 17</div>
+          <div style="padding:5px 0;border-bottom:1px solid var(--border)">1.17</div>
+          <div style="padding:5px 0;border-bottom:1px solid var(--border);color:#a5b4fc">Java 16</div>
           <div style="padding:5px 0">1.16 and below</div>
           <div style="padding:5px 0;color:#a5b4fc">Java 8</div>
         </div>
@@ -2188,18 +2436,18 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
           <span id="settingsJavaProgressLabel" style="font-size:11px;color:var(--text-secondary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Preparing…</span>
           <button class="btn-ghost" id="settingsJavaCancelBtn" style="width:auto;padding:3px 10px;font-size:10px;flex-shrink:0" onclick="settingsCancelJavaInstall()">Cancel</button>
         </div>
-        <div style="height:4px;border-radius:2px;background:rgba(255,255,255,0.07);overflow:hidden">
+        <div style="height:4px;border-radius:2px;background:var(--track);overflow:hidden">
           <div id="settingsJavaProgressBar" style="height:100%;width:0%;background:var(--accent);transition:width 0.15s"></div>
         </div>
         <div id="settingsJavaProgressDetail" style="font-size:10px;color:var(--text-muted);margin-top:6px"></div>
       </div>
     </div>
 
-    <!-- Performance -->
+    <!-- Minecraft defaults -->
     <div class="settings-section">
       <div class="settings-section-header">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
-        Performance Defaults
+        Minecraft Defaults
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Default Min RAM</div><div class="settings-label-desc">Minimum memory for new instances</div></div>
@@ -2267,6 +2515,17 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
         <div class="settings-label"><div class="settings-label-text">Data folder</div><div class="settings-label-desc" id="settingsDataPath" style="font-family:monospace;font-size:10px">Loading…</div></div>
         <button class="btn-ghost" style="width:auto;padding:4px 10px;font-size:10px;flex-shrink:0" onclick="settingsOpenDataFolder()">Open</button>
       </div>
+      <div class="settings-row" style="align-items:flex-start">
+        <div class="settings-label">
+          <div class="settings-label-text">App data backups</div>
+          <div class="settings-label-desc">Copies settings, accounts, instances, servers, skins and shared folders to a folder you choose. Game caches and Java runtimes are skipped because they can be downloaded again.</div>
+          <div id="settingsBackupStatus" class="settings-status" style="margin-top:6px">No backup created yet.</div>
+        </div>
+        <div class="settings-toolbar">
+          <button class="btn-ghost" id="settingsOpenBackupBtn" style="display:none;width:auto;padding:4px 10px;font-size:10px" onclick="settingsOpenLastBackup()">Open last</button>
+          <button class="btn-ghost" id="settingsBackupBtn" style="width:auto;padding:4px 10px;font-size:10px" onclick="settingsCreateAppBackup()">Back up now</button>
+        </div>
+      </div>
       <div class="settings-row">
         <div class="settings-label">
           <div class="settings-label-text">Total instances</div>
@@ -2289,11 +2548,22 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
         </div>
         <div id="settingsTagPoolList"></div>
       </div>
+      <div class="settings-row" style="align-items:flex-start">
+        <div class="settings-label">
+          <div class="settings-label-text">Unused Minecraft downloads</div>
+          <div class="settings-label-desc">Cached game versions that no instance or server uses. Shared libraries, assets and Java are never removed.</div>
+          <div id="settingsUnusedStats" class="settings-status" style="margin-top:6px">Scan to see what can be cleaned up.</div>
+        </div>
+        <div class="settings-toolbar">
+          <button class="btn-ghost" id="settingsUnusedScanBtn" style="width:auto;padding:4px 10px;font-size:10px" onclick="settingsScanUnusedDownloads()">Scan</button>
+          <button class="btn-ghost" id="settingsUnusedCleanBtn" style="width:auto;padding:4px 10px;font-size:10px" onclick="settingsCleanUnusedDownloads()" disabled>Clean</button>
+        </div>
+      </div>
       <div class="settings-row" style="align-items:center">
         <div class="settings-label" style="flex:1;min-width:0">
           <div class="settings-label-text">Browse cache</div>
           <div class="settings-label-desc" id="settingsBrowseCacheStats" style="font-size:10px">Checking…</div>
-          <div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.07);overflow:hidden;margin-top:6px;max-width:220px">
+          <div style="height:3px;border-radius:2px;background:var(--track);overflow:hidden;margin-top:6px;max-width:220px">
             <div id="settingsBrowseCacheBar" style="height:100%;width:0%;background:var(--accent);transition:width 0.2s"></div>
           </div>
         </div>
@@ -2332,7 +2602,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Version</div></div>
-        <span style="font-size:12px;color:var(--text-muted)">CraftDock v<span class="app-version">0.8.6</span></span>
+        <span style="font-size:12px;color:var(--text-muted)">CraftDock v<span class="app-version">0.10.0</span></span>
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Electron version</div></div>
@@ -2989,12 +3259,12 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
 
 <!-- CONFIRM DIALOG (replaces window.confirm which is blocked in Electron) -->
 <div class="modal-overlay" id="confirmModal">
-  <div class="modal" style="width:380px;text-align:center">
+  <div class="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
     <div class="modal-title" id="confirmTitle">Are you sure?</div>
     <div class="modal-sub" id="confirmMsg" style="margin-bottom:20px">This action cannot be undone.</div>
     <div class="modal-actions" style="justify-content:center">
       <button class="btn-secondary" id="confirmCancel">Cancel</button>
-      <button class="btn-launch" id="confirmOk" style="background:#ef4444">Confirm</button>
+      <button class="btn-launch" id="confirmOk" style="background:var(--red)">Delete</button>
     </div>
   </div>
 </div>
@@ -3219,7 +3489,7 @@ const hasCraftDockInstances = typeof window.craftdockInstance !== 'undefined';
 // Browser and native-build fallback version. Electron refreshes it from
 // package.json through the main process at startup, so keep this literal aligned
 // with package.json and the Tauri manifests for every release.
-let APP_VERSION = '0.8.6';
+let APP_VERSION = '0.10.0';
 
 // Everything that prints the version reads .app-version. Keep the fallback
 // aligned with package.json and the Tauri manifests when releasing.
@@ -3997,10 +4267,196 @@ async function updateStatusBar() {
   if (el) el.textContent = acct ? `${acct.name} • CraftDock v2.4.0` : 'Not signed in • CraftDock v2.4.0';
 }
 
+function shouldShowHomeOnboarding(accounts, instances, totalPlayMinutes) {
+  return Array.isArray(accounts) && accounts.length === 0
+    && Array.isArray(instances) && instances.length === 0
+    && (Number(totalPlayMinutes) || 0) === 0;
+}
+
+let _homePopularPacks = [];
+let _homePopularErrors = [];
+let _homePopularLoaded = false;
+let _homePopularLoading = false;
+
+async function fetchHomeModrinthPacks() {
+  const params = new URLSearchParams({
+    query: '',
+    facets: JSON.stringify([['project_type:modpack']]),
+    limit: '4',
+    offset: '0',
+    index: 'downloads'
+  });
+  const response = await fetch(`https://api.modrinth.com/v2/search?${params}`, {
+    headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` }
+  });
+  if (!response.ok) throw new Error(`Modrinth API ${response.status}`);
+  const data = await response.json();
+  return (data.hits || []).slice(0, 4).map(hit => ({
+    id: hit.project_id,
+    name: hit.title || 'Modpack',
+    author: hit.author || 'Unknown',
+    description: hit.description || '',
+    iconUrl: hit.icon_url || '',
+    downloads: Number(hit.downloads) || 0,
+    versions: hit.versions || [],
+    loaders: hit.loaders || [],
+    mcVersions: hit.game_versions || [],
+    source: 'modrinth',
+    slug: hit.slug,
+    browseType: 'modpack'
+  }));
+}
+
+async function fetchHomeCurseForgePacks() {
+  const api = resourceApi();
+  if (!api?.curseforgeSearch) throw new Error('CurseForge is unavailable in this build.');
+  const result = await api.curseforgeSearch('', '', '', 4471, 2, 0, 4);
+  if (!result.success) throw new Error(result.error || 'CurseForge API error');
+
+  const loaderNames = {1: 'forge', 2: 'cauldron', 3: 'liteloader', 4: 'fabric', 5: 'quilt', 6: 'neoforge'};
+  return (result.data || []).slice(0, 4).map(mod => {
+    const indexes = Array.isArray(mod.latestFilesIndexes) ? mod.latestFilesIndexes : [];
+    const gameVersions = Array.isArray(mod.gameVersions) ? mod.gameVersions.map(v => String(v)) : [];
+    const mcVersions = [...new Set(indexes.map(file => file.gameVersion).filter(Boolean))];
+    const loaders = [...new Set(indexes.map(file => loaderNames[Number(file.modLoader)]).filter(Boolean))];
+    if (!mcVersions.length) mcVersions.push(...gameVersions.filter(v => /^\d+\.\d+/.test(v)));
+    if (!loaders.length) {
+      loaders.push(...gameVersions.map(v => v.toLowerCase()).filter(v => ['forge', 'fabric', 'quilt', 'neoforge'].includes(v)));
+    }
+    return {
+      id: String(mod.id),
+      name: mod.name || 'Modpack',
+      author: mod.authors?.[0]?.name || 'Unknown',
+      description: mod.summary || '',
+      iconUrl: mod.logo?.thumbnailUrl || mod.logo?.url || '',
+      downloads: Number(mod.downloadCount) || 0,
+      versions: [],
+      loaders,
+      mcVersions,
+      source: 'curseforge',
+      slug: mod.slug,
+      browseType: 'modpack'
+    };
+  });
+}
+
+async function fetchHomePopularPacks() {
+  const [modrinthResult, curseforgeResult] = await Promise.allSettled([
+    fetchHomeModrinthPacks(),
+    fetchHomeCurseForgePacks(),
+  ]);
+  const packs = [];
+  const errors = [];
+  if (modrinthResult.status === 'fulfilled') {
+    packs.push(...modrinthResult.value.slice(0, 4));
+  } else {
+    errors.push(`Modrinth: ${modrinthResult.reason?.message || 'unavailable'}`);
+  }
+  if (curseforgeResult.status === 'fulfilled') {
+    packs.push(...curseforgeResult.value.slice(0, 4));
+  } else {
+    errors.push(`CurseForge: ${curseforgeResult.reason?.message || 'unavailable'}`);
+  }
+  if (!packs.length) throw new Error(errors.join(' · ') || 'No popular modpacks were returned.');
+  return { packs, errors };
+}
+
+function formatHomePackDownloads(value) {
+  const number = Number(value) || 0;
+  if (number >= 1000000) return `${(number / 1000000).toFixed(number >= 10000000 ? 0 : 1)}M`;
+  if (number >= 1000) return `${Math.round(number / 1000)}K`;
+  return String(number);
+}
+
+function renderHomePopularPacks(packs, errors = []) {
+  const grid = document.getElementById('homePopularPacks');
+  if (!grid) return;
+  if (!packs.length) {
+    const detail = errors.length ? `<div class="home-popular-error">${errors.map(escHtml).join(' · ')}</div>` : '';
+    grid.innerHTML = `<div class="home-popular-state"><div>Could not load popular modpacks.</div>${detail}<button class="btn-secondary" type="button" onclick="loadHomePopularPacks(true)">Try again</button></div>`;
+    return;
+  }
+  const cards = packs.map((pack, index) => {
+    const icon = pack.iconUrl
+      ? `<img src="${escAttr(pack.iconUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
+      : '';
+    const description = pack.description
+      ? `<div class="home-pack-desc">${escHtml(pack.description)}</div>`
+      : '';
+    const source = pack.source === 'curseforge' ? 'curseforge' : 'modrinth';
+    const sourceLabel = source === 'curseforge' ? 'CurseForge' : 'Modrinth';
+    return `<article class="home-pack-card">
+      <div class="home-pack-head">
+        <div class="home-pack-icon">${defaultPackIcon()}${icon}</div>
+        <div class="home-pack-copy">
+          <div class="home-pack-name" title="${escAttr(pack.name)}">${escHtml(pack.name)}</div>
+          <div class="home-pack-author"><span class="home-pack-author-name">by ${escHtml(pack.author)}</span><span class="home-pack-source ${source}">${sourceLabel}</span></div>
+        </div>
+      </div>
+      ${description}
+      <div class="home-pack-foot">
+        <span class="home-pack-downloads" title="${Number(pack.downloads) || 0} downloads">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          ${formatHomePackDownloads(pack.downloads)} downloads
+        </span>
+        <button class="btn-install-pack" type="button" onclick="installHomePopularPack(${index}, this)">Install</button>
+      </div>
+    </article>`;
+  }).join('');
+  const errorRow = errors.length
+    ? `<div class="home-popular-error-row"><span>Some packs could not be loaded — ${errors.map(escHtml).join(' · ')}</span><button class="home-browse-all" type="button" onclick="loadHomePopularPacks(true)">Try again</button></div>`
+    : '';
+  grid.innerHTML = cards + errorRow;
+}
+
+async function loadHomePopularPacks(force = false) {
+  const grid = document.getElementById('homePopularPacks');
+  if (!grid) return;
+  if (_homePopularLoaded && !force) {
+    if (!grid.querySelector('.home-pack-card')) renderHomePopularPacks(_homePopularPacks, _homePopularErrors);
+    return;
+  }
+  if (_homePopularLoading) return;
+  _homePopularLoading = true;
+  grid.setAttribute('aria-busy', 'true');
+  grid.innerHTML = '<div class="home-popular-state"><span class="launch-spinner" style="width:22px;height:22px;margin:0 auto 10px"></span><div>Finding popular modpacks…</div></div>';
+  try {
+    const result = await fetchHomePopularPacks();
+    _homePopularPacks = result.packs;
+    _homePopularErrors = result.errors;
+    _homePopularLoaded = true;
+    renderHomePopularPacks(_homePopularPacks, _homePopularErrors);
+  } catch (error) {
+    _homePopularLoaded = false;
+    _homePopularErrors = [];
+    grid.innerHTML = `<div class="home-popular-state"><div>Could not load popular modpacks.</div><div class="home-popular-error">${escHtml(error.message || 'Unknown error')}</div><button class="btn-secondary" type="button" onclick="loadHomePopularPacks(true)">Try again</button></div>`;
+  } finally {
+    _homePopularLoading = false;
+    grid.removeAttribute('aria-busy');
+  }
+}
+
+function installHomePopularPack(index, btn) {
+  const pack = _homePopularPacks[index];
+  if (!pack) return;
+  return installPack(pack, btn);
+}
+
 async function refreshHomePage() {
   const accounts  = await AccountStore.getAll();
   const instances = await InstanceStore.getAll();
   const acct      = await AccountStore.getActive();
+  const totalMinsAll = instances.reduce((sum, i) => sum + (Number(i.totalPlayMinutes) || 0), 0);
+  const showOnboarding = shouldShowHomeOnboarding(accounts, instances, totalMinsAll);
+  const onboarding = document.getElementById('homeOnboarding');
+  const regular = document.getElementById('homeRegular');
+  if (onboarding) onboarding.hidden = !showOnboarding;
+  if (regular) regular.hidden = showOnboarding;
+  if (showOnboarding) {
+    renderRailTopPacks(instances);
+    loadHomePopularPacks();
+    return;
+  }
 
   // Greeting
   const hour = new Date().getHours();
@@ -4042,7 +4498,6 @@ async function refreshHomePage() {
   await renderInstanceAccountPicker();
 
   // Global playtime — sum all instances
-  const totalMinsAll = instances.reduce((sum, i) => sum + (i.totalPlayMinutes || 0), 0);
   const ptHours = Math.floor(totalMinsAll / 60);
   const ptMins  = totalMinsAll % 60;
   const ptStr   = totalMinsAll === 0 ? '0h' : ptHours > 0 ? `${ptHours}h ${ptMins > 0 ? ptMins + 'm' : ''}`.trim() : `${ptMins}m`;
@@ -4222,6 +4677,39 @@ async function setLibrarySort(value) {
   await renderInstanceList(true);
 }
 
+const LIBRARY_CARD_SIZE_KEY = 'craftdock:libraryCardSize';
+let _libraryCardSize = 'small';
+let _libraryCardSizeLoaded = false;
+
+function normalizeLibraryCardSize(value) {
+  return value === 'medium' || value === 'large' ? value : 'small';
+}
+
+function applyLibraryCardSize(value) {
+  _libraryCardSize = normalizeLibraryCardSize(value);
+  const view = document.getElementById('libraryView');
+  if (view) view.dataset.cardSize = _libraryCardSize;
+  document.querySelectorAll('[data-library-size]').forEach(button => {
+    const active = button.dataset.librarySize === _libraryCardSize;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
+async function ensureLibraryCardSize() {
+  if (!_libraryCardSizeLoaded) {
+    try { _libraryCardSize = normalizeLibraryCardSize(await Store.get(LIBRARY_CARD_SIZE_KEY)); } catch {}
+    _libraryCardSizeLoaded = true;
+  }
+  applyLibraryCardSize(_libraryCardSize);
+  return _libraryCardSize;
+}
+
+async function setLibraryCardSize(value) {
+  applyLibraryCardSize(value);
+  await Store.set(LIBRARY_CARD_SIZE_KEY, _libraryCardSize);
+}
+
 let _libraryQuery = '';
 let _instListCache = null; // hash of last rendered library for skip-render opt
 
@@ -4264,6 +4752,7 @@ async function openInstanceDetail(id) {
 
 async function renderInstanceList(force) {
   await ensureLibrarySort();
+  await ensureLibraryCardSize();
   const allInstances = await InstanceStore.getAll();
   const categories = await CategoryStore.getAll();
   const instances = sortInstancesForLibrary(allInstances, _librarySort);
@@ -4345,6 +4834,7 @@ async function renderInstanceList(force) {
     }
   }
   list.innerHTML = html;
+  refreshLibraryModpackUpdates(filtered).catch(error => console.warn('modpack update badges failed:', error));
 
   // A metadata refresh while the detail view is open should update that view in place.
   if (isInstanceDetailOpen() && activeInstanceId) selectInstanceById(activeInstanceId);
@@ -4425,6 +4915,7 @@ function instanceCardHTML(inst) {
   const modCount = (inst.mods || []).length;
   const meta = [inst.mcVersion, inst.loader, modCount ? `${modCount} mods` : null].filter(Boolean).join(' · ');
   const installing = inst.downloadStatus === 'installing';
+  const lockedVersion = inst.source === 'modrinth' && inst.skipUpdateCheck && !installing;
   const name = escHtml(inst.name);
   return `<div class="library-card${activeInstanceId === inst.id ? ' active' : ''}" data-id="${inst.id}" data-category-id="${escHtml(inst.categoryId || '')}" role="button" tabindex="0" aria-haspopup="menu" aria-label="Open ${name}"
       onpointerdown="instDragPointerDown(event,'${inst.id}')"
@@ -4434,6 +4925,7 @@ function instanceCardHTML(inst) {
     <div class="library-card-art">
       <div class="${iconClass}"${iconStyle}>${icon}</div>
       ${badge}
+      ${lockedVersion ? `<button class="library-card-lock" type="button" title="Modpack version locked — click to allow updates" aria-label="Unlock modpack updates for ${name}" onclick="event.stopPropagation();unlockModpackVersion('${inst.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></button>` : ''}
     </div>
     <div class="library-card-body">
       <div class="library-card-name" title="${name}">${name}</div>
@@ -4443,6 +4935,65 @@ function instanceCardHTML(inst) {
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7,4 20,12 7,20"/></svg>
     </button>
   </div>`;
+}
+
+let _libraryUpdateToken = 0;
+
+function addLibraryUpdateBadge(inst, updateInfo, token) {
+  if (token !== _libraryUpdateToken) return;
+  const card = [...document.querySelectorAll('#libraryGrid .library-card')]
+    .find(item => item.dataset.id === inst.id);
+  if (!card || card.querySelector('.library-card-update')) return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'library-card-update';
+  button.setAttribute('aria-label', `New version of ${inst.name} available`);
+  button.title = `A newer version (${updateInfo.versionName || updateInfo.versionId}) is available; this instance has ${inst.sourceVersionName || inst.sourceVersionId || 'an older build'}. Click to update or lock the current modpack version.`;
+  button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 3L2.8 20h18.4L12 3z"/><line x1="12" y1="9" x2="12" y2="14"/><circle cx="12" cy="17.2" r=".8" fill="currentColor" stroke="none"/></svg>';
+  button.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    openLibraryModpackUpdate(event, inst.id);
+  });
+  card.appendChild(button);
+}
+
+async function refreshLibraryModpackUpdates(instances) {
+  const token = ++_libraryUpdateToken;
+  const candidates = (instances || []).filter(inst =>
+    inst && inst.source === 'modrinth' && inst.sourceId && inst.sourceVersionId
+    && !inst.skipUpdateCheck && inst.downloadStatus !== 'installing'
+  ).slice(0, 60);
+  if (!candidates.length) return;
+
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < candidates.length && token === _libraryUpdateToken) {
+      const inst = candidates[cursor++];
+      const card = [...document.querySelectorAll('#libraryGrid .library-card')]
+        .find(item => item.dataset.id === inst.id);
+      if (!card) continue;
+      const updateInfo = await checkModpackUpdate(inst);
+      if (updateInfo) addLibraryUpdateBadge(inst, updateInfo, token);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, candidates.length) }, worker));
+}
+
+async function openLibraryModpackUpdate(event, id) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const inst = (await InstanceStore.getAll()).find(item => item.id === id);
+  if (!inst) return;
+  const updateInfo = await checkModpackUpdate(inst);
+  if (!updateInfo) {
+    showNotif('Up to date', 'No newer compatible version was found');
+    await renderInstanceList(true);
+    return;
+  }
+  showModpackUpdateModal(inst, updateInfo, 'library');
 }
 
 async function launchInstanceFromLibrary(e, id) {
@@ -4473,6 +5024,7 @@ function instanceMenuIcon(name) {
   if (name === 'launch') return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7,4 20,12 7,20"/></svg>';
   if (name === 'open') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>';
   if (name === 'copy') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+  if (name === 'server') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="18" cy="6" r="1.5" fill="currentColor"/><circle cx="18" cy="18" r="1.5" fill="currentColor"/></svg>';
   if (name === 'move') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>';
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2 2 0 01-2 2H8a2 2 0 01-2-2L5,6"/></svg>';
 }
@@ -4512,11 +5064,14 @@ async function openInstanceMenu(event, id) {
   menu.setAttribute('aria-label', `Actions for ${inst.name}`);
   const installing = inst.downloadStatus === 'installing';
   const canCopy = typeof window.craftdockInstance?.copy === 'function';
+  const canConvertServer = !installing && SW_SUPPORTS_MODS.includes(String(inst.loader || '').toLowerCase())
+    && typeof window.craftdockInstance?.convertToServer === 'function';
   menu.innerHTML = `
     <div class="instance-menu-label" title="${escHtml(inst.name)}">${escHtml(inst.name)}</div>
     <button class="instance-menu-item" type="button" role="menuitem" data-action="launch" ${installing ? 'disabled' : ''}>${instanceMenuIcon('launch')}<span>Launch</span></button>
     <button class="instance-menu-item" type="button" role="menuitem" data-action="open">${instanceMenuIcon('open')}<span>Open details</span></button>
     ${canCopy ? `<button class="instance-menu-item" type="button" role="menuitem" data-action="copy">${instanceMenuIcon('copy')}<span>Copy instance</span></button>` : ''}
+    ${canConvertServer ? `<button class="instance-menu-item" type="button" role="menuitem" data-action="convert-server">${instanceMenuIcon('server')}<span>Convert to server</span></button>` : ''}
     <div class="instance-menu-sep" role="separator"></div>
     <button class="instance-menu-item instance-menu-parent" type="button" role="menuitem" aria-haspopup="menu" aria-expanded="false" data-category-menu>${instanceMenuIcon('move')}<span>Move to category</span><span class="instance-menu-chevron" aria-hidden="true">›</span></button>
     <div class="instance-menu-sep" role="separator"></div>
@@ -4688,7 +5243,72 @@ async function runInstanceCardAction(action, id) {
   if (action === 'launch') { await launchInstanceFromLibrary(null, id); return; }
   if (action === 'open') { await openInstanceDetail(id); return; }
   if (action === 'copy') { await copyActiveInstance(); return; }
+  if (action === 'convert-server') { await convertInstanceToServer(id); return; }
   if (action === 'delete') { await deleteActiveInstance(); }
+}
+
+async function convertInstanceToServer(id) {
+  const inst = await InstanceStore.get(id);
+  if (!inst) { showNotif('Instance not found', 'Refresh the library and try again'); return; }
+  const loader = String(inst.loader || '').toLowerCase();
+  if (!SW_SUPPORTS_MODS.includes(loader)) {
+    showNotif('Not a modded instance', 'Only Fabric, Forge, NeoForge, and Quilt instances can become a server');
+    return;
+  }
+  if (!window.craftdockInstance?.convertToServer) {
+    showNotif('Desktop only', 'Converting an instance to a server requires the desktop app');
+    return;
+  }
+
+  const srvName = `${inst.name || 'Instance'} Server`;
+  const ok = await showConfirm(
+    `Convert "${inst.name || 'this instance'}" to a server?`,
+    'CraftDock creates a new server and copies only mods that support a dedicated server. Worlds, resource packs, shaders, and client-only mods stay with the instance. Server config folders are copied.',
+    'Create Server',
+    'var(--accent)'
+  );
+  if (!ok) return;
+
+  const srv = {
+    id: 'srv_' + Date.now(),
+    name: srvName,
+    ip: '0.0.0.0',
+    port: 25565,
+    software: loader,
+    version: inst.mcVersion || '1.21',
+    ramMin: 512,
+    ramMax: 4096,
+    jvmFlags: '-XX:+UseG1GC -XX:+ParallelRefProcEnabled',
+    iconUrl: inst.iconUrl || null,
+    installed: false,
+    status: 'stopped',
+    mods: [],
+    plugins: [],
+    properties: Object.fromEntries(DEFAULT_PROPS),
+    createdAt: Date.now(),
+    convertedFromInstanceId: inst.id,
+    sourceModpackId: inst.sourceId || null,
+    sourceModpackVersion: inst.sourceVersionName || null,
+  };
+
+  showNotif('Creating Server…', 'Copying server-compatible mods and configs');
+  try {
+    const result = await window.craftdockInstance.convertToServer(inst.id, srv.id, srv.name);
+    if (!result?.success) throw new Error(result?.error || 'Could not convert the instance');
+    srv.conversion = {
+      copiedMods: (result.copiedMods || []).length,
+      skippedClientMods: (result.skippedClientMods || []).length,
+      configDirs: result.copiedConfigDirs || [],
+    };
+    await ServerStore.save(srv);
+    switchPage('servers', document.querySelectorAll('.rail-btn')[3]);
+    await renderSrvList();
+    await openServerDetail(srv.id);
+    const skipped = srv.conversion.skippedClientMods;
+    showNotif('Server Created', `${srvName} — ${srv.conversion.copiedMods} server mod${srv.conversion.copiedMods === 1 ? '' : 's'} copied${skipped ? `, ${skipped} client-only skipped` : ''}`);
+  } catch (error) {
+    showNotif('Conversion Failed', error.message || 'Could not create the server', 7000);
+  }
 }
 
 // ── Instance drag-and-drop ─────────────────────────────────
@@ -5072,7 +5692,13 @@ async function deleteCategory(id) {
   const cats = await CategoryStore.getAll();
   const cat = cats.find(c => c.id === id);
   if (!cat) return;
-  if (!confirm(`Delete category "${cat.name}"? Instances will be uncategorised.`)) return;
+  const ok = await showConfirm(
+    `Delete category "${cat.name}"?`,
+    'Instances in this category will be uncategorised. Their files are not deleted.',
+    `Delete ${cat.name}`,
+    'var(--red)'
+  );
+  if (!ok) return;
   // Unassign instances
   const instances = await InstanceStore.getAll();
   for (const inst of instances.filter(i => i.categoryId === id)) {
@@ -5312,7 +5938,8 @@ async function toggleInstMod(instanceId, filename, enable) {
 }
 
 async function removeMod(instanceId, modIdOrFilename, fromDisk) {
-  const ok = await showConfirm('Remove mod?', `Delete "${modIdOrFilename.replace(/\.jar(\.disabled)?$/,'')}"\nfrom this instance?`, 'Delete', '#ef4444');
+  const modName = modIdOrFilename.replace(/\.jar(\.disabled)?$/, '');
+  const ok = await showConfirm('Remove mod?', `Delete "${modName}"\nfrom this instance?`, `Delete ${modName}`, 'var(--red)');
   if (!ok) return;
   const instances = await InstanceStore.getAll();
   const inst2 = instances.find(i => i.id === instanceId);
@@ -7662,7 +8289,8 @@ async function toggleResFile(instanceId, subdir, filename, currentlyDisabled) {
 }
 
 async function deleteResFile(instanceId, subdir, filename) {
-  const ok = await showConfirm('Delete file?', `Remove "${filename.replace(/\.disabled$/, '')}"?`, 'Delete', '#ef4444');
+  const fileLabel = filename.replace(/\.disabled$/, '');
+  const ok = await showConfirm('Delete file?', `Remove "${fileLabel}"?`, `Delete ${fileLabel}`, 'var(--red)');
   if (!ok) return;
   if (!window.craftdockInstance?.deleteResFile) return;
   await window.craftdockInstance.deleteResFile(instanceId, subdir, filename);
@@ -9716,85 +10344,172 @@ async function _doLaunch(inst, serverIp, isExtraInstance) {
   }, 600);
 }
 
-// ── Check if a modpack has a newer version on Modrinth ──────────────────────
+// ── Check if a modpack has a newer compatible version on Modrinth ──────────
 // TTL-cached (5 min) so repeat launches don't pay a network round-trip every time.
-const _modpackUpdateCache = new Map(); // sourceId -> { at, result }
+const _modpackUpdateCache = new Map(); // sourceId|version|mc|loader -> { at, result }
 const MODPACK_UPDATE_TTL  = 5 * 60 * 1000;
 
+function invalidateModpackUpdateCache(inst) {
+  const prefix = String(inst?.sourceId || '') + '|';
+  if (prefix === '|') return;
+  for (const key of [..._modpackUpdateCache.keys()]) {
+    if (key.startsWith(prefix)) _modpackUpdateCache.delete(key);
+  }
+}
+
 async function checkModpackUpdate(inst) {
-  const cached = _modpackUpdateCache.get(inst.sourceId);
+  if (!inst || inst.source !== 'modrinth' || !inst.sourceId || !inst.sourceVersionId || inst.skipUpdateCheck) return null;
+  const cacheKey = [inst.sourceId, inst.sourceVersionId, inst.mcVersion || '', inst.loader || ''].join('|');
+  const cached = _modpackUpdateCache.get(cacheKey);
   if (cached && Date.now() - cached.at < MODPACK_UPDATE_TTL) return cached.result;
   let result  = null;
   let checked = false;
   try {
+    const params = new URLSearchParams({ limit: '10' });
+    if (inst.mcVersion) params.set('game_versions', JSON.stringify([inst.mcVersion]));
+    if (inst.loader) params.set('loaders', JSON.stringify([String(inst.loader).toLowerCase()]));
     const res = await fetch(
-      `https://api.modrinth.com/v2/project/${inst.sourceId}/version?limit=1`,
+      `https://api.modrinth.com/v2/project/${inst.sourceId}/version?${params}`,
       { headers: { 'User-Agent': `CraftDock/${APP_VERSION} (contact@craftdock.app)` } }
     );
     if (res.ok) {
       checked = true;
       const versions = await res.json();
-      const latest = versions[0];
-      if (latest && latest.id !== (inst.sourceVersionId || '')) {
+      // The API is newest-first. Only versions above the installed one are
+      // updates — never offer an older build because the current one is not in
+      // the filtered result set.
+      const installedAt = versions.findIndex(version => version?.id === inst.sourceVersionId);
+      const candidates = installedAt === 0 ? [] : installedAt > 0 ? versions.slice(0, installedAt) : versions;
+      const latest = candidates.find(version => version?.id && version.files?.length);
+      if (latest) {
+        const file = latest.files.find(item => item.primary) || latest.files[0];
         result = {
           versionId:   latest.id,
           versionName: latest.version_number,
-          downloadUrl: latest.files?.[0]?.url || null,
-          fileName:    latest.files?.[0]?.filename || null,
+          downloadUrl: file?.url || null,
+          fileName:    file?.filename || null,
         };
       }
     }
-  } catch { /* network failure — don't cache, so the next launch retries */ }
-  if (checked) _modpackUpdateCache.set(inst.sourceId, { at: Date.now(), result });
+  } catch { /* network failure — don't cache, so the next check retries */ }
+  if (checked) _modpackUpdateCache.set(cacheKey, { at: Date.now(), result });
   return result;
 }
 
-function showModpackUpdateModal(inst, updateInfo) {
+function showModpackUpdateModal(inst, updateInfo, context = 'launch') {
   const modal = document.getElementById('modpackUpdateModal');
-  if (!modal) { _doLaunch(inst, null, false); return; }
+  if (!modal) {
+    if (context === 'launch') _doLaunch(inst, null, false);
+    return;
+  }
   document.getElementById('modpackUpdateMsg').textContent =
-    `A newer version of "${inst.name}" is available on Modrinth.`;
+    `A newer ${inst.loader || ''} ${inst.mcVersion || ''} version of "${inst.name}" is available on Modrinth.`.replace(/\s+/g, ' ');
   document.getElementById('modpackUpdateOldVer').textContent =
     inst.sourceVersionName || inst.sourceVersionId || 'Unknown';
   document.getElementById('modpackUpdateNewVer').textContent =
     updateInfo.versionName || updateInfo.versionId;
-  document.getElementById('modpackUpdateSkipCheck').checked = false;
+  const nowBtn = document.getElementById('modpackUpdateNowBtn');
+  if (nowBtn) {
+    nowBtn.innerHTML = context === 'library'
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 11-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg> Update Modpack'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 11-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg> Update & Launch';
+  }
+  const laterBtn = document.getElementById('modpackUpdateLaterBtn');
+  if (laterBtn) laterBtn.textContent = context === 'library' ? 'Not now' : 'Launch current version';
   modal._updateInfo = updateInfo;
+  modal._updateContext = context;
+  modal._updateInstanceId = inst.id;
   modal.classList.add('open');
 }
 
-async function dismissModpackUpdate(doUpdate) {
-  const modal = document.getElementById('modpackUpdateModal');
-  if (!modal) return;
-  modal.classList.remove('open');
+async function lockModpackVersion(inst) {
+  inst.skipUpdateCheck = true;
+  invalidateModpackUpdateCache(inst);
+  await InstanceStore.save(inst, { render: false });
+  await renderInstanceList(true);
+  showNotif('Modpack Locked', `${inst.name} will stay on ${inst.sourceVersionName || inst.sourceVersionId || 'its current version'}`);
+}
 
-  const skipCheck = document.getElementById('modpackUpdateSkipCheck')?.checked;
-  const inst  = _pendingLaunchInst;
+async function unlockModpackVersion(id) {
+  const inst = (await InstanceStore.getAll()).find(item => item.id === id);
+  if (!inst) return;
+  const ok = await showConfirm(
+    'Allow modpack updates?',
+    `CraftDock will check Modrinth for a newer compatible version of "${inst.name}" when you launch it or refresh your library.`,
+    'Unlock',
+    'var(--accent)'
+  );
+  if (!ok) return;
+  inst.skipUpdateCheck = false;
+  invalidateModpackUpdateCache(inst);
+  await InstanceStore.save(inst, { render: false });
+  await renderInstanceList(true);
+  showNotif('Modpack Unlocked', 'Update checks are enabled again for this instance');
+}
+
+async function updateModpackInstance(inst, info) {
+  if (!info?.downloadUrl || !window.craftdockInstance?.installModpack) {
+    showNotif('Update Unavailable', 'This modpack version has no downloadable file');
+    return null;
+  }
+  inst.downloadStatus = 'installing';
+  await InstanceStore.save(inst, { render: false });
+  await renderInstanceList(true);
+  showNotif('Updating Modpack…', `${inst.name} → ${info.versionName || info.versionId}`);
+  try {
+    const result = await window.craftdockInstance.installModpack(inst.id, info.downloadUrl);
+    if (result && result.success === false) {
+      throw new Error(result.error || 'The modpack installer could not finish');
+    }
+    const updated = (await InstanceStore.getAll()).find(item => item.id === inst.id) || inst;
+    updated.sourceVersionId = info.versionId;
+    updated.sourceVersionName = info.versionName;
+    updated.skipUpdateCheck = false;
+    updated.downloadStatus = 'installed';
+    invalidateModpackUpdateCache(updated);
+    await InstanceStore.save(updated, { render: false });
+    await renderInstanceList(true);
+    if (activeInstanceId === inst.id && isInstanceDetailOpen()) selectInstanceById(inst.id);
+    showNotif('Modpack Updated', `${inst.name} → ${info.versionName || info.versionId}`);
+    return updated;
+  } catch (error) {
+    inst.downloadStatus = 'installed';
+    await InstanceStore.save(inst, { render: false }).catch(() => {});
+    await renderInstanceList(true);
+    showNotif('Update Failed', error.message || 'Could not update the modpack', 7000);
+    return null;
+  }
+}
+
+async function dismissModpackUpdate(action) {
+  if (typeof action === 'boolean') action = action ? 'update' : 'later';
+  const modal = document.getElementById('modpackUpdateModal');
+  const context = modal?._updateContext || 'launch';
+  const info = modal?._updateInfo;
+  const launchInst = _pendingLaunchInst;
   const extra = _pendingLaunchExtra;
+  const id = launchInst?.id || modal?._updateInstanceId;
   _pendingLaunchInst = null;
+  _pendingLaunchExtra = false;
+  if (modal) modal.classList.remove('open');
+  if (!id) return;
+
+  const inst = launchInst || (await InstanceStore.getAll()).find(item => item.id === id);
   if (!inst) return;
 
-  if (skipCheck) {
-    inst.skipUpdateCheck = true;
-    await InstanceStore.save(inst);
+  if (action === 'lock') {
+    await lockModpackVersion(inst);
+    if (context === 'launch') await _doLaunch(inst, null, extra);
+    return;
   }
 
-  if (doUpdate && modal._updateInfo) {
-    const info = modal._updateInfo;
-    showNotif('Updating…', `Downloading ${inst.name} ${info.versionName || ''}`);
-    if (info.downloadUrl && window.craftdockInstance?.downloadMod) {
-      const result = await window.craftdockInstance.downloadMod(
-        inst.id, info.downloadUrl, info.fileName || 'modpack.mrpack'
-      ).catch(() => null);
-      if (!result?.success) showNotif('Update failed', 'Download error — launching current version');
-    }
-    inst.sourceVersionId   = info.versionId;
-    inst.sourceVersionName = info.versionName;
-    await InstanceStore.save(inst);
-    showNotif('Updated ✓', `${inst.name} → v${info.versionName || info.versionId}`);
+  if (action === 'update' && info) {
+    const updated = await updateModpackInstance(inst, info);
+    if (context === 'launch' && updated) await _doLaunch(updated, null, extra);
+    return;
   }
 
-  await _doLaunch(inst, null, extra);
+  if (context === 'launch') await _doLaunch(inst, null, extra);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -12866,7 +13581,11 @@ function showConfirm(title, msg, okLabel, okColor) {
     const canBtn = document.getElementById('confirmCancel');
     if (tEl) tEl.textContent  = title;
     if (mEl) mEl.textContent  = msg;
-    if (okBtn) { okBtn.textContent = okLabel||'Confirm'; okBtn.style.background = okColor||'#ef4444'; }
+    if (okBtn) {
+      okBtn.textContent = okLabel || 'Continue';
+      okBtn.title = okLabel || 'Continue';
+      okBtn.style.background = okColor || 'var(--red)';
+    }
     modal.classList.add('open');
     const cleanup = (val) => {
       modal.classList.remove('open');
@@ -12889,7 +13608,7 @@ async function deleteServer(id) {
     ok = await showConfirm(
       'Delete "' + (srv?.name || 'server') + '"?',
       'This will permanently remove all server files, world data, and configuration.',
-      'Delete', '#ef4444'
+      `Delete ${srv?.name || 'server'}`, 'var(--red)'
     );
   }
   if (!ok) return;
@@ -13388,7 +14107,7 @@ async function restoreBackup(id, filename) {
 }
 
 async function deleteBackup(id, filename) {
-  const ok = await showConfirm('Delete Backup?', `Delete "${filename}" permanently?`, 'Delete', '#ef4444');
+  const ok = await showConfirm('Delete Backup?', `Delete "${filename}" permanently?`, `Delete ${filename}`, 'var(--red)');
   if (!ok) return;
   const result = await (window.craftdockServer?.deleteBackup?.(id, filename) || Promise.resolve(null));
   if (result?.success) { showNotif('Deleted', filename); await loadSrvBackups(id); }
@@ -14098,7 +14817,7 @@ async function loadTagPools(containerId = 'tagPoolList') {
 
 async function deleteTagPool(kind, encodedName) {
   const name = decodeURIComponent(encodedName);
-  const ok = await showConfirm(`Delete the "${name}" folder?`, 'Everything inside it is deleted. Instances still using this tag keep their own copy of nothing — none use it right now.', 'Delete', '#ef4444');
+  const ok = await showConfirm(`Delete the "${name}" folder?`, 'Everything inside it is deleted. Instances still using this tag keep their own copy of nothing — none use it right now.', `Delete ${name}`, 'var(--red)');
   if (!ok) return;
   const result = await window.craftdockInstance.deleteTagPool(kind, name);
   if (!result?.success) {
@@ -14471,7 +15190,7 @@ async function deleteActiveInstance() {
     : '';
   const ok = await showConfirm(`Delete "${name}"?`,
     'This will permanently delete the instance folder and ALL its contents (mods, worlds, configs, screenshots). This cannot be undone.' + sharedNote,
-    'Delete', '#ef4444');
+    `Delete ${name}`, 'var(--red)');
   if (!ok) return;
   const result = await InstanceStore.remove(activeInstanceId);
   activeInstanceId = null;
@@ -15131,6 +15850,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   setTimeout(() => { _startupUpdateCheck(); }, 5000);
 
+  // Apply the saved theme and language on every launch, not only when the
+  // Settings page is opened, so imports and the chosen palette survive restarts.
+  initializeSavedSettings().catch(error => console.warn('settings-init failed:', error));
+
   // Keyboard shortcuts
   document.addEventListener('keydown', e => {
     if (e.key==='Escape') {
@@ -15162,9 +15885,538 @@ loadVersions();
 const SETTINGS_KEY = 'craftdock:appSettings';
 let _settingsSaveTimer = null;
 
+// ── Appearance ──────────────────────────────────────────
+const APP_THEMES = new Set(['dark', 'light', 'oled']);
+
+function normalizeAppTheme(theme) {
+  const value = String(theme || '').toLowerCase();
+  return APP_THEMES.has(value) ? value : 'dark';
+}
+
+function cacheSettingsForStartup(settings) {
+  try {
+    const previous = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...previous, ...(settings || {}) }));
+  } catch (_) {}
+}
+
+function applySettingsTheme(theme) {
+  const value = normalizeAppTheme(theme);
+  document.documentElement.dataset.theme = value;
+  document.documentElement.style.colorScheme = value === 'light' ? 'light' : 'dark';
+  document.querySelectorAll('[data-theme-choice]').forEach(button => {
+    const active = button.dataset.themeChoice === value;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-checked', active ? 'true' : 'false');
+  });
+}
+
+async function settingsSetTheme(theme) {
+  const value = normalizeAppTheme(theme);
+  applySettingsTheme(value);
+  cacheSettingsForStartup({ theme: value });
+  const settings = await getSettings();
+  await Store.set(SETTINGS_KEY, { ...settings, theme: value });
+}
+
+// ── Community translations ───────────────────────────────
+// Packs are simple JSON files: { code, name, nativeName, strings: { "English": "…" } }.
+// The runtime matches whole text nodes and a few accessible attributes, so a
+// pack can fill in as much or as little of the interface as its authors want.
+// Anything absent falls back to the English source text.
+const COMMUNITY_LOCALES_KEY = 'craftdock:communityLocales';
+const LOCALE_CODE_RE = /^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/i;
+const MAX_LOCALE_PACKS = 20;
+const MAX_LOCALE_STRINGS = 5000;
+const MAX_LOCALE_FILE_BYTES = 1024 * 1024;
+const _localeOriginalText = new WeakMap();
+const _localeOriginalAttributes = new WeakMap();
+let _communityLocales = [];
+let _localePacksLoaded = false;
+let _activeLocaleCode = 'en';
+let _localeDictionary = Object.create(null);
+let _localeObserver = null;
+
+const BUILTIN_LOCALES = [
+  { code: 'en', name: 'English', nativeName: 'English', strings: {} },
+  {
+    code: 'es',
+    name: 'Spanish (starter pack)',
+    nativeName: 'Español (muestra)',
+    strings: {
+      'Settings': 'Ajustes',
+      'Appearance': 'Apariencia',
+      'Deep Navy': 'Azul profundo',
+      'Default · dark': 'Predeterminado · oscuro',
+      'Light': 'Claro',
+      'Bright and neutral': 'Brillante y neutro',
+      'OLED Black': 'Negro OLED',
+      'True black surfaces': 'Superficies de negro puro',
+      'Community Translations': 'Traducciones de la comunidad',
+      'Language': 'Idioma',
+      'Import a community JSON pack. Missing strings fall back to English.': 'Importa un paquete JSON de la comunidad. Las cadenas que falten usarán el inglés.',
+      'Built-in English': 'Inglés integrado',
+      'Import pack': 'Importar paquete',
+      'Remove': 'Quitar',
+      'Java & Minecraft': 'Java y Minecraft',
+      'Minecraft Defaults': 'Valores de Minecraft',
+      'Instance Defaults': 'Valores de instancias',
+      'Launcher': 'Iniciador',
+      'Data & Storage': 'Datos y almacenamiento',
+      'Config Files': 'Archivos de configuración',
+      'About': 'Acerca de',
+      'Legal': 'Legal',
+      'Default Min RAM': 'RAM mínima',
+      'Minimum memory for new instances': 'Memoria mínima para instancias nuevas',
+      'Default Max RAM': 'RAM máxima',
+      'Maximum memory for new instances': 'Memoria máxima para instancias nuevas',
+      'Sync options.txt': 'Sincronizar options.txt',
+      'Show console on launch': 'Mostrar consola al iniciar',
+      'Check for updates on launch': 'Buscar actualizaciones al iniciar',
+      'Install updates automatically': 'Instalar actualizaciones automáticamente',
+      'Data folder': 'Carpeta de datos',
+      'App data backups': 'Copias de seguridad de la app',
+      'Copies settings, accounts, instances, servers, skins and shared folders to a folder you choose. Game caches and Java runtimes are skipped because they can be downloaded again.': 'Copia ajustes, cuentas, instancias, servidores, skins y carpetas compartidas en una carpeta que elijas. Las cachés del juego y los entornos Java se omiten porque se pueden descargar de nuevo.',
+      'No backup created yet.': 'Aún no se ha creado ninguna copia.',
+      'Open last': 'Abrir última',
+      'Back up now': 'Crear copia ahora',
+      'Total instances': 'Total de instancias',
+      'Total servers': 'Total de servidores',
+      'Shared tag folders': 'Carpetas de etiquetas compartidas',
+      'Unused Minecraft downloads': 'Descargas de Minecraft sin usar',
+      'Cached game versions that no instance or server uses. Shared libraries, assets and Java are never removed.': 'Versiones del juego en caché que ninguna instancia o servidor usa. Las bibliotecas, los recursos y Java compartidos nunca se eliminan.',
+      'Scan to see what can be cleaned up.': 'Analiza para ver qué se puede limpiar.',
+      'Scan': 'Analizar',
+      'Clean': 'Limpiar',
+      'Browse cache': 'Caché de navegación',
+      'Open': 'Abrir',
+      'Clear': 'Vaciar',
+      'Refresh': 'Actualizar',
+      'Version': 'Versión',
+      'Electron version': 'Versión de Electron',
+      'Updates': 'Actualizaciones',
+      'Click to check for a new version': 'Haz clic para buscar una versión nueva',
+      'Check Now': 'Comprobar ahora',
+      'Report issues': 'Informar de problemas',
+      'Report Issue': 'Informar de un problema',
+      'Terms of Service': 'Términos del servicio',
+      'Privacy Policy': 'Política de privacidad',
+      'Read': 'Leer',
+      'In-app editor': 'Editor integrado',
+      'Default editor': 'Editor predeterminado',
+      'HOME': 'INICIO',
+      'PLAY': 'JUGAR',
+      'BROWSE': 'EXPLORAR',
+      'SERVER': 'SERVIDOR',
+      'SKINS': 'SKINS',
+      'ACCT': 'CUENTA',
+      'GALLERY': 'GALERÍA',
+      'Console': 'Consola',
+      'SET': 'AJUSTES',
+      'Minecraft Version': 'Versión de Minecraft',
+      'Java Version': 'Versión de Java',
+      'Auto-detect (recommended)': 'Detección automática (recomendado)',
+    },
+  },
+];
+
+function normalizeLocalePack(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const code = String(raw.code || '').trim().toLowerCase();
+  if (!LOCALE_CODE_RE.test(code) || code === 'en') return null;
+  const name = String(raw.name || code).trim().slice(0, 60) || code;
+  const nativeName = String(raw.nativeName || name).trim().slice(0, 60) || name;
+  const strings = Object.create(null);
+  if (!raw.strings || typeof raw.strings !== 'object' || Array.isArray(raw.strings)) return null;
+  let count = 0;
+  for (const [sourceKey, translatedValue] of Object.entries(raw.strings)) {
+    if (count >= MAX_LOCALE_STRINGS) break;
+    const source = String(sourceKey || '').trim();
+    const translated = String(translatedValue || '').trim();
+    if (!source || source.length > 220 || !translated || translated.length > 500) continue;
+    strings[source] = translated;
+    count += 1;
+  }
+  if (!count) return null;
+  return { code, name, nativeName, strings, source: 'community' };
+}
+
+function availableLocales() {
+  const locales = BUILTIN_LOCALES.map(locale => ({ ...locale, source: 'builtin' }));
+  for (const locale of _communityLocales) {
+    if (!locales.some(entry => entry.code === locale.code)) locales.push(locale);
+  }
+  return locales;
+}
+
+function localeForCode(code) {
+  return availableLocales().find(locale => locale.code === code) || availableLocales()[0];
+}
+
+function localeOriginalText(node, current) {
+  let entry = _localeOriginalText.get(node);
+  if (!entry || entry.applied !== current) {
+    entry = { source: current, applied: current };
+    _localeOriginalText.set(node, entry);
+  }
+  return entry;
+}
+
+function localeTranslation(source) {
+  const key = String(source || '').trim();
+  if (!key || !_localeDictionary || !Object.prototype.hasOwnProperty.call(_localeDictionary, key)) return null;
+  return _localeDictionary[key];
+}
+
+function localeSkipped(element) {
+  if (!element) return true;
+  if (['SCRIPT', 'STYLE', 'TEXTAREA', 'CODE', 'PRE', 'NOSCRIPT'].includes(element.tagName)) return true;
+  return Boolean(element.closest('[data-no-i18n], [contenteditable="true"]'));
+}
+
+function translateLocaleTextNode(node) {
+  const parent = node.parentElement;
+  if (localeSkipped(parent)) return;
+  const current = node.nodeValue || '';
+  const entry = localeOriginalText(node, current);
+  const source = entry.source;
+  const translated = localeTranslation(source);
+  const next = translated == null ? source : translated;
+  entry.applied = next;
+  if (current !== next) node.nodeValue = next;
+}
+
+function translateLocaleAttributes(element) {
+  if (!element || localeSkipped(element)) return;
+  let originals = _localeOriginalAttributes.get(element);
+  if (!originals) {
+    originals = Object.create(null);
+    _localeOriginalAttributes.set(element, originals);
+  }
+  for (const attribute of ['placeholder', 'aria-label']) {
+    const current = element.getAttribute(attribute);
+    if (!current || !current.trim()) continue;
+    let entry = originals[attribute];
+    if (!entry || entry.applied !== current) {
+      entry = { source: current, applied: current };
+      originals[attribute] = entry;
+    }
+    const translated = localeTranslation(entry.source);
+    const next = translated == null ? entry.source : translated;
+    entry.applied = next;
+    if (current !== next) element.setAttribute(attribute, next);
+  }
+}
+
+function applyLocaleToNode(root) {
+  if (!root) return;
+  if (root.nodeType === 3) {
+    translateLocaleTextNode(root);
+    return;
+  }
+  if (root.nodeType !== 1) return;
+  translateLocaleAttributes(root);
+  root.querySelectorAll('*').forEach(translateLocaleAttributes);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) translateLocaleTextNode(node);
+}
+
+function applyLocaleToDocument() {
+  applyLocaleToNode(document.body);
+}
+
+function startLocaleObserver() {
+  if (_localeObserver || typeof MutationObserver === 'undefined' || !document.body) return;
+  _localeObserver = new MutationObserver(records => {
+    if (_activeLocaleCode === 'en') return;
+    for (const record of records) {
+      for (const added of record.addedNodes) applyLocaleToNode(added);
+    }
+  });
+  _localeObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+function settingsLocaleStatusText(locale) {
+  if (!locale || locale.code === 'en') return 'Built-in English';
+  const count = Object.keys(locale.strings || {}).length;
+  return locale.source === 'builtin'
+    ? `${locale.nativeName} · starter pack · ${count} strings`
+    : `Imported community pack · ${count} strings`;
+}
+
+function settingsRenderLanguageOptions(selectedCode) {
+  const select = document.getElementById('settingsLanguage');
+  if (!select) return;
+  select.replaceChildren();
+  for (const locale of availableLocales()) {
+    const option = document.createElement('option');
+    option.value = locale.code;
+    option.textContent = locale.code === 'en' ? 'English' : locale.nativeName;
+    select.appendChild(option);
+  }
+  select.value = selectedCode;
+  const removeButton = document.getElementById('settingsLocaleRemoveBtn');
+  if (removeButton) removeButton.style.display = _communityLocales.some(locale => locale.code === selectedCode) ? '' : 'none';
+}
+
+function applySettingsLanguage(code) {
+  const previousCode = _activeLocaleCode;
+  const locale = localeForCode(code);
+  _activeLocaleCode = locale?.code || 'en';
+  _localeDictionary = locale?.strings || Object.create(null);
+  document.documentElement.lang = _activeLocaleCode === 'en' ? 'en' : _activeLocaleCode;
+  // An English-to-English load has nothing to translate and would otherwise
+  // walk every text node on each launch. Switching back from a pack still runs
+  // so the original English strings are restored.
+  if (_activeLocaleCode !== 'en' || previousCode !== 'en') applyLocaleToDocument();
+  settingsRenderLanguageOptions(_activeLocaleCode);
+  const status = document.getElementById('settingsLocaleStatus');
+  if (status) status.textContent = settingsLocaleStatusText(locale);
+  startLocaleObserver();
+  return _activeLocaleCode;
+}
+
+async function settingsInitTranslations(settings) {
+  if (!_localePacksLoaded) {
+    const stored = await Store.get(COMMUNITY_LOCALES_KEY);
+    _communityLocales = (Array.isArray(stored) ? stored : [])
+      .map(normalizeLocalePack)
+      .filter(Boolean)
+      .slice(0, MAX_LOCALE_PACKS);
+    _localePacksLoaded = true;
+  }
+  const requested = String(settings?.language || 'en');
+  const selected = availableLocales().some(locale => locale.code === requested) ? requested : 'en';
+  return applySettingsLanguage(selected);
+}
+
+async function settingsSetLanguage(code) {
+  const selected = applySettingsLanguage(code);
+  cacheSettingsForStartup({ language: selected });
+  const settings = await getSettings();
+  await Store.set(SETTINGS_KEY, { ...settings, language: selected });
+}
+
+async function settingsImportLocaleFile(input) {
+  const file = input?.files?.[0];
+  if (input) input.value = '';
+  if (!file) return;
+  const status = document.getElementById('settingsLocaleStatus');
+  if (file.size > MAX_LOCALE_FILE_BYTES) {
+    if (status) { status.classList.add('error'); status.textContent = 'That language pack is too large (1 MB maximum).'; }
+    return;
+  }
+  try {
+    const parsed = JSON.parse(await file.text());
+    const pack = normalizeLocalePack(parsed);
+    if (!pack) throw new Error('The JSON needs a code, a name and a strings table');
+    if (BUILTIN_LOCALES.some(locale => locale.code === pack.code)) {
+      throw new Error('That language code belongs to a built-in pack');
+    }
+    const existingIndex = _communityLocales.findIndex(locale => locale.code === pack.code);
+    if (existingIndex < 0 && _communityLocales.length >= MAX_LOCALE_PACKS) {
+      throw new Error(`You can keep up to ${MAX_LOCALE_PACKS} community packs`);
+    }
+    if (existingIndex >= 0) _communityLocales.splice(existingIndex, 1, pack);
+    else _communityLocales.push(pack);
+    await Store.set(COMMUNITY_LOCALES_KEY, _communityLocales);
+    await settingsSetLanguage(pack.code);
+    if (status) status.classList.remove('error');
+    showNotif('Language Pack Added', `${pack.nativeName} is ready to use`);
+  } catch (error) {
+    if (status) { status.classList.add('error'); status.textContent = error.message || 'Could not read that language pack'; }
+  }
+}
+
+async function settingsRemoveLocale() {
+  const code = _activeLocaleCode;
+  const pack = _communityLocales.find(locale => locale.code === code);
+  if (!pack) return;
+  const confirmed = await showConfirm(
+    'Remove this language pack?',
+    `${pack.nativeName} will be deleted from this computer. You can import it again later.`,
+    'Remove',
+    'var(--red)'
+  );
+  if (!confirmed) return;
+  _communityLocales = _communityLocales.filter(locale => locale.code !== code);
+  await Store.set(COMMUNITY_LOCALES_KEY, _communityLocales);
+  await settingsSetLanguage('en');
+  const status = document.getElementById('settingsLocaleStatus');
+  if (status) status.classList.remove('error');
+  showNotif('Language Pack Removed', 'English is active again');
+}
+
+// ── App-data backup / cache cleanup ───────────────────────
+let _unusedDownloadScan = null;
+
+function settingsAppDataBridge() {
+  return window.craftdock?.appData || null;
+}
+
+function settingsOpenPath(path) {
+  if (!path) return;
+  const openFolder = window.craftdock?.openFolder || tauriBridge()?.openFolder;
+  if (typeof openFolder !== 'function') return;
+  Promise.resolve(openFolder(path)).catch(() => {});
+}
+
+function settingsUpdateBackupStatus(settings) {
+  const status = document.getElementById('settingsBackupStatus');
+  const openButton = document.getElementById('settingsOpenBackupBtn');
+  const path = settings?.lastBackupPath || window._settings?.lastBackupPath || '';
+  if (status) {
+    status.classList.remove('error');
+    status.textContent = path ? `Last backup: ${path}` : 'No backup created yet.';
+  }
+  if (openButton) openButton.style.display = path ? '' : 'none';
+}
+
+async function settingsCreateAppBackup() {
+  const bridge = settingsAppDataBridge();
+  const button = document.getElementById('settingsBackupBtn');
+  const status = document.getElementById('settingsBackupStatus');
+  if (!bridge?.createBackup) {
+    if (status) status.textContent = 'App-data backups are available in the desktop app.';
+    return;
+  }
+  const original = button?.textContent || 'Back up now';
+  if (button) { button.disabled = true; button.textContent = 'Backing up…'; }
+  if (status) {
+    status.classList.remove('error');
+    status.textContent = 'Copying your data… keep CraftDock open until this finishes.';
+  }
+  try {
+    const result = await bridge.createBackup();
+    if (result?.cancelled) {
+      if (status) status.textContent = 'Backup cancelled.';
+      return;
+    }
+    if (!result?.success) throw new Error(result?.error || 'Could not create the backup');
+    const settings = await getSettings();
+    const next = { ...settings, lastBackupPath: result.path };
+    window._settings = { ...(window._settings || {}), ...next };
+    await Store.set(SETTINGS_KEY, next);
+    settingsUpdateBackupStatus(next);
+    if (status) status.textContent = `Last backup: ${result.path} · ${result.files} files · ${formatBrowseCacheBytes(result.bytes)}`;
+    showNotif('Backup Created', `${result.files} files copied to your backup folder`);
+  } catch (error) {
+    if (status) { status.classList.add('error'); status.textContent = error.message; }
+  } finally {
+    if (button) { button.disabled = false; button.textContent = original; }
+  }
+}
+
+function settingsOpenLastBackup() {
+  const path = window._settings?.lastBackupPath;
+  if (path) settingsOpenPath(path);
+}
+
+async function settingsActiveMinecraftVersions() {
+  const [instances, servers] = await Promise.all([
+    InstanceStore.getAll().catch(() => []),
+    ServerStore.getAll().catch(() => []),
+  ]);
+  const versions = new Set();
+  for (const instance of instances || []) {
+    for (const value of [instance.mcVersion, instance.version]) if (value) versions.add(String(value));
+  }
+  for (const server of servers || []) {
+    for (const value of [server.version, server.mcVersion]) if (value) versions.add(String(value));
+  }
+  return [...versions];
+}
+
+function settingsRenderUnusedDownloads(result) {
+  const status = document.getElementById('settingsUnusedStats');
+  const clean = document.getElementById('settingsUnusedCleanBtn');
+  _unusedDownloadScan = result?.success ? result : null;
+  if (clean) clean.disabled = !result?.success || !result.count;
+  if (!status) return;
+  status.classList.remove('error', 'ok');
+  if (!result?.success) {
+    status.classList.add('error');
+    status.textContent = result?.error || 'Could not scan the Minecraft cache';
+    return;
+  }
+  if (!result.count) {
+    status.textContent = 'No unused Minecraft downloads found.';
+    return;
+  }
+  const names = result.entries.slice(0, 4).map(entry => entry.relative).join(', ');
+  status.textContent = `${result.count} unused item${result.count === 1 ? '' : 's'} · ${formatBrowseCacheBytes(result.bytes)} · ${names}${result.count > 4 ? '…' : ''}`;
+}
+
+async function settingsScanUnusedDownloads() {
+  const bridge = settingsAppDataBridge();
+  const scanButton = document.getElementById('settingsUnusedScanBtn');
+  const status = document.getElementById('settingsUnusedStats');
+  if (!bridge?.cacheStats) {
+    if (status) status.textContent = 'Unused-file cleanup is available in the desktop app.';
+    return;
+  }
+  const original = scanButton?.textContent || 'Scan';
+  if (scanButton) { scanButton.disabled = true; scanButton.textContent = 'Scanning…'; }
+  try {
+    const versions = await settingsActiveMinecraftVersions();
+    const result = await bridge.cacheStats(versions);
+    settingsRenderUnusedDownloads(result);
+  } catch (error) {
+    settingsRenderUnusedDownloads({ success: false, error: error.message });
+  } finally {
+    if (scanButton) { scanButton.disabled = false; scanButton.textContent = original; }
+  }
+}
+
+async function settingsCleanUnusedDownloads() {
+  const bridge = settingsAppDataBridge();
+  if (!bridge?.cleanCache || !_unusedDownloadScan?.count) return;
+  const count = _unusedDownloadScan.count;
+  const confirmed = await showConfirm(
+    'Remove unused Minecraft downloads?',
+    `${count} cached item${count === 1 ? '' : 's'} used by no current instance or server will be deleted. They download again if needed.`,
+    'Clean up',
+    'var(--accent)'
+  );
+  if (!confirmed) return;
+  const cleanButton = document.getElementById('settingsUnusedCleanBtn');
+  const status = document.getElementById('settingsUnusedStats');
+  if (cleanButton) { cleanButton.disabled = true; cleanButton.textContent = 'Cleaning…'; }
+  try {
+    const versions = await settingsActiveMinecraftVersions();
+    const result = await bridge.cleanCache(versions);
+    if (!result?.success && result?.removed?.length === 0) throw new Error(result?.error || 'Could not clean the cache');
+    const freedText = `${result.removed?.length || 0} item${result.removed?.length === 1 ? '' : 's'} removed · ${formatBrowseCacheBytes(result.bytes || 0)} freed`;
+    if (status) {
+      status.classList.remove('error');
+      status.classList.add('ok');
+      status.textContent = freedText;
+    }
+    showNotif('Minecraft Cache Cleaned', `${result.files || 0} files removed`);
+    await settingsScanUnusedDownloads();
+    if (status) status.textContent = freedText;
+  } catch (error) {
+    if (status) { status.classList.add('error'); status.textContent = error.message; }
+  } finally {
+    if (cleanButton) { cleanButton.disabled = false; cleanButton.textContent = 'Clean'; }
+  }
+}
+
+async function initializeSavedSettings() {
+  const settings = (await Store.get(SETTINGS_KEY)) || {};
+  applySettingsTheme(settings.theme || 'dark');
+  cacheSettingsForStartup(settings);
+  await settingsInitTranslations(settings);
+}
+
 let _settingsLoaded = false;
 async function loadSettings() {
   const s = (await Store.get(SETTINGS_KEY)) || {};
+
+  applySettingsTheme(s.theme || 'dark');
+  cacheSettingsForStartup(s);
+  await settingsInitTranslations(s);
 
   // RAM
   const minR = document.getElementById('settingsMinRam');
@@ -15218,6 +16470,11 @@ async function loadSettings() {
   // Config open mode
   setConfigOpenMode(s.configOpenMode || 'app', false);
 
+  // Backup status and last destination
+  if (!window._settings) window._settings = {};
+  window._settings.lastBackupPath = s.lastBackupPath || window._settings.lastBackupPath || '';
+  settingsUpdateBackupStatus(s);
+
   // Java scan
   if (!_settingsLoaded) settingsScanJava();
 
@@ -15247,12 +16504,14 @@ async function saveSettings() {
   const minR = parseInt(document.getElementById('settingsMinRam')?.value) || 2048;
   const maxR = parseInt(document.getElementById('settingsMaxRam')?.value) || 6144;
   const s = await getSettings();
-  await Store.set(SETTINGS_KEY, {
+  const next = {
     ...s,
     defaultMinRam: minR,
     defaultMaxRam: maxR,
     configOpenMode: window._settings?.configOpenMode || 'app',
-  });
+  };
+  await Store.set(SETTINGS_KEY, next);
+  cacheSettingsForStartup(next);
 }
 
 function setConfigOpenMode(mode, persist = true) {
@@ -15283,6 +16542,7 @@ async function settingsToggle(el, key) {
   const on = el.classList.contains('on');
   const s = await getSettings();
   await Store.set(SETTINGS_KEY, { ...s, [key]: on });
+  cacheSettingsForStartup({ [key]: on });
 }
 
 function optionsSyncBridge() {
@@ -17482,16 +18742,16 @@ async function startAppUpdate(auto) {
         <span style="color:var(--text-muted)">Latest</span>
       </div>
     </div>
-    <label style="display:flex;align-items:center;gap:8px;margin-bottom:18px;cursor:pointer;font-size:11px;color:var(--text-muted);user-select:none">
-      <input type="checkbox" id="modpackUpdateSkipCheck">
-      Don't check for updates on launch for this instance
-    </label>
+    <div style="background:var(--bg-darkest);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px;font-size:11px;line-height:1.5;color:var(--text-muted)">
+      Update to the latest compatible version, or lock this instance so it stays on the version you already have.
+    </div>
+    <button class="btn-launch" id="modpackUpdateNowBtn" style="width:100%;justify-content:center;margin-bottom:8px" onclick="dismissModpackUpdate('update')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="margin-right:5px"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 1 0 .49-3.21"/></svg>
+      Update Modpack
+    </button>
     <div style="display:flex;gap:8px">
-      <button class="btn-secondary" style="flex:1" onclick="dismissModpackUpdate(false)">Launch Anyway</button>
-      <button class="btn-launch" style="flex:1;justify-content:center" onclick="dismissModpackUpdate(true)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="margin-right:5px"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 1 0 .49-3.21"/></svg>
-        Update &amp; Launch
-      </button>
+      <button class="btn-secondary" id="modpackUpdateLaterBtn" style="flex:1" onclick="dismissModpackUpdate('later')">Not now</button>
+      <button class="btn-secondary" id="modpackUpdateLockBtn" style="flex:1" onclick="dismissModpackUpdate('lock')">Lock current version</button>
     </div>
   </div>
 </div>

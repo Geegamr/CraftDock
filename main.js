@@ -2028,6 +2028,117 @@ ipcMain.handle('instance-list-mods', (_, id) => {
   } catch { return []; }
 });
 
+// ── Convert an installed instance into a dedicated server folder ──────────
+// Modrinth packs know which files are client-only in their index, so the
+// installed version is read back and its env.server=unsupported entries are
+// excluded. User-installed Modrinth mods and JAR manifests are used as a
+// fallback. Only server-relevant config folders are copied.
+async function collectClientOnlyConversionFiles(instMeta) {
+  const names = new Set();
+  const addFile = name => {
+    const base = path.basename(String(name || '')).toLowerCase();
+    if (base) names.add(base);
+  };
+
+  for (const mod of instMeta.mods || []) {
+    if (!mod || !mod.fileName) continue;
+    if (mod.serverSide === 'unsupported' || mod.env?.server === 'unsupported' || mod.clientOnly === true) {
+      addFile(mod.fileName);
+    }
+  }
+
+  const versionId = String(instMeta.sourceVersionId || '');
+  if (instMeta.source === 'modrinth' && /^[A-Za-z0-9]+$/.test(versionId)) {
+    let tempDir = '';
+    try {
+      const headers = { 'User-Agent': `CraftDock/${MAIN_JS_VERSION} (contact@craftdock.app)` };
+      const versionRes = await fetch(`https://api.modrinth.com/v2/version/${encodeURIComponent(versionId)}`, { headers });
+      if (versionRes.ok) {
+        const version = await versionRes.json();
+        const packFile = (version?.files || []).find(file => /\.mrpack$/i.test(file.filename || '')) || version?.files?.[0];
+        if (packFile?.url) {
+          tempDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'craftdock-convert-'));
+          const packPath = path.join(tempDir, 'pack.mrpack');
+          await downloadFile(packFile.url, packPath, null, 120000);
+          const entries = readZipEntries(packPath);
+          const indexEntry = entries.get('modrinth.index.json');
+          if (indexEntry) {
+            const index = JSON.parse(indexEntry.toString('utf8'));
+            for (const file of index.files || []) {
+              if (file?.env?.server === 'unsupported') addFile(file.path);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[CraftDock] Could not read modpack server metadata:', error.message);
+    } finally {
+      if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+
+  const modrinthMods = (instMeta.mods || []).filter(mod =>
+    mod && mod.source === 'modrinth' && /^[A-Za-z0-9]+$/.test(String(mod.id || ''))
+  );
+  const ids = [...new Set(modrinthMods.map(mod => String(mod.id)))];
+  if (ids.length) {
+    try {
+      const headers = { 'User-Agent': `CraftDock/${MAIN_JS_VERSION} (contact@craftdock.app)` };
+      const clientOnlyProjects = new Set();
+      for (let i = 0; i < ids.length; i += 50) {
+        const params = new URLSearchParams({ ids: JSON.stringify(ids.slice(i, i + 50)) });
+        const res = await fetch(`https://api.modrinth.com/v2/projects?${params}`, { headers });
+        if (!res.ok) continue;
+        const projects = await res.json();
+        for (const project of projects || []) {
+          if (project?.server_side === 'unsupported') clientOnlyProjects.add(String(project.id));
+        }
+      }
+      for (const mod of modrinthMods) {
+        if (clientOnlyProjects.has(String(mod.id)) && mod.fileName) addFile(mod.fileName);
+      }
+    } catch (error) {
+      console.warn('[CraftDock] Could not check mod server sides:', error.message);
+    }
+  }
+
+  return names;
+}
+
+ipcMain.handle('instance-convert-to-server', async (_, instId, srvId, srvName) => {
+  try {
+    if (!instId || !srvId) return { success: false, error: 'Instance and server are required' };
+    const instMeta = readInstMeta(instId);
+    if (!instMeta) return { success: false, error: 'Instance not found' };
+    if ((runningMcProcs.get(instId) || []).length) {
+      return { success: false, error: 'Stop the instance before converting it to a server' };
+    }
+    if (instMeta.downloadStatus === 'installing') {
+      return { success: false, error: 'Wait for the instance installation to finish' };
+    }
+    const loader = String(instMeta.loader || '').toLowerCase();
+    if (!['fabric', 'forge', 'neoforge', 'quilt'].includes(loader)) {
+      return { success: false, error: 'Only modded Fabric, Forge, NeoForge, or Quilt instances can become a modded server' };
+    }
+
+    registerSlug(srvId, String(srvName || `${instMeta.name || 'Instance'} Server`), serversBase);
+    const destination = srvDir(srvId);
+    if (fs.existsSync(destination)) throw new Error('That server folder already exists');
+
+    const clientOnlyFiles = await collectClientOnlyConversionFiles(instMeta);
+    const { convertInstanceToServer, detectClientOnlyJar } = require('./instance-server-conversion');
+    const result = await convertInstanceToServer({
+      instanceDir: instDir(instId),
+      serverDir: destination,
+      clientOnlyFiles,
+      inspectJar: file => detectClientOnlyJar(file, readZipEntries),
+    });
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('instance-toggle-mod', (_, id, filename, enable) => {
   if (!instanceModAccess) {
     const { createInstanceModAccess } = require('./instance-mod-toggle');
@@ -2125,6 +2236,43 @@ ipcMain.handle('refresh-tokens-now', async () => {
 
 // List launcher-managed Java installs (for settings display)
 ipcMain.handle('list-launcher-java', () => listLauncherJavaInstalls());
+
+// ── IPC: App-data backup and stale game-cache cleanup ─────
+ipcMain.handle('app-data-backup', async () => {
+  const { createAppDataBackup } = require('./app-data-backup');
+  const gameRunning = [...runningMcProcs.values()].some(procs => (procs || []).length > 0);
+  if (gameRunning || runningServers.size > 0) {
+    return { success: false, error: 'Close running games and servers before creating a backup' };
+  }
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose where to save the CraftDock backup',
+    buttonLabel: 'Back up here',
+    defaultPath: app.getPath('documents'),
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (result.canceled || !result.filePaths.length) return { success: false, cancelled: true };
+  return createAppDataBackup({
+    dataRoot,
+    destinationRoot: result.filePaths[0],
+    appVersion: MAIN_JS_VERSION,
+  });
+});
+
+ipcMain.handle('app-cache-stats', (_, activeVersions) => {
+  const { scanUnusedGameFiles } = require('./app-cache');
+  if (!Array.isArray(activeVersions)) {
+    return { success: false, error: 'Instance and server versions are required for a safe scan' };
+  }
+  return scanUnusedGameFiles(dataRoot, activeVersions);
+});
+
+ipcMain.handle('app-cache-clean', (_, activeVersions) => {
+  const { cleanUnusedGameFiles } = require('./app-cache');
+  if (!Array.isArray(activeVersions)) {
+    return { success: false, removed: [], failed: [], count: 0, files: 0, bytes: 0, error: 'Instance and server versions are required for a safe cleanup' };
+  }
+  return cleanUnusedGameFiles(dataRoot, activeVersions);
+});
 
 const SCREENSHOT_THUMB_MAX_EDGE = 480;
 const SCREENSHOT_THUMB_QUALITY = 82;

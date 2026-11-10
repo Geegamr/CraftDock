@@ -4,7 +4,7 @@
   <p>A lightweight, modern Minecraft launcher built with Electron.</p>
 
   <img src="https://img.shields.io/badge/status-Public%20Beta-22c55e?style=flat-square">
-  <img src="https://img.shields.io/badge/version-0.8.6-6366f1?style=flat-square">
+  <img src="https://img.shields.io/badge/version-0.10.0-6366f1?style=flat-square">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square">
   <img src="https://img.shields.io/badge/license-Apache 2.0-22c55e?style=flat-square">
 
@@ -68,8 +68,8 @@ Versions are `MAJOR_VERSION.MAJOR_BUG_FIX.MINOR_BUG_FIX`, three numbers, bumped 
 
 | Position | Bumped for | Example |
 |----------|-----------|---------|
-| `MAJOR_VERSION` | The planned v1.0.0 milestone, or a change that breaks compatibility with older data | `0.9.0` → `1.0.0` |
-| `MAJOR_BUG_FIX` | A big feature | `0.8.6` → `0.9.0` |
+| `MAJOR_VERSION` | The planned v1.0.0 milestone, or a change that breaks compatibility with older data | `0.10.0` → `1.0.0` |
+| `MAJOR_BUG_FIX` | A big feature | `0.9.0` → `0.10.0` |
 | `MINOR_BUG_FIX` | A small feature or a contained fix | `0.8.5` → `0.8.6` |
 
 `package.json` is the app-facing source of truth. The Tauri manifests and the renderer's fallback version are kept in sync with it. The updater compares the three numbers numerically, so `0.10.0` is newer than `0.9.0` and a local build ahead of the newest release is never told to update.
