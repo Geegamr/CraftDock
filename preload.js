@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld('craftdock', {
     // Reads the Minecraft profile (and its capes) in the main process, where
     // there is no CORS restriction.
     fetchProfile:      (minecraftToken) => ipcRenderer.invoke('auth-fetch-profile', minecraftToken),
+    setCape:           (minecraftToken, capeId) => ipcRenderer.invoke('auth-set-cape', minecraftToken, capeId),
+    // Resolves the profile skin URL and whether it uses the slim arm model.
+    lookupSkin:        (name) => ipcRenderer.invoke('auth-lookup-skin', name),
   },
 
   // Persistent key-value store (accounts, instances, servers)

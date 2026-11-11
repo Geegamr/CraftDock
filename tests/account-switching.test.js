@@ -265,6 +265,30 @@ test('selecting an expired account from the picker starts the Microsoft sign-in 
   assert.deepEqual(calls, ['close', 'signin:ms_healthy'], 'an expired active account goes straight to sign-in');
 });
 
+test('signed-in accounts place the sign-in explainer in a right-hand three-row column', () => {
+  const start = renderer.indexOf('<div class="page" id="page-accounts">');
+  const end = renderer.indexOf('<!-- MICROSOFT LOGIN MODAL -->', start);
+  assert.ok(start >= 0 && end > start, 'the Accounts page exists');
+  const accountPage = renderer.slice(start, end);
+
+  assert.match(accountPage, /<div class="accounts-view">/);
+  assert.match(accountPage, /<div class="accounts-layout" id="acctLayout">/);
+  assert.match(accountPage, /<aside class="auth-flow" id="acctAuthFlow" aria-label="How Microsoft sign-in works" hidden>/);
+  assert.equal((accountPage.match(/class="auth-flow-step"/g) || []).length, 3, 'the explainer has three steps');
+  assert.ok(
+    accountPage.indexOf('id="acctGrid"') < accountPage.indexOf('id="acctAuthFlow"'),
+    'the explainer follows the account list and sits in the right-hand column',
+  );
+
+  assert.match(renderer, /\.accounts-layout\.signed-in\{grid-template-columns:minmax\(0,1fr\) 300px\}/);
+  assert.match(renderer, /\.auth-flow\{display:grid;grid-template-columns:1fr;gap:12px;min-width:0\}/);
+  assert.match(
+    renderer,
+    /const signedIn = accounts\.length > 0;[\s\S]*?if \(authFlow\) authFlow\.hidden = !signedIn;/,
+    'the explainer is only revealed for a stored account',
+  );
+});
+
 test('accounts signed in under another client ID are flagged for a fresh sign-in', async () => {
   await withTempRoot(async root => {
     const app = loadApp(root, { env: { MS_CLIENT_ID: 'client-current' } });

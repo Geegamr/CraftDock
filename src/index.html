@@ -729,8 +729,10 @@ body.inst-dragging .library-card{cursor:grabbing}
 .skin-card-preview{height:100px;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,#0d1a2e,#091122);position:relative;overflow:hidden}
 .skin-card-preview canvas{display:block}
 .skin-card-info{padding:8px 10px}
-.skin-card-name{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.skin-card-meta{font-size:10px;color:var(--text-muted);margin-top:1px}
+.skin-card-name-row{display:flex;align-items:center;gap:6px;min-width:0}
+.skin-card-name{flex:1;min-width:0;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.skin-card-cape{flex-shrink:0;font-size:8px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent-bright);background:var(--accent-subtle);border:1px solid var(--border-hover);border-radius:3px;padding:1px 4px}
+.skin-card-meta{font-size:10px;color:var(--text-muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .skin-card-actions{position:absolute;top:6px;right:6px;display:none;gap:4px}
 .skin-card:hover .skin-card-actions{display:flex}
 .skin-card-btn{width:24px;height:24px;border-radius:4px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;transition:all 0.15s}
@@ -765,7 +767,16 @@ body.inst-dragging .library-card{cursor:grabbing}
 #capeListSection{display:none}
 
 /* ── ACCOUNTS ── */
-.accounts-view{padding:24px;overflow-y:auto;flex:1}
+.accounts-view{padding:24px;overflow-y:auto;flex:1;width:100%;max-width:1120px}
+.accounts-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;align-items:start;width:100%}
+.accounts-layout.signed-in{grid-template-columns:minmax(0,1fr) 300px}
+.accounts-main{min-width:0}
+.auth-flow{display:grid;grid-template-columns:1fr;gap:12px;min-width:0}
+.auth-flow[hidden]{display:none}
+.auth-flow-step{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center;min-width:0}
+.auth-flow-step-title{font-size:11px;font-weight:700;margin-bottom:4px}
+.auth-flow-step-copy{font-size:10px;color:var(--text-muted);line-height:1.5}
+@media (max-width:820px){.accounts-layout.signed-in{grid-template-columns:1fr}}
 .accounts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:24px}
 .account-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;transition:all 0.15s}
 .account-card:hover{border-color:var(--border-hover)}
@@ -1230,7 +1241,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
     <img src="../assets/icon.svg" width="20" height="20" style="border-radius:4px;image-rendering:pixelated;flex-shrink:0" alt="CraftDock">
     CRAFTDOCK
   </div>
-  <div class="titlebar-center" data-tauri-drag-region><span>v<span class="app-version">0.10.0</span></span><span class="beta-badge">Public Beta</span></div>
+  <div class="titlebar-center" data-tauri-drag-region><span>v<span class="app-version">0.10.1</span></span><span class="beta-badge">Public Beta</span></div>
   <div class="titlebar-controls">
     <button class="tc-btn min" onclick="winCtrl('minimize')" aria-label="Minimize" title="Minimize">─</button>
     <button class="tc-btn max" onclick="winCtrl('maximize')" aria-label="Maximize" title="Maximize">□</button>
@@ -1930,7 +1941,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
       <div class="section-heading">Skin Manager</div>
       <div style="display:flex;gap:8px">
         <button class="btn-secondary" id="btnPickSkin" style="display:flex;align-items:center;gap:6px" onclick="pickSkinFile()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Load from file</button>
-        <button class="btn-add" onclick="openSkinNameModal()">+ Save Current Skin</button>
+        <button class="btn-add" onclick="openSkinNameModal()">+ Save Current Outfit</button>
       </div>
     </div>
   </div>
@@ -2029,7 +2040,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
                 >
               <div style="flex:1">
                 <div id="skinDownloadPreviewName" style="font-size:13px;font-weight:700;margin-bottom:2px">—</div>
-                <div style="font-size:11px;color:var(--text-muted)">Click Save to add to your library</div>
+                <div id="skinDownloadPreviewMeta" style="font-size:11px;color:var(--text-muted)">Click Save to add to your library</div>
               </div>
             </div>
           </div>
@@ -2047,7 +2058,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
 
 <!-- ── ACCOUNTS ── -->
 <div class="page" id="page-accounts">
-<div class="accounts-view" style="max-width:900px">
+<div class="accounts-view">
   <div class="section-header" style="margin-bottom:24px">
     <div class="section-heading">Accounts</div>
     <button class="btn-add" onclick="startMicrosoftLogin()">
@@ -2055,55 +2066,59 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
     </button>
   </div>
 
-  <!-- Sign-in hero (shown when no accounts) -->
-  <div id="acctSignInHero" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:40px;text-align:center;margin-bottom:24px">
-    <!-- Microsoft logo -->
-    <svg viewBox="0 0 21 21" width="48" height="48" style="margin:0 auto 16px;display:block">
-      <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
-      <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
-      <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
-      <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
-    </svg>
-    <div style="font-size:18px;font-weight:800;margin-bottom:8px">Sign in with Microsoft</div>
-    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:24px;max-width:420px;margin-left:auto;margin-right:auto;line-height:1.6">
-      Connect your Microsoft account to access your Minecraft profile, capes, and multiplayer. Your credentials are handled securely via Microsoft OAuth 2.0 — CraftDock never sees your password.
-    </div>
-    <button class="btn-launch" style="display:inline-flex;gap:10px;padding:12px 28px;font-size:14px" onclick="startMicrosoftLogin()">
-      <svg viewBox="0 0 21 21" width="18" height="18">
-        <rect x="1" y="1" width="9" height="9" fill="white" opacity="0.9"/>
-        <rect x="11" y="1" width="9" height="9" fill="white" opacity="0.7"/>
-        <rect x="1" y="11" width="9" height="9" fill="white" opacity="0.7"/>
-        <rect x="11" y="11" width="9" height="9" fill="white" opacity="0.9"/>
-      </svg>
-      Continue with Microsoft
-    </button>
-    <div style="margin-top:16px;font-size:11px;color:var(--text-muted)">Uses Microsoft OAuth 2.0 → Xbox Live → Minecraft Services</div>
-  </div>
+  <div class="accounts-layout" id="acctLayout">
+    <div class="accounts-main">
+      <!-- Sign-in hero (shown when no accounts) -->
+      <div id="acctSignInHero" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:40px;text-align:center;margin-bottom:24px">
+        <!-- Microsoft logo -->
+        <svg viewBox="0 0 21 21" width="48" height="48" style="margin:0 auto 16px;display:block">
+          <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+          <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+          <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+          <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+        </svg>
+        <div style="font-size:18px;font-weight:800;margin-bottom:8px">Sign in with Microsoft</div>
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:24px;max-width:420px;margin-left:auto;margin-right:auto;line-height:1.6">
+          Connect your Microsoft account to access your Minecraft profile, capes, and multiplayer. Your credentials are handled securely via Microsoft OAuth 2.0 — CraftDock never sees your password.
+        </div>
+        <button class="btn-launch" style="display:inline-flex;gap:10px;padding:12px 28px;font-size:14px" onclick="startMicrosoftLogin()">
+          <svg viewBox="0 0 21 21" width="18" height="18">
+            <rect x="1" y="1" width="9" height="9" fill="white" opacity="0.9"/>
+            <rect x="11" y="1" width="9" height="9" fill="white" opacity="0.7"/>
+            <rect x="1" y="11" width="9" height="9" fill="white" opacity="0.7"/>
+            <rect x="11" y="11" width="9" height="9" fill="white" opacity="0.9"/>
+          </svg>
+          Continue with Microsoft
+        </button>
+        <div style="margin-top:16px;font-size:11px;color:var(--text-muted)">Uses Microsoft OAuth 2.0 → Xbox Live → Minecraft Services</div>
+      </div>
 
-  <!-- Auth flow explainer -->
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center">
-      <svg viewBox="0 0 21 21" width="28" height="28" style="margin:0 auto 8px;display:block">
-        <rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
-        <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
-      </svg>
-      <div style="font-size:11px;font-weight:700;margin-bottom:4px">1. Microsoft Login</div>
-      <div style="font-size:10px;color:var(--text-muted)">OAuth 2.0 with device code flow — login in your browser</div>
+      <!-- Accounts grid -->
+      <div id="acctGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
     </div>
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center">
-      <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-bright)" stroke-width="2" width="28" height="28" style="margin:0 auto 8px;display:block"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-      <div style="font-size:11px;font-weight:700;margin-bottom:4px">2. Xbox Live Auth</div>
-      <div style="font-size:10px;color:var(--text-muted)">MS token exchanged for Xbox Live token + user hash</div>
-    </div>
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center">
-      <svg viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" width="28" height="28" style="margin:0 auto 8px;display:block"><rect x="7" y="2" width="10" height="8" rx="2"/><path d="M4 14h2l1 8h10l1-8h2"/></svg>
-      <div style="font-size:11px;font-weight:700;margin-bottom:4px">3. Minecraft Token</div>
-      <div style="font-size:10px;color:var(--text-muted)">Xbox token exchanged for Minecraft bearer token + profile</div>
-    </div>
-  </div>
 
-  <!-- Accounts grid -->
-  <div id="acctGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
+    <!-- Auth flow explainer (shown when signed in) -->
+    <aside class="auth-flow" id="acctAuthFlow" aria-label="How Microsoft sign-in works" hidden>
+      <div class="auth-flow-step">
+        <svg viewBox="0 0 21 21" width="28" height="28" style="margin:0 auto 8px;display:block">
+          <rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+          <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+        </svg>
+        <div class="auth-flow-step-title">1. Microsoft Login</div>
+        <div class="auth-flow-step-copy">OAuth 2.0 with device code flow — login in your browser</div>
+      </div>
+      <div class="auth-flow-step">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-bright)" stroke-width="2" width="28" height="28" style="margin:0 auto 8px;display:block"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <div class="auth-flow-step-title">2. Xbox Live Auth</div>
+        <div class="auth-flow-step-copy">MS token exchanged for Xbox Live token + user hash</div>
+      </div>
+      <div class="auth-flow-step">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" width="28" height="28" style="margin:0 auto 8px;display:block"><rect x="7" y="2" width="10" height="8" rx="2"/><path d="M4 14h2l1 8h10l1-8h2"/></svg>
+        <div class="auth-flow-step-title">3. Minecraft Token</div>
+        <div class="auth-flow-step-copy">Xbox token exchanged for Minecraft bearer token + profile</div>
+      </div>
+    </aside>
+  </div>
 </div>
 </div>
 
@@ -2350,7 +2365,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
 <div class="page" id="page-settings">
   <div class="settings-view">
     <div style="font-size:18px;font-weight:800;margin-bottom:4px">Settings</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v<span class="app-version">0.10.0</span></div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">CraftDock v<span class="app-version">0.10.1</span></div>
 
     <!-- Appearance -->
     <div class="settings-section">
@@ -2602,7 +2617,7 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Version</div></div>
-        <span style="font-size:12px;color:var(--text-muted)">CraftDock v<span class="app-version">0.10.0</span></span>
+        <span style="font-size:12px;color:var(--text-muted)">CraftDock v<span class="app-version">0.10.1</span></span>
       </div>
       <div class="settings-row">
         <div class="settings-label"><div class="settings-label-text">Electron version</div></div>
@@ -3239,14 +3254,14 @@ body.srv-drag-active{user-select:none;cursor:grabbing}
 <!-- SKIN NAME MODAL -->
 <div class="modal-overlay" id="skinNameModal">
   <div class="modal">
-    <div class="modal-title">Save Skin</div>
-    <div class="modal-sub">Give your skin a name to save it to your library</div>
+    <div class="modal-title">Save Outfit</div>
+    <div class="modal-sub">Name this skin and cape combination for your library</div>
     <input class="modal-input" id="skinNameInput" placeholder="e.g. My Cool Skin" maxlength="40">
     <div style="display:flex;gap:8px;margin-bottom:4px">
       <button class="model-tab active" id="saveModelClassic" onclick="this.classList.add('active');document.getElementById('saveModelSlim').classList.remove('active')">Classic</button>
       <button class="model-tab" id="saveModelSlim" onclick="this.classList.add('active');document.getElementById('saveModelClassic').classList.remove('active')">Slim</button>
     </div>
-    <div class="modal-actions"><button class="btn-secondary" onclick="closeSkinNameModal()">Cancel</button><button class="btn-launch" onclick="saveSkin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save Skin</button></div>
+    <div class="modal-actions"><button class="btn-secondary" onclick="closeSkinNameModal()">Cancel</button><button class="btn-launch" onclick="saveSkin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save Outfit</button></div>
   </div>
 </div>
 
@@ -3489,7 +3504,7 @@ const hasCraftDockInstances = typeof window.craftdockInstance !== 'undefined';
 // Browser and native-build fallback version. Electron refreshes it from
 // package.json through the main process at startup, so keep this literal aligned
 // with package.json and the Tauri manifests for every release.
-let APP_VERSION = '0.10.0';
+let APP_VERSION = '0.10.1';
 
 // Everything that prints the version reads .app-version. Keep the fallback
 // aligned with package.json and the Tauri manifests when releasing.
@@ -4060,9 +4075,15 @@ async function renderAccountsPage() {
   const accounts = await AccountStore.getAll();
   const hero = document.getElementById('acctSignInHero');
   const grid = document.getElementById('acctGrid');
+  const layout = document.getElementById('acctLayout');
+  const authFlow = document.getElementById('acctAuthFlow');
 
-  // Show/hide sign-in hero
-  if (hero) hero.style.display = accounts.length ? 'none' : 'block';
+  // Show the sign-in hero only before the first account is added. The explainer
+  // moves into the right-hand column once there is a signed-in account.
+  const signedIn = accounts.length > 0;
+  if (hero) hero.style.display = signedIn ? 'none' : 'block';
+  if (layout) layout.classList.toggle('signed-in', signedIn);
+  if (authFlow) authFlow.hidden = !signedIn;
 
   const reauth = accounts.filter(a => a.needsReauth);
   if (reauth.length && !_reauthNoticeShown) {
@@ -4236,17 +4257,33 @@ async function reauthFromBanner() {
 
 async function setActiveAccount(id) {
   await AccountStore.setActive(id);
+  pendingSkinDataUrl = null;
+  pendingSkinKind = null;
+  editingSkinId = null;
   await renderAccountsPage();
   await renderInstanceAccountPicker();
   updateStatusBar();
+  if (mainRenderer) {
+    const acct = await AccountStore.getActive();
+    renderActiveSkin(getActiveProfileSkin(acct), acct);
+    syncActiveCape();
+  }
   showNotif('Account Switched', 'Active account updated');
 }
 
 async function removeAccount(id) {
   await AccountStore.remove(id);
+  pendingSkinDataUrl = null;
+  pendingSkinKind = null;
+  editingSkinId = null;
   await renderAccountsPage();
   await renderInstanceAccountPicker();
   updateStatusBar();
+  if (mainRenderer) {
+    const acct = await AccountStore.getActive();
+    renderActiveSkin(getActiveProfileSkin(acct), acct);
+    syncActiveCape();
+  }
   showNotif('Account Removed', 'Account has been removed');
 }
 
@@ -8920,8 +8957,6 @@ function loadCapeToCanvas(canvas, url) {
 // ═══════════════════════════════════════════════════════════
 //  MOJANG CAPE CHANGER
 // ═══════════════════════════════════════════════════════════
-const MOJANG_PROFILE_URL = 'https://api.minecraftservices.com/minecraft/profile';
-const MOJANG_CAPE_URL    = 'https://api.minecraftservices.com/minecraft/profile/capes/active';
 let mojangProfile = null;
 let mojangBearerToken = null;
 
@@ -8969,38 +9004,28 @@ async function openCapeChanger() {
 
     setCapeLoading(true);
 
-    // If the profile already has capes from OAuth, use them directly
-    if (acct.capes && acct.capes.length >= 0) {
-      const profileData = {
-        id:    acct.id,
-        name:  acct.name,
-        skins: acct.skins || [],
-        capes: acct.capes || [],
-      };
-      handleProfileData(profileData);
+    // Paint the cached list immediately, then refresh it through the main
+    // process. The renderer's own request is blocked by Minecraft's CORS rules,
+    // so that path never returned a real active cape.
+    if (Array.isArray(acct.capes)) {
+      handleProfileData({ id: acct.id, name: acct.name, skins: acct.skins || [], capes: acct.capes });
+    }
+    try {
+      const result = await requestMinecraftProfile(acct.minecraftToken);
+      if (!result?.ok) throw new Error((result && result.error) || 'profile_request_failed');
+      const data = result.profile || {};
+      acct.capes = Array.isArray(data.capes) ? data.capes : [];
+      if (Array.isArray(data.skins)) acct.skins = data.skins;
+      await AccountStore.save(acct);
+      handleProfileData({ id: acct.id, name: data.name || acct.name, skins: acct.skins, capes: acct.capes });
       if (statusInfo) statusInfo.textContent = 'Microsoft Premium • Xbox Live connected';
-    } else {
-      // Fetch fresh profile from Minecraft API
-      try {
-        const res = await fetch('https://api.minecraftservices.com/minecraft/profile', {
-          headers: { Authorization: 'Bearer ' + acct.minecraftToken }
-        });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        // Update stored capes
-        acct.capes = data.capes || [];
-        await AccountStore.save(acct);
-        handleProfileData(data);
-        if (statusInfo) statusInfo.textContent = 'Microsoft Premium • Xbox Live connected';
-      } catch(err) {
-        setCapeLoading(false);
-        // Fall back to whatever capes were stored at login
-        if (acct.capes !== undefined) {
-          handleProfileData({ id: acct.id, name: acct.name, skins: acct.skins||[], capes: acct.capes||[] });
-          if (statusInfo) statusInfo.textContent = 'Offline — showing cached capes';
-        } else {
-          showCapeError('Could not load capes', err.message);
-        }
+    } catch(err) {
+      setCapeLoading(false);
+      if (Array.isArray(acct.capes) && acct.capes.length) {
+        handleProfileData({ id: acct.id, name: acct.name, skins: acct.skins || [], capes: acct.capes });
+        if (statusInfo) statusInfo.textContent = 'Offline — showing cached capes';
+      } else {
+        showCapeError('Could not load capes', err.message);
       }
     }
   } else if (acct && acct.minecraftToken) {
@@ -9034,11 +9059,21 @@ function handleProfileData(data) {
   if (nameEl) nameEl.textContent = data.name||'Unknown';
   const infoEl = document.getElementById('capeStatusInfo');
   if (infoEl && !infoEl.textContent) infoEl.textContent = 'Microsoft Premium • Xbox Live connected';
-  const capes = data.capes||[];
-  if (!capes.length) { document.getElementById('capeEmptyState').style.display='block'; return; }
+  const capes = Array.isArray(data.capes) ? data.capes : [];
+  if (!capes.length) {
+    document.getElementById('capeEmptyState').style.display='block';
+    updateActiveCapeInSkinPanel(null, null, null, 'No cape equipped on this account');
+    rememberActiveCape(null, null, null);
+    return;
+  }
   renderCapeList(capes);
   const active = capes.find(c=>c.state==='ACTIVE');
-  if (active) updateActiveCapeInSkinPanel(active.alias, getCapeDisplay(active.alias), active.url);
+  if (active) {
+    updateActiveCapeInSkinPanel(active.alias, getCapeDisplay(active.alias), active.url, undefined, active.id);
+  } else {
+    updateActiveCapeInSkinPanel(null, null, null, 'No cape equipped on this account');
+    rememberActiveCape(null, null, null);
+  }
 }
 
 function renderCapeList(capes) {
@@ -9076,64 +9111,104 @@ function renderCapeList(capes) {
   });
 }
 
+function isDemoCapeToken(token) {
+  return !token || typeof token !== 'string' || token === 'DEMO' || token === '(demo mode)'
+    || token.startsWith('MC_DEMO_') || token.startsWith('MC_TOKEN_');
+}
+
+async function requestCapeChange(token, capeId) {
+  const bridge = window.craftdock && window.craftdock.auth && window.craftdock.auth.setCape;
+  if (typeof bridge !== 'function') return { ok: false, error: 'bridge_unavailable' };
+  return await bridge(token, capeId || null);
+}
+
+function hideCapeError() {
+  const el = document.getElementById('capeErrorState');
+  if (el) el.style.display = 'none';
+}
+
 async function equipCape(capeId, alias, e) {
   if (e) { e.stopPropagation(); e.preventDefault(); }
   const meta = getCapeDisplay(alias);
+  const acct = await AccountStore.getActive();
+  const token = (acct && acct.minecraftToken) || mojangBearerToken;
+  const existing = mojangProfile?.capes?.find(c=>c.id===capeId) || null;
+  const savedCape = currentActiveCape && currentActiveCape.id === capeId ? currentActiveCape : null;
+  const cape = existing || { id: capeId, alias, url: savedCape?.url || null };
 
-  // Visual feedback immediately
-  if (mojangProfile?.capes) {
-    mojangProfile.capes.forEach(c => c.state = c.id===capeId ? 'ACTIVE':'INACTIVE');
+  if (isDemoCapeToken(token)) {
+    if (mojangProfile?.capes) {
+      mojangProfile.capes.forEach(c => c.state = c.id===capeId ? 'ACTIVE':'INACTIVE');
+    }
+    renderCapeList(mojangProfile?.capes || []);
+    updateActiveCapeInSkinPanel(alias, meta, cape.url || null, undefined, capeId);
+    await rememberActiveCape(alias, cape.url || null, capeId);
+    showNotif('Cape Equipped', `${meta.name} is now your active cape`);
+    return { ok: true, demo: true };
   }
-  renderCapeList(mojangProfile?.capes || []);
-  const cape = mojangProfile?.capes?.find(c=>c.id===capeId);
-  updateActiveCapeInSkinPanel(alias, meta, cape?.url || null);
-  rememberActiveCape(alias, cape?.url || null);
-  showNotif('Cape Equipped', `${meta.name} is now your active cape`);
 
-  const isDemoMode = !mojangBearerToken || mojangBearerToken==='DEMO' || mojangBearerToken==='(demo mode)';
-  if (isDemoMode) return; // Done — demo mode doesn't hit the API
-
-  // Real API call
   setCapeLoading(true);
   try {
-    const res = await fetch(MOJANG_CAPE_URL, {
-      method:'PUT',
-      headers:{ Authorization:`Bearer ${mojangBearerToken}`, 'Content-Type':'application/json' },
-      body: JSON.stringify({capeId})
-    });
-    setCapeLoading(false);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const updated = await res.json();
-    if (updated.capes) { mojangProfile.capes = updated.capes; renderCapeList(mojangProfile.capes); }
+    const result = await requestCapeChange(token, capeId);
+    if (!result || !result.ok) throw new Error((result && result.error) || 'request_failed');
+    let capes = Array.isArray(result.profile?.capes) ? result.profile.capes : null;
+    if (!capes) {
+      capes = (mojangProfile?.capes || []).map(c => ({ ...c, state: c.id === capeId ? 'ACTIVE' : 'INACTIVE' }));
+      if (!capes.some(c => c.id === capeId)) capes.push({ ...cape, state: 'ACTIVE' });
+    }
+    mojangProfile = { ...(mojangProfile || {}), ...(result.profile || {}), capes };
+    renderCapeList(capes);
+    const active = capes.find(c => c.state === 'ACTIVE') || capes.find(c => c.id === capeId) || cape;
+    const activeAlias = active.alias || alias;
+    const activeUrl = active.url || cape.url || null;
+    updateActiveCapeInSkinPanel(activeAlias, getCapeDisplay(activeAlias), activeUrl, undefined, active.id || capeId);
+    await rememberActiveCape(activeAlias, activeUrl, active.id || capeId);
+    hideCapeError();
+    showNotif('Cape Equipped', `${getCapeDisplay(activeAlias).name} is now your active cape`);
+    return { ok: true, profile: result.profile || null };
   } catch(err) {
+    showCapeError('Could not equip cape', err.message);
+    showNotif('Cape Change Failed', err.message || 'Mojang did not accept the change');
+    return { ok: false, error: err.message || 'request_failed' };
+  } finally {
     setCapeLoading(false);
-    // Already applied optimistically, just log
-    console.warn('Cape API error:', err.message);
   }
 }
 
 async function disableCape() {
-  const isDemoMode = !mojangBearerToken||mojangBearerToken==='DEMO';
-  setCapeLoading(true);
-  if (isDemoMode) {
+  const acct = await AccountStore.getActive();
+  const token = (acct && acct.minecraftToken) || mojangBearerToken;
+
+  if (isDemoCapeToken(token)) {
+    setCapeLoading(true);
     await new Promise(r=>setTimeout(r,500));
     setCapeLoading(false);
     if (mojangProfile?.capes) { mojangProfile.capes.forEach(c=>c.state='INACTIVE'); renderCapeList(mojangProfile.capes); }
     updateActiveCapeInSkinPanel(null,null,null);
-    rememberActiveCape(null, null);
+    await rememberActiveCape(null, null, null);
     showNotif('Cape Disabled','Cape hidden from other players');
-    return;
+    return { ok: true, demo: true };
   }
+
+  setCapeLoading(true);
   try {
-    const res = await fetch(MOJANG_CAPE_URL, { method:'DELETE', headers:{Authorization:`Bearer ${mojangBearerToken}`} });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    setCapeLoading(false);
-    updateActiveCapeInSkinPanel(null,null,null);
-    rememberActiveCape(null, null);
+    const result = await requestCapeChange(token, null);
+    if (!result || !result.ok) throw new Error((result && result.error) || 'request_failed');
+    const capes = Array.isArray(result.profile?.capes)
+      ? result.profile.capes
+      : (mojangProfile?.capes || []).map(c => ({ ...c, state: 'INACTIVE' }));
+    mojangProfile = { ...(mojangProfile || {}), ...(result.profile || {}), capes };
+    renderCapeList(capes);
+    updateActiveCapeInSkinPanel(null, null, null, 'No cape equipped on this account');
+    await rememberActiveCape(null, null, null);
+    hideCapeError();
     showNotif('Cape Disabled','Cape hidden from other players');
+    return { ok: true };
   } catch(err) {
-    setCapeLoading(false);
     showCapeError('Failed to disable cape', err.message);
+    return { ok: false, error: err.message || 'request_failed' };
+  } finally {
+    setCapeLoading(false);
   }
 }
 
@@ -9153,7 +9228,7 @@ function loadDemoCapes() {
   const authSection = document.getElementById('capeAuthSection');
   if (authSection) authSection.style.display = 'none';
   const activeCape = demoProfile.capes[0];
-  updateActiveCapeInSkinPanel('Minecon2012', getCapeDisplay('Minecon2012'), activeCape.url);
+  updateActiveCapeInSkinPanel(activeCape.alias, getCapeDisplay(activeCape.alias), activeCape.url, undefined, activeCape.id);
 }
 
 function hideCapeStates() {
@@ -9179,19 +9254,32 @@ function showCapeError(msg, detail) {
   const em=document.getElementById('capeErrorMsg'); if(em) em.textContent=msg;
   const ed=document.getElementById('capeErrorDetail'); if(ed) ed.textContent=detail||'';
 }
-function updateActiveCapeInSkinPanel(alias, meta, textureUrl, stateText) {
+let currentActiveCape = null;
+let mainRenderer = null;
+
+function updateActiveCapeInSkinPanel(alias, meta, textureUrl, stateText, capeId = null, equipped = true) {
   const canvas=document.getElementById('activeCapeCanvas');
   const label=document.getElementById('activeCapeLabel');
   const state=document.getElementById('activeCapeState');
   if (!alias||!meta) {
+    currentActiveCape = null;
     if(canvas) drawCapeOnCanvas(canvas,null);
     if(label) { label.textContent='No cape equipped'; label.style.color=''; }
     if(state) state.textContent=stateText||'Click below to manage';
+    if(mainRenderer) mainRenderer.setCape(null);
     return;
   }
+  currentActiveCape = {
+    id: capeId || null,
+    alias,
+    name: meta.name || alias,
+    url: textureUrl || null,
+    equipped: equipped !== false,
+  };
   if(label) { label.textContent=meta.name; label.style.color=meta.color; }
   if(state) state.textContent=stateText||`${alias} · Active`;
   if(canvas) loadCapeToCanvas(canvas, textureUrl||null);
+  if(mainRenderer) mainRenderer.setCape(textureUrl||null);
 }
 
 // ── Active cape shown on the skins page ─────────────────
@@ -9210,20 +9298,20 @@ async function readActiveCapeCache() {
   return _activeCapeCache || null;
 }
 
-async function writeActiveCapeCache(accountId, alias, url) {
+async function writeActiveCapeCache(accountId, alias, url, capeId = null) {
   if (!accountId) return;
-  _activeCapeCache = { accountId, alias: alias || null, url: url || null, savedAt: Date.now() };
+  _activeCapeCache = { accountId, alias: alias || null, url: url || null, capeId: capeId || null, savedAt: Date.now() };
   await Store.set(ACTIVE_CAPE_CACHE_KEY, _activeCapeCache);
 }
 
-async function rememberActiveCape(alias, url) {
+async function rememberActiveCape(alias, url, capeId = null) {
   const acct = await AccountStore.getActive();
-  if (acct) await writeActiveCapeCache(acct.id, alias, url);
+  if (acct) await writeActiveCapeCache(acct.id, alias, url, capeId);
 }
 
-function renderActiveCape(alias, url, stateText) {
+function renderActiveCape(alias, url, stateText, capeId = null) {
   if (!alias) { updateActiveCapeInSkinPanel(null, null, null, stateText); return; }
-  updateActiveCapeInSkinPanel(alias, getCapeDisplay(alias), url, stateText);
+  updateActiveCapeInSkinPanel(alias, getCapeDisplay(alias), url, stateText, capeId);
 }
 
 // Single place that talks to the main process, so the rest of the flow can be
@@ -9242,9 +9330,16 @@ async function syncActiveCape() {
   const cache = await readActiveCapeCache();
   const cacheMatches = !!(acct && cache && cache.accountId === acct.id);
 
+  // Paint the active skin from the stored profile before touching the network.
+  if (!hasLocalSkinSelection()) renderActiveSkin(getActiveProfileSkin(acct), acct);
+
   // 1. Cache first — the panel never waits on the network.
-  if (cacheMatches && cache.alias) renderActiveCape(cache.alias, cache.url, `${cache.alias} · Cached`);
-  if (!acct || !canRead) return;
+  if (cacheMatches && cache.alias) renderActiveCape(cache.alias, cache.url, `${cache.alias} · Cached`, cache.capeId);
+  if (!acct) { renderActiveCape(null, null, 'Sign in to load your cape'); return; }
+  if (!canRead) {
+    if (!cacheMatches || !cache.alias) renderActiveCape(null, null, 'Cape unavailable');
+    return;
+  }
 
   // 2. Then the live profile, in case the cape was changed somewhere else.
   const requestId = ++_activeCapeSyncId;
@@ -9261,12 +9356,13 @@ async function syncActiveCape() {
     if (Array.isArray(profile.skins)) acct.skins = profile.skins;
     await AccountStore.save(acct);
 
+    if (!hasLocalSkinSelection()) renderActiveSkin(getActiveProfileSkin(acct), acct);
     renderActiveCape(active ? active.alias : null, active ? active.url : null,
-      active ? `${active.alias} · Active` : 'No cape equipped on this account');
-    await writeActiveCapeCache(acct.id, active ? active.alias : null, active ? active.url : null);
+      active ? `${active.alias} · Active` : 'No cape equipped on this account', active ? active.id : null);
+    await writeActiveCapeCache(acct.id, active ? active.alias : null, active ? active.url : null, active ? active.id : null);
   } catch (err) {
     if (requestId !== _activeCapeSyncId) return;
-    if (cacheMatches && cache.alias) renderActiveCape(cache.alias, cache.url, `${cache.alias} · Cached · offline`);
+    if (cacheMatches && cache.alias) renderActiveCape(cache.alias, cache.url, `${cache.alias} · Cached · offline`, cache.capeId);
     else {
       const state = document.getElementById('activeCapeState');
       if (state) state.textContent = 'Could not read your cape right now';
@@ -9288,6 +9384,12 @@ class SkinRenderer {
     this._scene = null;
     this._renderer = null;
     this._skin = null;   // current THREE.Texture
+    this._skinRequest = 0;
+    this._cape = null;   // current cape texture
+    this._capeGroup = null;
+    this._capePivot = null;
+    this._capeUrl = null;
+    this._capeRequest = 0;
     this._parts = {};    // body part meshes
     this._animFrame = null;
     this._rotY = 0;
@@ -9311,6 +9413,7 @@ class SkinRenderer {
     this._renderer.setClearColor(0x000000, 0);
 
     this._scene  = new THREE.Scene();
+    this._capeGroup = new THREE.Group();
     this._camera = new THREE.PerspectiveCamera(30, W / H, 0.1, 100);
     this._camera.position.set(0, 0.5, 14);
 
@@ -9362,23 +9465,26 @@ class SkinRenderer {
     }, {passive:false});
   }
 
-  // ── UV helpers for a 64×64 skin ────────────────────────
+  // ── UV helpers for skin/cape atlases ───────────────────
   // Returns a THREE.MeshLambertMaterial for one face of a body part.
-  // tx,ty = top-left in skin pixels; tw,th = size in skin pixels
-  _faceMat(tex, tx, ty, tw, th, flipX=false) {
+  // tx,ty = top-left in atlas pixels; tw,th = size in atlas pixels
+  _faceMat(tex, tx, ty, tw, th, flipX=false, atlasW=64, atlasH=64, flipY=false) {
     const t = tex.clone();
     t.needsUpdate = true;
-    t.repeat.set(tw/64, th/64);
-    t.offset.set(tx/64, 1 - (ty+th)/64);
-    if (flipX) { t.repeat.x *= -1; t.offset.x += tw/64; }
+    t.repeat.set(tw/atlasW, th/atlasH);
+    t.offset.set(tx/atlasW, 1 - (ty+th)/atlasH);
+    if (flipX) { t.repeat.x *= -1; t.offset.x += tw/atlasW; }
+    if (flipY) { t.repeat.y *= -1; t.offset.y += th/atlasH; }
     return new THREE.MeshLambertMaterial({ map: t, transparent: true, alphaTest: 0.1 });
   }
 
-  // Build materials array [right,left,top,bottom,front,back] for a box
-  // Each entry: [tx,ty,tw,th]
+  // Build materials array [right,left,top,bottom,front,back] for a box.
+  // Each entry: [tx,ty,tw,th,flipX?,flipY?]. Minecraft stores every bottom
+  // face vertically flipped, so -Y entries pass flipY=true.
   _boxMats(tex, faces, slim) {
     // faces order: +X, -X, +Y, -Y, +Z, -Z
-    return faces.map(([tx,ty,tw,th]) => this._faceMat(tex, tx, ty, tw, th));
+    return faces.map(([tx,ty,tw,th,flipX=false,flipY=false]) =>
+      this._faceMat(tex, tx, ty, tw, th, flipX, 64, 64, flipY));
   }
 
   // Dispose resources owned by a character group, including per-face texture clones.
@@ -9405,6 +9511,7 @@ class SkinRenderer {
     // Remove the old character and release its GPU resources before rebuilding.
     if (this._characterGroup) {
       const oldGroup = this._characterGroup;
+      if (this._capeGroup && this._capeGroup.parent === oldGroup) oldGroup.remove(this._capeGroup);
       this._scene.remove(oldGroup);
       this._disposeCharacterResources(oldGroup);
       this._characterGroup = null;
@@ -9412,6 +9519,9 @@ class SkinRenderer {
     const group = new THREE.Group();
     this._characterGroup = group;
     this._scene.add(group);
+    if (!this._capeGroup) this._capeGroup = new THREE.Group();
+    if (this._capeGroup.parent) this._capeGroup.parent.remove(this._capeGroup);
+    group.add(this._capeGroup);
 
     const S = this.slim ? 3 : 4;   // arm width in skin units
 
@@ -9427,7 +9537,7 @@ class SkinRenderer {
       [16, 8, 8, 8],  // right
       [ 0, 8, 8, 8],  // left
       [ 8, 0, 8, 8],  // top
-      [16, 0, 8, 8],  // bottom
+      [16, 0, 8, 8, false, true],  // bottom — flipped vertically in Minecraft
       [ 8, 8, 8, 8],  // front
       [24, 8, 8, 8],  // back
     ]);
@@ -9440,7 +9550,7 @@ class SkinRenderer {
       [48, 8, 8, 8],
       [32, 8, 8, 8],
       [40, 0, 8, 8],
-      [48, 0, 8, 8],
+      [48, 0, 8, 8, false, true],  // bottom — flipped vertically in Minecraft
       [40, 8, 8, 8],
       [56, 8, 8, 8],
     ]);
@@ -9453,7 +9563,7 @@ class SkinRenderer {
       [28,20, 4,12],  // right
       [16,20, 4,12],  // left
       [20,16, 8, 4],  // top
-      [28,16, 8, 4],  // bottom
+      [28,16, 8, 4, false, true],  // bottom — flipped vertically in Minecraft
       [20,20, 8,12],  // front
       [32,20, 8,12],  // back
     ]);
@@ -9466,7 +9576,7 @@ class SkinRenderer {
       [28,36, 4,12],
       [16,36, 4,12],
       [20,32, 8, 4],
-      [28,32, 8, 4],
+      [28,32, 8, 4, false, true],
       [20,36, 8,12],
       [32,36, 8,12],
     ]);
@@ -9485,7 +9595,7 @@ class SkinRenderer {
           [47, 20, 4, 12],  // +X inner side
           [40, 20, 4, 12],  // -X outer side
           [44, 16, 3, 4],   // +Y top
-          [47, 16, 3, 4],   // -Y bottom
+          [47, 16, 3, 4, false, true],   // -Y bottom
           [44, 20, 3, 12],  // +Z front
           [51, 20, 3, 12],  // -Z back
         ])
@@ -9493,7 +9603,7 @@ class SkinRenderer {
           [48, 20, 4, 12],  // +X inner side
           [40, 20, 4, 12],  // -X outer side
           [44, 16, 4, 4],   // +Y top
-          [48, 16, 4, 4],   // -Y bottom
+          [48, 16, 4, 4, false, true],   // -Y bottom
           [44, 20, 4, 12],  // +Z front
           [52, 20, 4, 12],  // -Z back
         ]);
@@ -9507,10 +9617,10 @@ class SkinRenderer {
     rArm.position.set(0, -1.5, 0);
     const rArmOvMats = slim
       ? this._boxMats(tex, [
-          [47, 36, 4, 12],[40, 36, 4, 12],[44, 32, 3, 4],[47, 32, 3, 4],[44, 36, 3, 12],[51, 36, 3, 12],
+          [47, 36, 4, 12],[40, 36, 4, 12],[44, 32, 3, 4],[47, 32, 3, 4, false, true],[44, 36, 3, 12],[51, 36, 3, 12],
         ])
       : this._boxMats(tex, [
-          [48, 36, 4, 12],[40, 36, 4, 12],[44, 32, 4, 4],[48, 32, 4, 4],[44, 36, 4, 12],[52, 36, 4, 12],
+          [48, 36, 4, 12],[40, 36, 4, 12],[44, 32, 4, 4],[48, 32, 4, 4, false, true],[44, 36, 4, 12],[52, 36, 4, 12],
         ]);
     const rArmOv = box(S*0.25+0.12, 3.12, 1.12, rArmOvMats);
     rArmOv.position.set(0, -1.5, 0);
@@ -9520,10 +9630,10 @@ class SkinRenderer {
     // LEFT ARM pivot at shoulder
     const lArmMats = slim
       ? this._boxMats(tex, [
-          [39, 52, 4, 12],[32, 52, 4, 12],[36, 48, 3, 4],[39, 48, 3, 4],[36, 52, 3, 12],[43, 52, 3, 12],
+          [39, 52, 4, 12],[32, 52, 4, 12],[36, 48, 3, 4],[39, 48, 3, 4, false, true],[36, 52, 3, 12],[43, 52, 3, 12],
         ])
       : this._boxMats(tex, [
-          [40, 52, 4, 12],[32, 52, 4, 12],[36, 48, 4, 4],[40, 48, 4, 4],[36, 52, 4, 12],[44, 52, 4, 12],
+          [40, 52, 4, 12],[32, 52, 4, 12],[36, 48, 4, 4],[40, 48, 4, 4, false, true],[36, 52, 4, 12],[44, 52, 4, 12],
         ]);
     const lArmPivot = new THREE.Group();
     lArmPivot.position.set(1 + S*0.125, 2, 0);
@@ -9531,10 +9641,10 @@ class SkinRenderer {
     lArm.position.set(0, -1.5, 0);
     const lArmOvMats = slim
       ? this._boxMats(tex, [
-          [55, 52, 4, 12],[48, 52, 4, 12],[52, 48, 3, 4],[55, 48, 3, 4],[52, 52, 3, 12],[59, 52, 3, 12],
+          [55, 52, 4, 12],[48, 52, 4, 12],[52, 48, 3, 4],[55, 48, 3, 4, false, true],[52, 52, 3, 12],[59, 52, 3, 12],
         ])
       : this._boxMats(tex, [
-          [56, 52, 4, 12],[48, 52, 4, 12],[52, 48, 4, 4],[56, 48, 4, 4],[52, 52, 4, 12],[60, 52, 4, 12],
+          [56, 52, 4, 12],[48, 52, 4, 12],[52, 48, 4, 4],[56, 48, 4, 4, false, true],[52, 52, 4, 12],[60, 52, 4, 12],
         ]);
     const lArmOv = box(S*0.25+0.12, 3.12, 1.12, lArmOvMats);
     lArmOv.position.set(0, -1.5, 0);
@@ -9543,14 +9653,14 @@ class SkinRenderer {
 
     // RIGHT LEG pivot at hip
     const rLegMats = this._boxMats(tex, [
-      [8,20,4,12],[0,20,4,12],[4,16,4,4],[8,16,4,4],[4,20,4,12],[12,20,4,12],
+      [8,20,4,12],[0,20,4,12],[4,16,4,4],[8,16,4,4, false, true],[4,20,4,12],[12,20,4,12],
     ]);
     const rLegPivot = new THREE.Group();
     rLegPivot.position.set(-0.5, -1, 0);
     const rLeg = box(1, 3, 1, rLegMats);
     rLeg.position.set(0, -1.5, 0);
     const rLegOvMats = this._boxMats(tex, [
-      [8,36,4,12],[0,36,4,12],[4,32,4,4],[8,32,4,4],[4,36,4,12],[12,36,4,12],
+      [8,36,4,12],[0,36,4,12],[4,32,4,4],[8,32,4,4, false, true],[4,36,4,12],[12,36,4,12],
     ]);
     const rLegOv = box(1.12, 3.12, 1.12, rLegOvMats);
     rLegOv.position.set(0, -1.5, 0);
@@ -9559,14 +9669,14 @@ class SkinRenderer {
 
     // LEFT LEG pivot at hip
     const lLegMats = this._boxMats(tex, [
-      [24,52,4,12],[16,52,4,12],[20,48,4,4],[24,48,4,4],[20,52,4,12],[28,52,4,12],
+      [24,52,4,12],[16,52,4,12],[20,48,4,4],[24,48,4,4, false, true],[20,52,4,12],[28,52,4,12],
     ]);
     const lLegPivot = new THREE.Group();
     lLegPivot.position.set(0.5, -1, 0);
     const lLeg = box(1, 3, 1, lLegMats);
     lLeg.position.set(0, -1.5, 0);
     const lLegOvMats = this._boxMats(tex, [
-      [4,52,4,12],[0,52,4,12],[4,48,4,4],[8,48,4,4],[4,52,4,12],[12,52,4,12],
+      [4,52,4,12],[0,52,4,12],[4,48,4,4],[8,48,4,4, false, true],[4,52,4,12],[12,52,4,12],
     ]);
     const lLegOv = box(1.12, 3.12, 1.12, lLegOvMats);
     lLegOv.position.set(0, -1.5, 0);
@@ -9607,11 +9717,94 @@ class SkinRenderer {
         if (this._rLegPivot) this._rLegPivot.rotation.x = -sw * 0.6;
         if (this._lLegPivot) this._lLegPivot.rotation.x =  sw * 0.6;
       }
+      if (this._capePivot) this._capePivot.rotation.x = 0.03 + Math.sin(t * 0.65) * 0.015;
 
       if (this._renderer && this._scene && this._camera)
         this._renderer.render(this._scene, this._camera);
     };
     tick();
+  }
+
+  // ── Cape preview ───────────────────────────────────────
+  _removeCape() {
+    if (this._capePivot) {
+      if (this._capeGroup) this._capeGroup.remove(this._capePivot);
+      // Also releases the six per-face texture clones, not just the materials.
+      this._disposeCharacterResources(this._capePivot);
+      this._capePivot = null;
+    }
+    if (this._cape) {
+      this._cape.dispose();
+      this._cape = null;
+    }
+  }
+
+  _buildCape() {
+    if (!this._capeGroup || !this._cape || typeof THREE === 'undefined') return;
+    // The skin scale is 0.25 world units per texture pixel, so a 10×16 cape is
+    // 2.5×4 and its one-pixel thickness is 0.25.
+    const geometry = new THREE.BoxGeometry(2.5, 4, 0.25);
+    const image = this._cape.image || {};
+    const width = image.naturalWidth || image.width || 64;
+    const height = image.naturalHeight || image.height || 32;
+    // The cape atlas is not one picture wrapped around the slab: the 10×16
+    // outside/inside panels and the 1px top, bottom, and side strips are
+    // separate regions. Sample each one onto its own BoxGeometry face.
+    const modern = width >= 64 && height >= 32;
+    const legacy = width >= 22 && height >= 17;
+    const sx = modern ? width / 64 : 1;
+    const sy = modern ? height / 32 : 1;
+    const uv = (x, y, w, h) => [x * sx, y * sy, w * sx, h * sy];
+    // Face order: +X, -X, +Y, -Y, +Z, -Z.
+    const faces = (modern || legacy)
+      ? [
+          uv(11, 1, 1, 16),  // +X: left side strip
+          uv(0, 1, 1, 16),   // -X: right side strip
+          uv(1, 0, 10, 1),   // +Y: top strip
+          uv(11, 0, 10, 1),  // -Y: bottom strip
+          uv(12, 1, 10, 16), // +Z: inside panel
+          uv(1, 1, 10, 16),  // -Z: outside panel
+        ]
+      : Array.from({ length: 6 }, () => [0, 0, width, height]);
+    const materials = faces.map(([tx, ty, tw, th]) =>
+      this._faceMat(this._cape, tx, ty, tw, th, false, width, height)
+    );
+    const mesh = new THREE.Mesh(geometry, materials);
+    const pivot = new THREE.Group();
+    pivot.position.set(0, 1.86, -0.70);
+    mesh.position.set(0, -2, 0);
+    pivot.add(mesh);
+    this._capeGroup.add(pivot);
+    this._capePivot = pivot;
+  }
+
+  setCape(url) {
+    const next = typeof url === 'string' && url.trim() ? url.trim() : null;
+    if (this._capeUrl === next) return;
+    this._capeUrl = next;
+    this._capeRequest += 1;
+
+    if (!next || typeof THREE === 'undefined') {
+      this._removeCape();
+      return;
+    }
+
+    const request = this._capeRequest;
+    new THREE.TextureLoader().load(next, texture => {
+      if (request !== this._capeRequest) { texture.dispose(); return; }
+      texture.magFilter = THREE.NearestFilter;
+      texture.minFilter = THREE.NearestFilter;
+      texture.wrapS = THREE.ClampToEdgeWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.needsUpdate = true;
+      this._removeCape();
+      this._cape = texture;
+      this._buildCape();
+    }, undefined, () => {
+      if (request !== this._capeRequest) return;
+      this._capeUrl = null;
+      this._removeCape();
+    });
   }
 
   // ── Public API ─────────────────────────────────────────
@@ -9621,10 +9814,11 @@ class SkinRenderer {
     this.loadFromDataUrl('data:image/png;base64,' + STEVE_B64);
   }
 
-  loadFromDataUrl(dataUrl) {
-    if (typeof THREE === 'undefined') return;
-    const loader = new THREE.TextureLoader();
-    loader.load(dataUrl, tex => {
+  loadFromUrl(url) {
+    if (typeof THREE === 'undefined' || !url) return;
+    const request = ++this._skinRequest;
+    new THREE.TextureLoader().load(url, tex => {
+      if (request !== this._skinRequest) { tex.dispose(); return; }
       tex.magFilter = THREE.NearestFilter;
       tex.minFilter = THREE.NearestFilter;
       tex.needsUpdate = true;
@@ -9632,10 +9826,13 @@ class SkinRenderer {
       this._skin = tex;
       this._buildCharacter(tex);
     }, undefined, () => {
+      if (request !== this._skinRequest) return;
       console.warn('Failed to load skin texture');
       this.loadDefaultSteve();
     });
   }
+
+  loadFromDataUrl(dataUrl) { this.loadFromUrl(dataUrl); }
 
   setSlim(slim) {
     if (this.slim === slim) return;
@@ -9661,6 +9858,7 @@ class SkinRenderer {
     this.pause();
     if (this._characterGroup) {
       const group = this._characterGroup;
+      if (this._capeGroup && this._capeGroup.parent === group) group.remove(this._capeGroup);
       this._scene.remove(group);
       this._disposeCharacterResources(group);
       this._characterGroup = null;
@@ -9668,6 +9866,11 @@ class SkinRenderer {
     if (this._skin) {
       this._skin.dispose();
       this._skin = null;
+    }
+    this._removeCape();
+    if (this._capeGroup) {
+      if (this._capeGroup.parent) this._capeGroup.parent.remove(this._capeGroup);
+      this._capeGroup = null;
     }
     if (this._renderer) {
       this._renderer.dispose();
@@ -9679,16 +9882,69 @@ class SkinRenderer {
 // ═══════════════════════════════════════════════════════════
 //  SKIN MANAGER STATE
 // ═══════════════════════════════════════════════════════════
-let mainRenderer = null;
 let pendingSkinDataUrl = null;
+let pendingSkinKind = null;   // active | library | file
+let editingSkinId = null;     // saved library entry being updated
+
+function hasLocalSkinSelection() {
+  return pendingSkinKind === 'library' || pendingSkinKind === 'file';
+}
+
+function getActiveProfileSkin(profile) {
+  const skins = Array.isArray(profile && profile.skins) ? profile.skins : [];
+  return skins.find(skin =>
+    skin && skin.url && String(skin.state || '').toUpperCase() === 'ACTIVE'
+  ) || null;
+}
+
+function renderActiveSkin(skin, account) {
+  const slim = !!skin && String(skin.variant || '').toUpperCase() === 'SLIM';
+  if (mainRenderer) {
+    mainRenderer.setSlim(slim);
+    if (skin && skin.url) mainRenderer.loadFromUrl(skin.url);
+    else mainRenderer.loadDefaultSteve();
+  }
+  const classicBtn = document.getElementById('modelClassic');
+  const slimBtn    = document.getElementById('modelSlim');
+  if (classicBtn && slimBtn) {
+    classicBtn.classList.toggle('active', !slim);
+    slimBtn.classList.toggle('active', slim);
+  }
+  const nameEl = document.getElementById('previewSkinName');
+  const metaEl = document.getElementById('previewSkinMeta');
+  if (nameEl) nameEl.textContent = (account && account.name) || (skin ? 'Active skin' : 'Default Steve');
+  if (metaEl) metaEl.textContent = skin
+    ? `${slim ? 'Slim' : 'Classic'} model \u2022 Active skin`
+    : (account ? 'No active skin found' : 'Sign in to load your skin');
+  if (skin) {
+    pendingSkinDataUrl = skin.url;
+    pendingSkinKind = 'active';
+    editingSkinId = null;
+  } else if (pendingSkinKind === 'active') {
+    pendingSkinDataUrl = null;
+    pendingSkinKind = null;
+    editingSkinId = null;
+  }
+  return !!skin;
+}
 
 async function initSkinManager() {
   const canvas = document.getElementById('skinPreviewCanvas');
   mainRenderer = new SkinRenderer(canvas, 220, 320);
-  mainRenderer.loadDefaultSteve();
+  const acct = await AccountStore.getActive();
+  if (hasLocalSkinSelection()) mainRenderer.loadFromDataUrl(pendingSkinDataUrl);
+  else renderActiveSkin(getActiveProfileSkin(acct), acct);
+  mainRenderer.setCape(currentActiveCape?.url || null);
   const cc = document.getElementById('activeCapeCanvas');
   if (cc) drawCapeOnCanvas(cc, null);
   await refreshSkinGrid();
+}
+
+function getSavedSkinCapeName(skin) {
+  const cape = skin && skin.cape;
+  if (!cape) return '';
+  if (typeof cape === 'string') return getCapeDisplay(cape).name;
+  return cape.name || (cape.alias ? getCapeDisplay(cape.alias).name : '');
 }
 
 async function refreshSkinGrid() {
@@ -9705,21 +9961,30 @@ async function refreshSkinGrid() {
     return skins;
   }
   if (noMsg) noMsg.style.display='none';
-  grid.innerHTML = skins.map(skin => `
+  grid.innerHTML = skins.map(skin => {
+    const capeName = getSavedSkinCapeName(skin);
+    return `
     <div class="skin-card" data-id="${skin.id}">
       <div class="skin-card-preview">
         <canvas id="sthumb-${skin.id}" width="60" height="80" style="image-rendering:pixelated"></canvas>
       </div>
-      <div class="skin-card-name">${escHtml(skin.name)}</div>
+      <div class="skin-card-info">
+        <div class="skin-card-name-row">
+          <div class="skin-card-name">${escHtml(skin.name)}</div>
+          ${capeName ? '<span class="skin-card-cape">Cape</span>' : ''}
+        </div>
+        <div class="skin-card-meta">${skin.model==='slim'?'Slim':'Classic'}${capeName ? ` • ${escHtml(capeName)}` : ''}</div>
+      </div>
       <div class="skin-card-actions">
-        <button class="skin-card-btn apply" title="Apply" onclick="applySkin('${skin.id}',event)">
+        <button class="skin-card-btn apply" title="Apply outfit" onclick="applySkin('${skin.id}',event)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12"><polyline points="20,6 9,17 4,12"/></svg>
         </button>
         <button class="skin-card-btn del" title="Delete" onclick="deleteSkin('${skin.id}',event)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2 0 01-2,2H8a2,2 0 01-2-2L5,6"/></svg>
         </button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   skins.forEach(skin => {
     const tc = document.getElementById(`sthumb-${skin.id}`);
     if (tc && skin.dataUrl) renderSkinThumbnail(tc, skin.dataUrl, skin.model==='slim');
@@ -9851,11 +10116,13 @@ function handleSkinFile(e) {
   const reader = new FileReader();
   reader.onload = ev => {
     pendingSkinDataUrl = ev.target.result;
+    pendingSkinKind = 'file';
+    editingSkinId = null;
     if (mainRenderer) mainRenderer.loadFromDataUrl(pendingSkinDataUrl);
     const nameEl = document.getElementById('previewSkinName');
     const metaEl = document.getElementById('previewSkinMeta');
     if (nameEl) nameEl.textContent = file.name.replace('.png','');
-    if (metaEl) metaEl.textContent = 'Unsaved \u2022 Click "Save Current Skin" to keep it';
+    if (metaEl) metaEl.textContent = 'Unsaved \u2022 Click "Save Current Outfit" to keep it';
     showNotif('Skin Loaded', 'Preview updated! Save it to your library.');
   };
   reader.readAsDataURL(file);
@@ -9872,48 +10139,105 @@ function handleDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
 function handleDrop(e)  { handleSkinDrop(e); }
 function skinDropOver(e) { e.preventDefault(); }
 
-function openSkinNameModal() {
+async function openSkinNameModal() {
   if (!pendingSkinDataUrl) {
-    showNotif('No Skin', 'Upload a skin PNG first, then save it');
+    showNotif('No Skin', 'Load a skin or upload a PNG first');
     return;
   }
+  let name = '';
+  if (editingSkinId) {
+    const skins = await SkinStore.getAll();
+    const existing = skins.find(s => s.id === editingSkinId);
+    if (existing) name = existing.name;
+    else editingSkinId = null;
+  }
+  const nameInput = document.getElementById('skinNameInput');
+  if (nameInput) nameInput.value = name;
+  const slim = !!mainRenderer?.slim;
+  document.getElementById('saveModelSlim')?.classList.toggle('active', slim);
+  document.getElementById('saveModelClassic')?.classList.toggle('active', !slim);
   document.getElementById('skinNameModal').classList.add('open');
-  setTimeout(() => document.getElementById('skinNameInput')?.focus(), 50);
+  setTimeout(() => nameInput?.focus(), 50);
 }
 function closeSkinNameModal() { document.getElementById('skinNameModal').classList.remove('open'); }
+
+function outfitCapeSnapshot() {
+  if (!currentActiveCape || !currentActiveCape.alias) return null;
+  return {
+    id: currentActiveCape.id || null,
+    alias: currentActiveCape.alias,
+    name: currentActiveCape.name || getCapeDisplay(currentActiveCape.alias).name,
+    url: currentActiveCape.url || null,
+  };
+}
+
+async function resolveSkinDataUrl(source) {
+  if (typeof source !== 'string' || !source) throw new Error('No skin image to save');
+  if (source.startsWith('data:image/')) return source;
+  const response = await fetch(source);
+  if (!response.ok) throw new Error(`Skin image request failed (${response.status})`);
+  const blob = await response.blob();
+  if (blob.type && blob.type !== 'image/png') throw new Error('Skin image is not a PNG');
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Could not read skin image'));
+    reader.readAsDataURL(blob);
+  });
+}
 
 async function saveSkin() {
   const name = document.getElementById('skinNameInput').value.trim();
   if (!name) { showNotif('Error','Please enter a name'); return; }
-  if (!pendingSkinDataUrl) { showNotif('Error','No skin loaded — upload a skin PNG first'); closeSkinNameModal(); return; }
+  if (!pendingSkinDataUrl) { showNotif('Error','No skin loaded — load or upload a skin first'); closeSkinNameModal(); return; }
   const slim = document.getElementById('saveModelSlim')?.classList.contains('active') || false;
+  const cape = outfitCapeSnapshot();
+  let dataUrl;
+  try {
+    dataUrl = await resolveSkinDataUrl(pendingSkinDataUrl);
+  } catch(e) {
+    showNotif('Save Error', 'Could not read this skin: ' + e.message);
+    return;
+  }
+  const skins = await SkinStore.getAll();
+  const existing = editingSkinId ? skins.find(s => s.id === editingSkinId) : null;
   const skin = {
-    id:       'skin_' + Date.now(),
+    id:       existing ? existing.id : 'skin_' + Date.now(),
     name,
     model:    slim ? 'slim' : 'classic',
-    dataUrl:  pendingSkinDataUrl,
-    addedAt:  Date.now()
+    dataUrl,
+    addedAt:  existing ? existing.addedAt : Date.now(),
+    cape
   };
   try {
     await SkinStore.save(skin);
   } catch(e) {
     showNotif('Save Error', 'Could not save skin: ' + e.message); return;
   }
+  pendingSkinDataUrl = dataUrl;
+  pendingSkinKind = 'library';
+  editingSkinId = skin.id;
   const countEl = document.getElementById('skinCount');
   if (countEl) {
-    const skins = await SkinStore.getAll();
-    countEl.textContent = skins.length;
+    const all = await SkinStore.getAll();
+    countEl.textContent = all.length;
   }
   await refreshSkinGrid();
   closeSkinNameModal();
   document.getElementById('skinNameInput').value='';
-  showNotif('Skin Saved', `"${name}" added to your library!`);
+  if (existing) {
+    showNotif('Outfit Updated', `"${name}" updated in your library`);
+  } else {
+    showNotif(cape ? 'Outfit Saved' : 'Skin Saved', cape
+      ? `"${name}" and ${cape.name} are in your library!`
+      : `"${name}" added to your library!`);
+  }
 
   // Update preview label
   const nameEl = document.getElementById('previewSkinName');
   const metaEl = document.getElementById('previewSkinMeta');
   if (nameEl) nameEl.textContent = name;
-  if (metaEl) metaEl.textContent = `${slim?'Slim':'Classic'} model \u2022 Loaded`;
+  if (metaEl) metaEl.textContent = `${slim?'Slim':'Classic'} model${cape ? ` \u2022 ${cape.name}` : ''} \u2022 ${existing ? 'Updated' : 'Saved'}`;
 }
 
 async function applySkin(id, e) {
@@ -9921,15 +10245,23 @@ async function applySkin(id, e) {
   const skins = await SkinStore.getAll();
   const skin = skins.find(s=>s.id===id);
   if (!skin) return;
+  pendingSkinKind = 'library';
+  editingSkinId = skin.id;
   if (mainRenderer) {
     mainRenderer.setSlim(skin.model==='slim');
     mainRenderer.loadFromDataUrl(skin.dataUrl);
   }
   pendingSkinDataUrl = skin.dataUrl;
+  const outfitCape = skin.cape && typeof skin.cape === 'object' ? skin.cape : null;
+  if (outfitCape && outfitCape.alias) {
+    const capeMeta = getCapeDisplay(outfitCape.alias);
+    updateActiveCapeInSkinPanel(outfitCape.alias, capeMeta, outfitCape.url || null,
+      `${capeMeta.name} · Outfit cape · Apply to equip`, outfitCape.id || null, false);
+  }
   const nameEl = document.getElementById('previewSkinName');
   const metaEl = document.getElementById('previewSkinMeta');
   if (nameEl) nameEl.textContent = skin.name;
-  if (metaEl) metaEl.textContent = `${skin.model==='slim'?'Slim':'Classic'} model \u2022 Active skin`;
+  if (metaEl) metaEl.textContent = `${skin.model==='slim'?'Slim':'Classic'} model${outfitCape?.alias ? ` \u2022 ${getCapeDisplay(outfitCape.alias).name}` : ''} \u2022 Active outfit`;
   // Update model tab UI
   const classicBtn = document.getElementById('modelClassic');
   const slimBtn    = document.getElementById('modelSlim');
@@ -9937,7 +10269,9 @@ async function applySkin(id, e) {
     classicBtn.classList.toggle('active', skin.model!=='slim');
     slimBtn.classList.toggle('active',    skin.model==='slim');
   }
-  showNotif('Skin Applied', `"${skin.name}" is now your active skin`);
+  showNotif(outfitCape?.alias ? 'Outfit Loaded' : 'Skin Applied', outfitCape?.alias
+    ? `"${skin.name}" is loaded with ${getCapeDisplay(outfitCape.alias).name}`
+    : `"${skin.name}" is now your active skin`);
 }
 
 async function deleteSkin(id, e) {
@@ -9948,6 +10282,10 @@ async function deleteSkin(id, e) {
   if (remaining.some(skin => skin.id === id)) {
     showNotif('Delete Failed', 'That skin is still in your library');
     return;
+  }
+  if (editingSkinId === id) {
+    editingSkinId = null;
+    if (pendingSkinKind === 'library') pendingSkinKind = 'file';
   }
   showNotif('Skin Deleted','Skin removed from library');
 }
@@ -10004,9 +10342,22 @@ async function applyAndUploadSkin() {
     }
 
     if (res.ok) {
-      showNotif('Skin Applied!', 'Your skin is now live on Minecraft.net');
+      let capeResult = null;
+      const pendingOutfitCape = currentActiveCape && currentActiveCape.equipped === false && currentActiveCape.id;
+      if (pendingOutfitCape) {
+        capeResult = await equipCape(currentActiveCape.id, currentActiveCape.alias);
+      }
       const metaEl = document.getElementById('previewSkinMeta');
-      if (metaEl) metaEl.textContent = (isSlim ? 'Slim' : 'Classic') + ' model \u2022 Active on Minecraft.net';
+      if (pendingOutfitCape && !capeResult?.ok) {
+        showNotif('Cape Update Failed', 'The skin changed, but the outfit cape could not be equipped');
+        if (metaEl) metaEl.textContent = (isSlim ? 'Slim' : 'Classic') + ' model \u2022 Skin live; cape not changed';
+      } else if (pendingOutfitCape) {
+        showNotif('Outfit Applied!', 'Your skin and cape are now live on Minecraft.net');
+        if (metaEl) metaEl.textContent = (isSlim ? 'Slim' : 'Classic') + ' model \u2022 Outfit live on Minecraft.net';
+      } else {
+        showNotif('Skin Applied!', 'Your skin is now live on Minecraft.net');
+        if (metaEl) metaEl.textContent = (isSlim ? 'Slim' : 'Classic') + ' model \u2022 Active on Minecraft.net';
+      }
     } else if (res.status === 401) {
       showNotif('Session Expired', 'Sign out and back in to refresh your token');
     } else {
@@ -11136,28 +11487,115 @@ async function loadInstanceOverview(inst) {
 //  SKIN DOWNLOAD BY PLAYER NAME
 // ═══════════════════════════════════════════════════════════
 let _skinDownloadPlayerName = '';
+let _skinDownloadInfo = null;
+let _skinDownloadInfoPromise = null;
+
+function skinModelLabel(model) {
+  return model === 'slim' ? 'Slim' : 'Classic';
+}
+
+// Mojang's profile API has the authoritative skin model. It is CORS-blocked in
+// the renderer, so Electron answers through preload. Tauri and the browser use
+// the PNG-based fallback below instead.
+async function lookupPlayerSkinInfo(name) {
+  try {
+    const lookup = window.craftdock?.auth?.lookupSkin;
+    if (typeof lookup !== 'function') return null;
+    const info = await lookup(name);
+    if (!info || info.ok !== true || typeof info.skinUrl !== 'string' || !info.skinUrl) return null;
+    return {
+      name: info.name || name,
+      skinUrl: info.skinUrl,
+      model: info.model === 'slim' ? 'slim' : 'classic',
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Mirror skinview3d's automatic detection. Slim skins leave four 2px-wide
+// strips unused; transparent (or fully black/white) strips identify one.
+async function inferSkinModel(dataUrl) {
+  const image = await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not inspect skin image'));
+    img.src = dataUrl;
+  });
+  if (image.width !== image.height || image.width < 64) return 'classic';
+
+  const scale = image.width / 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return 'classic';
+  context.imageSmoothingEnabled = false;
+  context.drawImage(image, 0, 0);
+
+  const regions = [[50, 16, 2, 4], [54, 20, 2, 12], [42, 48, 2, 4], [46, 52, 2, 12]];
+  const pixels = regions.map(([x, y, w, h]) =>
+    context.getImageData(Math.round(x * scale), Math.round(y * scale),
+      Math.round(w * scale), Math.round(h * scale)).data);
+  const hasTransparency = data => {
+    for (let i = 3; i < data.length; i += 4) if (data[i] !== 255) return true;
+    return false;
+  };
+  const isSolid = (data, r, g, b) => {
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] !== r || data[i + 1] !== g || data[i + 2] !== b || data[i + 3] !== 255) return false;
+    }
+    return true;
+  };
+  if (pixels.some(hasTransparency)) return 'slim';
+  if (pixels.every(data => isSolid(data, 0, 0, 0)) ||
+      pixels.every(data => isSolid(data, 255, 255, 255))) return 'slim';
+  return 'classic';
+}
+
+async function resolveDownloadedSkinModel(dataUrl, profileModel) {
+  if (profileModel === 'slim' || profileModel === 'classic') return profileModel;
+  try { return await inferSkinModel(dataUrl); }
+  catch { return 'classic'; }
+}
 
 async function previewPlayerSkin() {
   const input = document.getElementById('skinDownloadName');
   const name  = input?.value.trim();
   if (!name) { showNotif('Enter a name', 'Type a Minecraft username first'); return; }
   _skinDownloadPlayerName = name;
+  _skinDownloadInfo = null;
+  _skinDownloadInfoPromise = null;
 
   const previewBox = document.getElementById('skinDownloadPreview');
   const previewImg = document.getElementById('skinDownloadPreviewImg');
   const previewName = document.getElementById('skinDownloadPreviewName');
+  const previewMeta = document.getElementById('skinDownloadPreviewMeta');
   const errEl  = document.getElementById('skinDownloadError');
   const saveBtn = document.getElementById('skinDownloadSaveBtn');
 
   if (errEl) errEl.style.display = 'none';
   if (saveBtn) saveBtn.style.display = 'none';
   if (previewBox) previewBox.style.display = 'none';
+  if (previewMeta) previewMeta.textContent = 'Click Save to add to your library';
+
+  // Start the authoritative lookup immediately; it may finish after the avatar.
+  const lookup = lookupPlayerSkinInfo(name);
+  _skinDownloadInfoPromise = lookup;
+  lookup.then(info => {
+    if (_skinDownloadPlayerName !== name) return;
+    _skinDownloadInfo = info;
+    if (info && previewMeta) {
+      previewMeta.textContent = `${skinModelLabel(info.model)} model · Click Save to add to your library`;
+    }
+  }).catch(() => {});
 
   // Use mc-heads face for preview
   const faceUrl = `https://mc-heads.net/avatar/${encodeURIComponent(name)}/48`;
   if (previewImg) {
     previewImg.src = faceUrl;
     previewImg.onload = () => {
+      if (_skinDownloadPlayerName !== name) return;
       if (previewName) previewName.textContent = name;
       if (previewBox) previewBox.style.display = 'block';
       if (saveBtn) saveBtn.style.display = 'flex';
@@ -11167,15 +11605,20 @@ async function previewPlayerSkin() {
 }
 
 function clearSkinDownloadPreview() {
+  _skinDownloadInfo = null;
+  _skinDownloadInfoPromise = null;
   const previewBox = document.getElementById('skinDownloadPreview');
+  const previewMeta = document.getElementById('skinDownloadPreviewMeta');
   const errEl = document.getElementById('skinDownloadError');
   const saveBtn = document.getElementById('skinDownloadSaveBtn');
   if (previewBox) previewBox.style.display = 'none';
+  if (previewMeta) previewMeta.textContent = 'Click Save to add to your library';
   if (errEl) errEl.style.display = 'none';
   if (saveBtn) saveBtn.style.display = 'none';
 }
 
 function skinDownloadNotFound() {
+  _skinDownloadInfo = null;
   const errEl = document.getElementById('skinDownloadError');
   const previewBox = document.getElementById('skinDownloadPreview');
   const saveBtn = document.getElementById('skinDownloadSaveBtn');
@@ -11191,9 +11634,11 @@ async function savePlayerSkin() {
   if (saveBtn) { saveBtn.textContent = 'Downloading...'; saveBtn.disabled = true; }
 
   try {
-    // Download full skin texture from mc-heads
-    const downloadUrl = `https://mc-heads.net/skin/${encodeURIComponent(name)}`;
-    const res = await fetch(downloadUrl);
+    const info = _skinDownloadInfo || await (_skinDownloadInfoPromise || lookupPlayerSkinInfo(name));
+    if (_skinDownloadPlayerName !== name) return;
+    const fallbackUrl = `https://mc-heads.net/skin/${encodeURIComponent(name)}`;
+    let res = await fetch(info?.skinUrl || fallbackUrl);
+    if (!res.ok && info?.skinUrl) res = await fetch(fallbackUrl);
     if (!res.ok) throw new Error('Skin not found');
     const blob = await res.blob();
 
@@ -11205,11 +11650,11 @@ async function savePlayerSkin() {
       reader.readAsDataURL(blob);
     });
 
-    // Save using the existing skin system
-    await saveSkinToLibrary(name + "'s skin", dataUrl);
+    const model = await resolveDownloadedSkinModel(dataUrl, info?.model);
+    await saveSkinToLibrary(name + "'s skin", dataUrl, model);
 
     if (saveBtn) { saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><polyline points="20,6 9,17 4,12"/></svg> Saved!'; saveBtn.disabled = false; }
-    showNotif('Skin saved!', `${name}'s skin added to your library`);
+    showNotif('Skin saved!', `${name}'s skin added to your library · ${skinModelLabel(model)} model`);
 
     // Reset after 2 seconds
     setTimeout(() => {
@@ -11227,15 +11672,22 @@ async function savePlayerSkin() {
   }
 }
 
-async function saveSkinToLibrary(name, dataUrl) {
+async function saveSkinToLibrary(name, dataUrl, model='classic') {
+  const addedAt = Date.now();
+  const skin = {
+    id: 'skin_' + addedAt,
+    name,
+    dataUrl,
+    model: model === 'slim' ? 'slim' : 'classic',
+    addedAt,
+  };
   // Reuse the existing skin save pipeline
   if (window.craftdock?.skins?.save) {
-    const skin = { id: 'skin_' + Date.now(), name, dataUrl, model: 'classic', addedAt: Date.now() };
     await window.craftdock.skins.save(skin);
   } else {
     // Browser: use Store
     const skins = (await Store.get('craftdock:skins')) || [];
-    skins.push({ id: 'skin_' + Date.now(), name, dataUrl, model: 'classic', addedAt: Date.now() });
+    skins.push(skin);
     await Store.set('craftdock:skins', skins);
   }
   refreshSkinGrid();

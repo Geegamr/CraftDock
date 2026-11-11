@@ -1,6 +1,6 @@
 {
   "name": "craftdock",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "CraftDock \u2014 A lightweight Minecraft launcher",
   "main": "main.js",
   "scripts": {

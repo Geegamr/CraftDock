@@ -157,7 +157,8 @@ test('Rust and fallback save upsert data URLs and delete only the matching image
     const nativeDirectory = path.join(root, 'native');
     const fallbackDirectory = path.join(root, 'fallback');
     for (const directory of [nativeDirectory, fallbackDirectory]) writeFixture(directory);
-    const firstSkin = { id: 'fixture-existing', name: 'Updated skin', model: 'slim', dataUrl: 'data:image/png;base64,AQIDBA==', addedAt: 7 };
+    const outfitCape = { id: 'cape-migrator', alias: 'Migrator', name: 'Migrator Cape', url: 'https://textures.minecraft.net/texture/example' };
+    const firstSkin = { id: 'fixture-existing', name: 'Updated skin', model: 'slim', dataUrl: 'data:image/png;base64,AQIDBA==', addedAt: 7, cape: outfitCape };
     assert.deepEqual(await nativeAccess(nativeDirectory).save(nativeDirectory, structuredClone(firstSkin)), { success: true });
     assert.deepEqual(saveFallback(fallbackDirectory, structuredClone(firstSkin)), { success: true });
     for (const directory of [nativeDirectory, fallbackDirectory]) {
@@ -165,6 +166,7 @@ test('Rust and fallback save upsert data URLs and delete only the matching image
       const metadata = JSON.parse(fs.readFileSync(path.join(directory, 'skins.json'), 'utf8'));
       assert.equal(metadata.length, fixtureSkins.length);
       assert.equal(metadata[0].name, 'Updated skin');
+      assert.deepEqual(metadata[0].cape, outfitCape, 'the outfit cape is stored next to the skin');
       assert.equal(metadata[0].filePath, path.join(directory, 'fixture-existing.png'));
       assert.equal('dataUrl' in metadata[0], false);
     }

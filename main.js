@@ -311,6 +311,8 @@ function httpsRequest(method, hostname, path, headers, body) {
 }
 const post = (h,p,hdrs,b) => httpsRequest('POST',h,p,hdrs,b);
 const get  = (h,p,hdrs)   => httpsRequest('GET', h,p,hdrs);
+const put  = (h,p,hdrs,b) => httpsRequest('PUT', h,p,hdrs,b);
+const del  = (h,p,hdrs)   => httpsRequest('DELETE', h,p,hdrs);
 
 // ── Microsoft auth chain ───────────────────────────────────
 async function doRequestDeviceCode() {
@@ -615,15 +617,110 @@ ipcMain.handle('auth-complete-login', async (_, msAccessToken) => {
 // in the main process: api.minecraftservices.com sends no CORS headers, so the
 // renderer's own fetch is always blocked and the skins page never saw a real
 // active cape.
+async function readMinecraftProfile(minecraftToken) {
+  const res = await get('api.minecraftservices.com', '/minecraft/profile',
+    { Authorization: `Bearer ${minecraftToken}` });
+  if (res.status === 401) return { ok: false, status: 401, error: 'token_expired' };
+  if (res.status !== 200) return { ok: false, status: res.status, error: 'http_' + res.status };
+  return { ok: true, profile: res.body };
+}
+// Resolve a player's skin texture and model from Mojang. The skin PNG itself
+// does not record whether it uses the 3px (slim) or 4px (classic) arm layout;
+// that lives in the profile's textures property. The renderer cannot read these
+// endpoints directly because Mojang sends no CORS headers.
+function skinFromTextureProperty(value) {
+  try {
+    const decoded = JSON.parse(Buffer.from(value, 'base64').toString('utf8'));
+    const skin = decoded && decoded.textures && decoded.textures.SKIN;
+    if (!skin || typeof skin.url !== 'string' || !skin.url) return null;
+    // Old skins still carry http:// texture URLs. Upgrade Mojang's own host so
+    // the renderer does not stall on mixed content.
+    let url = skin.url;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' && parsed.hostname === 'textures.minecraft.net') {
+        parsed.protocol = 'https:';
+        url = parsed.toString();
+      }
+    } catch {}
+    const model = skin.metadata && skin.metadata.model === 'slim' ? 'slim' : 'classic';
+    return { url, model };
+  } catch {
+    return null;
+  }
+}
+
+async function lookupMinecraftSkin(name) {
+  const username = typeof name === 'string' ? name.trim() : '';
+  if (!/^[A-Za-z0-9_]{1,16}$/.test(username))
+    return { ok: false, error: 'invalid_username' };
+
+  const profile = await get('api.mojang.com',
+    `/users/profiles/minecraft/${encodeURIComponent(username)}`);
+  if (profile.status === 404 || profile.status === 204)
+    return { ok: false, status: profile.status, error: 'not_found' };
+  if (profile.status !== 200)
+    return { ok: false, status: profile.status, error: 'http_' + profile.status };
+  const id = profile.body && profile.body.id;
+  if (typeof id !== 'string' || !/^[0-9a-f]{32}$/i.test(id))
+    return { ok: false, error: 'not_found' };
+
+  const session = await get('sessionserver.mojang.com',
+    `/session/minecraft/profile/${id.toLowerCase()}`);
+  if (session.status === 404 || session.status === 204)
+    return { ok: false, status: session.status, error: 'not_found' };
+  if (session.status !== 200)
+    return { ok: false, status: session.status, error: 'http_' + session.status };
+  const properties = session.body && session.body.properties;
+  const textures = Array.isArray(properties)
+    ? properties.find(property => property && property.name === 'textures')
+    : null;
+  const skin = textures && skinFromTextureProperty(textures.value);
+  if (!skin) return { ok: false, error: 'no_skin' };
+
+  return {
+    ok: true,
+    name: (session.body && session.body.name) || profile.body.name || username,
+    skinUrl: skin.url,
+    model: skin.model,
+  };
+}
+
+ipcMain.handle('auth-lookup-skin', async (_, name) => {
+  try {
+    return await lookupMinecraftSkin(name);
+  } catch (e) {
+    return { ok: false, error: e.message || 'request_failed' };
+  }
+});
+
 ipcMain.handle('auth-fetch-profile', async (_, minecraftToken) => {
   if (typeof minecraftToken !== 'string' || !minecraftToken.trim())
     return { ok: false, error: 'missing_token' };
   try {
-    const res = await get('api.minecraftservices.com', '/minecraft/profile',
-      { Authorization: `Bearer ${minecraftToken.trim()}` });
+    return await readMinecraftProfile(minecraftToken.trim());
+  } catch(e) {
+    return { ok: false, error: e.message || 'request_failed' };
+  }
+});
+// The active-cape endpoint is also blocked by CORS in the renderer. Mutate it
+// here, and only report success when Minecraft actually accepted the change.
+ipcMain.handle('auth-set-cape', async (_, minecraftToken, capeId) => {
+  const token = typeof minecraftToken === 'string' ? minecraftToken.trim() : '';
+  if (!token) return { ok: false, error: 'missing_token' };
+  const clear = capeId === null || capeId === undefined || capeId === '';
+  if (!clear && (typeof capeId !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(capeId)))
+    return { ok: false, error: 'invalid_cape' };
+  try {
+    const headers = { Authorization: `Bearer ${token}` };
+    const res = clear
+      ? await del('api.minecraftservices.com', '/minecraft/profile/capes/active', headers)
+      : await put('api.minecraftservices.com', '/minecraft/profile/capes/active',
+          { ...headers, 'Content-Type': 'application/json' }, { capeId });
     if (res.status === 401) return { ok: false, status: 401, error: 'token_expired' };
-    if (res.status !== 200) return { ok: false, status: res.status, error: 'http_' + res.status };
-    return { ok: true, profile: res.body };
+    if (res.status !== 204 && res.status !== 200)
+      return { ok: false, status: res.status, error: 'http_' + res.status };
+    return { ok: true };
   } catch(e) {
     return { ok: false, error: e.message || 'request_failed' };
   }

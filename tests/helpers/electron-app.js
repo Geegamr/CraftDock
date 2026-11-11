@@ -135,6 +135,7 @@ function responseFor(route) {
 // Keys are full request URLs (https://host/path).
 function createNetworkMock(routes = {}) {
   const requested = [];
+  const requests = [];
   const urlOf = (urlOrOptions, maybeOptions) => {
     if (typeof urlOrOptions === 'string') return urlOrOptions;
     const host = urlOrOptions.hostname || urlOrOptions.host || 'unknown.invalid';
@@ -146,9 +147,18 @@ function createNetworkMock(routes = {}) {
     const url = urlOf(urlOrOptions, maybeOptions);
     requested.push(url);
     const request = new EventEmitter();
+    let body = '';
     request.setTimeout = () => request;
-    request.write = () => request;
-    request.end = () => request;
+    request.write = chunk => { body += Buffer.isBuffer(chunk) ? chunk.toString() : String(chunk); return request; };
+    request.end = () => {
+      requests.push({
+        url,
+        method: (maybeOptions && maybeOptions.method) || urlOrOptions.method || 'GET',
+        headers: (maybeOptions && maybeOptions.headers) || urlOrOptions.headers || {},
+        body,
+      });
+      return request;
+    };
     request.destroy = error => { if (error) request.emit('error', error); };
     queueMicrotask(() => {
       const { response, body, chunks, gapMs } = responseFor(routes[url]);
@@ -172,6 +182,7 @@ function createNetworkMock(routes = {}) {
   };
   return {
     requested,
+    requests,
     module: {
       get,
       request: (options, callback) => get(options, callback),
